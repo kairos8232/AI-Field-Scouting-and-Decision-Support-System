@@ -108,6 +108,22 @@ class FarmTwinAppState(
         lotSections = sections
     }
 
+    fun prepareNewFarmDraft() {
+        val defaultBoundary = defaultFarmBoundary()
+        farmBoundaryPoints = defaultBoundary
+        lotSections = listOf(
+            LotSectionDraft(
+                id = "lot-1",
+                name = "Lot 1",
+                points = defaultBoundary,
+                cropPlan = snapshot.farm.cropName,
+                soilType = "Loamy",
+                waterAvailability = "Medium",
+            )
+        )
+        selectedSetupMethod = SetupMethod.MANUAL
+    }
+
     fun currentZone(): ZoneInfo {
         return snapshot.zones.first { it.id == selectedZoneId }
     }
@@ -129,6 +145,15 @@ class FarmTwinAppState(
                     resultSummary = summary,
                 )
             ) + snapshot.actionRecords
+        )
+    }
+
+    private fun defaultFarmBoundary(): List<FarmPoint> {
+        return listOf(
+            FarmPoint(0.20f, 0.25f),
+            FarmPoint(0.82f, 0.22f),
+            FarmPoint(0.88f, 0.70f),
+            FarmPoint(0.26f, 0.78f),
         )
     }
 }

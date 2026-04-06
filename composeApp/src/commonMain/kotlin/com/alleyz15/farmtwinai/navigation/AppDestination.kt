@@ -17,4 +17,5 @@ sealed interface AppDestination {
     data object AiChat : AppDestination
     data object ActionConfirmation : AppDestination
     data object History : AppDestination
+    data object Me : AppDestination
 }

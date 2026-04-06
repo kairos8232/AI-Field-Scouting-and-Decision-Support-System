@@ -5,6 +5,8 @@ import com.alleyz15.farmtwinai.domain.model.AppMode
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
 import com.alleyz15.farmtwinai.ui.components.DualActionButtons
+import com.alleyz15.farmtwinai.ui.components.HomeTab
+import com.alleyz15.farmtwinai.ui.components.HomeTabBar
 import com.alleyz15.farmtwinai.ui.components.InfoCard
 import com.alleyz15.farmtwinai.ui.components.MetricRow
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
@@ -18,10 +20,24 @@ fun DashboardScreen(
     onOpenTimeline: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenHistory: () -> Unit,
+    isTabBarVisible: Boolean = false,
+    onSelectDashboardTab: (() -> Unit)? = null,
+    onSelectMeTab: (() -> Unit)? = null,
 ) {
     AppScaffold(
         title = "Farm Dashboard",
         subtitle = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
+        floatingFooter = if (isTabBarVisible && onSelectDashboardTab != null && onSelectMeTab != null) {
+            {
+                HomeTabBar(
+                    selectedTab = HomeTab.DASHBOARD,
+                    onSelectDashboard = onSelectDashboardTab,
+                    onSelectMe = onSelectMeTab,
+                )
+            }
+        } else {
+            null
+        },
     ) { _ ->
         ScreenColumn {
             SectionHeader(

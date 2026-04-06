@@ -17,6 +17,7 @@ import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.ManualSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.TimelineScreen
@@ -107,6 +108,9 @@ fun FarmTwinNavHost(
             onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onOpenHistory = { navigator.navigate(AppDestination.History) },
+            isTabBarVisible = appState.isAuthenticated,
+            onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
+            onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )
         AppDestination.DigitalTwinMap -> DigitalTwinMapScreen(
             zones = appState.snapshot.zones,
@@ -146,6 +150,23 @@ fun FarmTwinNavHost(
         AppDestination.History -> HistoryScreen(
             snapshot = appState.snapshot,
             onBack = { navigator.pop() },
+        )
+        AppDestination.Me -> MePanelScreen(
+            snapshot = appState.snapshot,
+            authenticatedUser = appState.authenticatedUser,
+            onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
+            onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
+            onAddFarm = {
+                appState.prepareNewFarmDraft()
+                navigator.navigate(AppDestination.SetupMethod)
+            },
+            onSignOut = {
+                appState.signOut()
+                navigator.resetTo(AppDestination.Welcome)
+            },
+            isTabBarVisible = appState.isAuthenticated,
+            onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
+            onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )
     }
 }
