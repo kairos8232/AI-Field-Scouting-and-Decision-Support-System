@@ -30,8 +30,6 @@ fun ZoneDetailScreen(
             DualActionButtons(
                 primaryLabel = "Open AI Consultation",
                 onPrimary = onOpenChat,
-                secondaryLabel = "Back to Map",
-                onSecondary = onBack,
             )
         }
     }

@@ -61,52 +61,57 @@ fun FarmMapSetupScreen(
             OutlinedTextField(
                 value = address,
                 onValueChange = { address = it },
-                label = { Text("Address") },
+                label = { Text("Search location...") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
 
-            Button(
-                onClick = {
-                    val seed = abs(address.lowercase().hashCode())
-                    val shiftX = ((seed % 100) - 50) / 1000f
-                    val shiftY = (((seed / 3) % 100) - 50) / 1000f
-                    for (index in points.indices) {
-                        val p = points[index]
-                        points[index] = p.copy(
-                            x = (p.x + shiftX).coerceIn(0.05f, 0.95f),
-                            y = (p.y + shiftY).coerceIn(0.05f, 0.95f),
-                        )
-                    }
-                    onBoundaryChanged(points.toList())
-                },
+            androidx.compose.foundation.layout.Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Locate Address")
-            }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val seed = abs(address.lowercase().hashCode())
+                        val shiftX = ((seed % 100) - 50) / 1000f
+                        val shiftY = (((seed / 3) % 100) - 50) / 1000f
+                        for (index in points.indices) {
+                            val p = points[index]
+                            points[index] = p.copy(
+                                x = (p.x + shiftX).coerceIn(0.05f, 0.95f),
+                                y = (p.y + shiftY).coerceIn(0.05f, 0.95f),
+                            )
+                        }
+                        onBoundaryChanged(points.toList())
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Search")
+                }
 
-            Button(
-                onClick = {
-                    points.clear()
-                    points.addAll(
-                        listOf(
-                            FarmPoint(0.20f, 0.25f),
-                            FarmPoint(0.82f, 0.22f),
-                            FarmPoint(0.88f, 0.70f),
-                            FarmPoint(0.26f, 0.78f),
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        points.clear()
+                        points.addAll(
+                            listOf(
+                                FarmPoint(0.20f, 0.25f),
+                                FarmPoint(0.82f, 0.22f),
+                                FarmPoint(0.88f, 0.70f),
+                                FarmPoint(0.26f, 0.78f),
+                            )
                         )
-                    )
-                    onBoundaryChanged(points.toList())
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Use Current Location Outline")
+                        onBoundaryChanged(points.toList())
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("My Location")
+                }
             }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(250.dp)
+                    .height(320.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
                     .onSizeChanged { mapSize = it }
@@ -191,10 +196,42 @@ fun FarmMapSetupScreen(
             }
 
             Text(
-                text = "Tap map to add edge points. Drag any point to reshape boundary. Points: ${points.size}",
+                text = "Tap map to add edge points. Drag any point to reshape.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            androidx.compose.foundation.layout.Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Edges: ${points.size}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            if (points.isNotEmpty()) {
+                                points.removeLast()
+                                onBoundaryChanged(points.toList())
+                            }
+                        }
+                    ) {
+                        Text("Undo")
+                    }
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            points.clear()
+                            onBoundaryChanged(emptyList())
+                        }
+                    ) {
+                        Text("Clear All")
+                    }
+                }
+            }
 
             if (warningMessage != null) {
                 Text(
@@ -202,29 +239,6 @@ fun FarmMapSetupScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
-            }
-
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        if (points.isNotEmpty()) {
-                            points.removeLast()
-                            onBoundaryChanged(points.toList())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Remove Last Edge")
-                }
-                Button(
-                    onClick = {
-                        points.clear()
-                        onBoundaryChanged(emptyList())
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Clear Boundary")
-                }
             }
 
             DualActionButtons(
@@ -238,8 +252,6 @@ fun FarmMapSetupScreen(
                         onContinue()
                     }
                 },
-                secondaryLabel = "Back",
-                onSecondary = onBack,
             )
         }
     }

@@ -91,70 +91,82 @@ fun LotSectionSetupScreen(
                 body = "Choose one template to pre-generate lots. You can still drag points afterward.",
             )
 
-            Button(
-                onClick = {
-                    val generated = buildVerticalTemplate(boundaryPoints, count = 2)
-                    if (generated.isNotEmpty()) {
-                        lots.clear()
-                        lots.addAll(generated)
-                        selectedLotId = generated.first().id
-                        warning = null
+            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildVerticalTemplate(boundaryPoints, count = 2)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("2 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Split Equally: 2 Zones")
-            }
 
-            Button(
-                onClick = {
-                    val generated = buildGridTemplate(boundaryPoints)
-                    if (generated.isNotEmpty()) {
-                        lots.clear()
-                        lots.addAll(generated)
-                        selectedLotId = generated.first().id
-                        warning = null
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildGridTemplate(boundaryPoints)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("4 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Split Equally: 4 Zones")
-            }
+                }
 
-            Button(
-                onClick = {
-                    val generated = buildHorizontalTemplate(boundaryPoints, count = 3)
-                    if (generated.isNotEmpty()) {
-                        lots.clear()
-                        lots.addAll(generated)
-                        selectedLotId = generated.first().id
-                        warning = null
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildHorizontalTemplate(boundaryPoints, count = 3)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("H. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Template: Horizontal Stripes")
-            }
 
-            Button(
-                onClick = {
-                    val generated = buildVerticalTemplate(boundaryPoints, count = 3)
-                    if (generated.isNotEmpty()) {
-                        lots.clear()
-                        lots.addAll(generated)
-                        selectedLotId = generated.first().id
-                        warning = null
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildVerticalTemplate(boundaryPoints, count = 3)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("V. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Template: Vertical Stripes")
+                }
             }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp)
+                    .height(320.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
                     .onSizeChanged { mapSize = it }
@@ -260,7 +272,7 @@ fun LotSectionSetupScreen(
                 )
             }
 
-            Button(
+            androidx.compose.material3.OutlinedButton(
                 onClick = {
                     val nextIndex = lots.size + 1
                     val newLot = LotSectionDraft(
@@ -289,24 +301,29 @@ fun LotSectionSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
-                OutlinedTextField(
-                    value = selectedLot.cropPlan,
-                    onValueChange = { crop ->
-                        lots[selectedIndex] = selectedLot.copy(cropPlan = crop)
-                    },
-                    label = { Text("Crop plan") },
+                androidx.compose.foundation.layout.Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = selectedLot.soilType,
-                    onValueChange = { soil ->
-                        lots[selectedIndex] = selectedLot.copy(soilType = soil)
-                    },
-                    label = { Text("Soil type") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = selectedLot.cropPlan,
+                        onValueChange = { crop ->
+                            lots[selectedIndex] = selectedLot.copy(cropPlan = crop)
+                        },
+                        label = { Text("Crop") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = selectedLot.soilType,
+                        onValueChange = { soil ->
+                            lots[selectedIndex] = selectedLot.copy(soilType = soil)
+                        },
+                        label = { Text("Soil") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
                 OutlinedTextField(
                     value = selectedLot.waterAvailability,
                     onValueChange = { water ->
@@ -317,7 +334,7 @@ fun LotSectionSetupScreen(
                     singleLine = true,
                 )
 
-                Button(
+                androidx.compose.material3.OutlinedButton(
                     onClick = {
                         val mutable = lots[selectedIndex].points.toMutableList()
                         if (mutable.isNotEmpty()) {
@@ -327,7 +344,7 @@ fun LotSectionSetupScreen(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Remove Last Point (Selected Lot)")
+                    Text("Undo Last Point (Selected Lot)")
                 }
             }
 
@@ -351,8 +368,6 @@ fun LotSectionSetupScreen(
                         onContinue()
                     }
                 },
-                secondaryLabel = "Back",
-                onSecondary = onBack,
             )
         }
     }
