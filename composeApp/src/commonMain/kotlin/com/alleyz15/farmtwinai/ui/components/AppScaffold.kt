@@ -83,15 +83,7 @@ fun AppScaffold(
         },
         bottomBar = {
             if (floatingFooter != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 20.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    floatingFooter()
-                }
+                floatingFooter()
             }
         },
     ) { padding ->
