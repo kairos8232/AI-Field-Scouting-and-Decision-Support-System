@@ -152,7 +152,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\ncd \"$SRCROOT/..\"\n./gradlew :composeApp:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\n\nJAVA_21_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)\nif [ -z \"$JAVA_21_HOME\" ]; then\n  echo \"ERROR: JDK 21 is required for this project but was not found.\"\n  /usr/libexec/java_home -V 2>&1\n  exit 1\nfi\n\nexport JAVA_HOME=\"$JAVA_21_HOME\"\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\n\nif [ -z \"$SDK_NAME\" ] && [ -n \"$PLATFORM_NAME\" ]; then\n  export SDK_NAME=\"$PLATFORM_NAME\"\nfi\n\nif [ -z \"$ARCHS\" ]; then\n  export ARCHS=arm64\nfi\n\nif [ -z \"$KOTLIN_FRAMEWORK_BUILD_TYPE\" ]; then\n  case \"$CONFIGURATION\" in\n    *Release*) export KOTLIN_FRAMEWORK_BUILD_TYPE=release ;;\n    *) export KOTLIN_FRAMEWORK_BUILD_TYPE=debug ;;\n  esac\nfi\n\necho \"Using JAVA_HOME=$JAVA_HOME\"\necho \"Xcode env: SDK_NAME=$SDK_NAME ARCHS=$ARCHS CONFIGURATION=$CONFIGURATION KOTLIN_FRAMEWORK_BUILD_TYPE=$KOTLIN_FRAMEWORK_BUILD_TYPE\"\njava -version\n\ncd \"$SRCROOT/..\"\n./gradlew --no-configuration-cache :composeApp:embedAndSignAppleFrameworkForXcode --stacktrace\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
