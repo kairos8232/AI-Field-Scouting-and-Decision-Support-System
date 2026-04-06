@@ -61,6 +61,7 @@ fun FarmTwinNavHost(
             },
         )
         AppDestination.SetupMethod -> SetupMethodScreen(
+            isDemoFlow = appState.authenticatedUser == null,
             onBack = { navigator.pop() },
             onMethodSelected = { method ->
                 appState.setSetupMethod(method)

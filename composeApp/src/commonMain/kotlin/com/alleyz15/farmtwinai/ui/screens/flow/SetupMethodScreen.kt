@@ -9,6 +9,7 @@ import com.alleyz15.farmtwinai.ui.components.SectionHeader
 
 @Composable
 fun SetupMethodScreen(
+    isDemoFlow: Boolean,
     onBack: () -> Unit,
     onMethodSelected: (SetupMethod) -> Unit,
 ) {
@@ -16,7 +17,11 @@ fun SetupMethodScreen(
         ScreenColumn {
             SectionHeader(
                 title = "How do you want to create the farm twin?",
-                body = "Start by mapping your farm boundary, then split it into lots and fill per-lot details. Documents and quick estimate are still available.",
+                body = if (isDemoFlow) {
+                    "Start by mapping your farm boundary, then split it into lots and fill per-lot details. Documents and quick estimate are still available."
+                } else {
+                    "Start by mapping your farm boundary, then split it into lots and fill per-lot details. Document upload is still available."
+                },
             )
             OptionCard(
                 title = "Upload land / soil documents",
@@ -28,11 +33,13 @@ fun SetupMethodScreen(
                 description = "Enter farm details directly with flexible fields and 'I don't know' style support.",
                 onClick = { onMethodSelected(SetupMethod.MANUAL) },
             )
-            OptionCard(
-                title = "Quick estimate setup",
-                description = "Start with a minimal form and mocked defaults for a fast demo path.",
-                onClick = { onMethodSelected(SetupMethod.QUICK_ESTIMATE) },
-            )
+            if (isDemoFlow) {
+                OptionCard(
+                    title = "Quick estimate setup",
+                    description = "Start with a minimal form and mocked defaults for a fast demo path.",
+                    onClick = { onMethodSelected(SetupMethod.QUICK_ESTIMATE) },
+                )
+            }
         }
     }
 }
