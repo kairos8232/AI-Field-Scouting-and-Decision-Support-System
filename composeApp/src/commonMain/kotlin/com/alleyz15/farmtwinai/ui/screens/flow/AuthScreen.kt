@@ -10,23 +10,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
-import com.alleyz15.farmtwinai.ui.components.DualActionButtons
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
 import com.alleyz15.farmtwinai.ui.components.SectionHeader
 
 @Composable
 fun AuthScreen(
+    isLogin: Boolean,
     onBack: () -> Unit,
+    onSwitchMode: () -> Unit,
     onAuthSuccess: (AuthUser) -> Unit,
-    onUseDemo: () -> Unit,
 ) {
-    val loginMode = "login"
-    val signupMode = "signup"
-
-    var mode by remember { mutableStateOf(loginMode) }
     var authMessage by remember { mutableStateOf<String?>(null) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -35,23 +33,9 @@ fun AuthScreen(
     AppScaffold(title = "Account Access", subtitle = "Email authentication", onBack = onBack) { _ ->
         ScreenColumn {
             SectionHeader(
-                title = "Login or sign up",
-                body = "Use your email and password to login or create a new account for this demo.",
+                title = if (isLogin) "Login" else "Sign up",
+                body = if (isLogin) "Use your email and password to login." else "Create a new account with your email and password.",
             )
-
-            Text(
-                text = if (mode == loginMode) "Mode: Login" else "Mode: Sign up",
-                style = MaterialTheme.typography.labelLarge,
-            )
-
-            OutlinedButton(
-                onClick = {
-                    mode = if (mode == loginMode) signupMode else loginMode
-                    authMessage = null
-                },
-            ) {
-                Text(if (mode == loginMode) "Switch to Sign up" else "Switch to Login")
-            }
 
             OutlinedTextField(
                 value = email,
@@ -59,6 +43,7 @@ fun AuthScreen(
                 label = { Text("Email") },
                 placeholder = { Text("farmer@example.com") },
                 singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
             )
 
             OutlinedTextField(
@@ -68,15 +53,17 @@ fun AuthScreen(
                 placeholder = { Text("Minimum 6 characters") },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
             )
 
-            if (mode == signupMode) {
+            if (!isLogin) {
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
                     label = { Text("Display name") },
                     placeholder = { Text("How should we call you?") },
                     singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -97,7 +84,7 @@ fun AuthScreen(
                             authMessage = "Password must be at least 6 characters."
                         }
 
-                        mode == signupMode && trimmedDisplayName.isBlank() -> {
+                        !isLogin && trimmedDisplayName.isBlank() -> {
                             authMessage = "Display name is required for sign up."
                         }
 
@@ -106,15 +93,16 @@ fun AuthScreen(
                                 AuthUser(
                                     userId = trimmedEmail.lowercase(),
                                     email = trimmedEmail,
-                                    displayName = if (mode == signupMode) trimmedDisplayName else null,
+                                    displayName = if (!isLogin) trimmedDisplayName else null,
                                     idToken = null,
                                 )
                             )
                         }
                     }
                 },
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (mode == loginMode) "Login with Email" else "Sign Up with Email")
+                Text(if (isLogin) "Login" else "Sign Up")
             }
 
             if (authMessage != null) {
@@ -125,12 +113,12 @@ fun AuthScreen(
                 )
             }
 
-            DualActionButtons(
-                primaryLabel = "Use Demo Mode",
-                onPrimary = onUseDemo,
-                secondaryLabel = "Back",
-                onSecondary = onBack,
-            )
+            OutlinedButton(
+                onClick = onSwitchMode,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (isLogin) "Sign up instead" else "Login instead")
+            }
         }
     }
 }

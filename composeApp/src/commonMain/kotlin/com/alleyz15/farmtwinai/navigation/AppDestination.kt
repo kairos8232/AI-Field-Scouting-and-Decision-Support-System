@@ -2,7 +2,7 @@ package com.alleyz15.farmtwinai.navigation
 
 sealed interface AppDestination {
     data object Welcome : AppDestination
-    data object Auth : AppDestination
+    data class Auth(val isLogin: Boolean) : AppDestination
     data object UserSituation : AppDestination
     data object SetupMethod : AppDestination
     data object FarmMapSetup : AppDestination

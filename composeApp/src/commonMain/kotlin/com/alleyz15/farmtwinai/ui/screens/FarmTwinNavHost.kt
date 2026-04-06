@@ -33,22 +33,19 @@ fun FarmTwinNavHost(
 
     when (val current = destination) {
         AppDestination.Welcome -> WelcomeScreen(
-            onLogin = { navigator.navigate(AppDestination.Auth) },
-            onSignUp = { navigator.navigate(AppDestination.Auth) },
+            onLogin = { navigator.navigate(AppDestination.Auth(isLogin = true)) },
+            onSignUp = { navigator.navigate(AppDestination.Auth(isLogin = false)) },
             onTryDemo = {
                 appState.setMode(AppMode.DEMO)
                 navigator.navigate(AppDestination.UserSituation)
             },
         )
-        AppDestination.Auth -> AuthScreen(
+        is AppDestination.Auth -> AuthScreen(
+            isLogin = current.isLogin,
             onBack = { navigator.pop() },
+            onSwitchMode = { navigator.replace(AppDestination.Auth(isLogin = !current.isLogin)) },
             onAuthSuccess = { user ->
                 appState.setAuthenticatedUser(user)
-                navigator.navigate(AppDestination.UserSituation)
-            },
-            onUseDemo = {
-                appState.signOut()
-                appState.setMode(AppMode.DEMO)
                 navigator.navigate(AppDestination.UserSituation)
             },
         )
