@@ -62,7 +62,7 @@ class FarmTwinAppState(
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
-    fun setAuthenticatedUser(user: AuthUser) {
+    fun authenticateUser(user: AuthUser) {
         authenticatedUser = user
     }
 

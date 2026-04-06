@@ -46,7 +46,7 @@ fun FarmTwinNavHost(
             onBack = { navigator.pop() },
             onSwitchMode = { navigator.replace(AppDestination.Auth(isLogin = !current.isLogin)) },
             onAuthSuccess = { user ->
-                appState.setAuthenticatedUser(user)
+                appState.authenticateUser(user)
                 navigator.navigate(AppDestination.UserSituation)
             },
         )
