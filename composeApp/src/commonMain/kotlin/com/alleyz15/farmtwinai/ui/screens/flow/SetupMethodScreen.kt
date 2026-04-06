@@ -16,7 +16,7 @@ fun SetupMethodScreen(
         ScreenColumn {
             SectionHeader(
                 title = "How do you want to create the farm twin?",
-                body = "Users are not forced to have official reports. The setup flow supports documents, manual entry, or a fast estimate.",
+                body = "Start by mapping your farm boundary, then split it into lots and fill per-lot details. Documents and quick estimate are still available.",
             )
             OptionCard(
                 title = "Upload land / soil documents",

@@ -13,7 +13,9 @@ import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DigitalTwinMapScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.ManualSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
@@ -40,7 +42,15 @@ fun FarmTwinNavHost(
         )
         AppDestination.Auth -> AuthScreen(
             onBack = { navigator.pop() },
-            onContinue = { navigator.navigate(AppDestination.UserSituation) },
+            onAuthSuccess = { user ->
+                appState.setAuthenticatedUser(user)
+                navigator.navigate(AppDestination.UserSituation)
+            },
+            onUseDemo = {
+                appState.signOut()
+                appState.setMode(AppMode.DEMO)
+                navigator.navigate(AppDestination.UserSituation)
+            },
         )
         AppDestination.UserSituation -> UserSituationScreen(
             onBack = { navigator.pop() },
@@ -64,7 +74,22 @@ fun FarmTwinNavHost(
                 }
             },
         )
-        AppDestination.ManualSetup -> ManualSetupScreen(
+        AppDestination.ManualSetup -> FarmMapSetupScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            onBoundaryChanged = appState::updateFarmBoundary,
+            onBack = { navigator.pop() },
+            onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
+        )
+        AppDestination.FarmMapSetup -> FarmMapSetupScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            onBoundaryChanged = appState::updateFarmBoundary,
+            onBack = { navigator.pop() },
+            onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
+        )
+        AppDestination.LotSectionSetup -> LotSectionSetupScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            initialSections = appState.lotSections,
+            onSaveSections = appState::updateLotSections,
             onBack = { navigator.pop() },
             onContinue = { navigator.resetTo(AppDestination.Dashboard) },
         )
@@ -110,6 +135,7 @@ fun FarmTwinNavHost(
             messages = appState.snapshot.chatMessages,
             onBack = { navigator.pop() },
             onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
+            authenticatedUser = appState.authenticatedUser,
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             latestAction = appState.snapshot.cropSummary.latestRecommendation,
