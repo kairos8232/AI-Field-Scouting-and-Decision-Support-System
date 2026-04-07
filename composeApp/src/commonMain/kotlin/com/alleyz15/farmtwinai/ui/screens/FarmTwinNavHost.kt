@@ -15,7 +15,6 @@ import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.ManualSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
@@ -37,7 +36,7 @@ fun FarmTwinNavHost(
             onSignUp = { navigator.navigate(AppDestination.Auth(isLogin = false)) },
             onTryDemo = {
                 appState.setMode(AppMode.DEMO)
-                navigator.navigate(AppDestination.UserSituation)
+                navigator.resetTo(AppDestination.SetupMethod)
             },
         )
         is AppDestination.Auth -> AuthScreen(
@@ -61,7 +60,7 @@ fun FarmTwinNavHost(
             },
         )
         AppDestination.SetupMethod -> SetupMethodScreen(
-            isDemoFlow = appState.authenticatedUser == null,
+            isDemoFlow = appState.selectedMode == AppMode.DEMO,
             onBack = { navigator.pop() },
             onMethodSelected = { method ->
                 appState.setSetupMethod(method)

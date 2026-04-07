@@ -101,6 +101,13 @@ class FarmTwinAppState(
                     waterAvailability = "Medium",
                 )
             )
+        } else {
+            lotSections = lotSections.map { lot ->
+                val adjustedPoints = lot.points.map { point ->
+                    keepPointInsideBoundary(point, points)
+                }
+                lot.copy(points = if (adjustedPoints.size >= 3) adjustedPoints else points)
+            }
         }
     }
 
@@ -155,5 +162,45 @@ class FarmTwinAppState(
             FarmPoint(0.88f, 0.70f),
             FarmPoint(0.26f, 0.78f),
         )
+    }
+
+    private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
+        if (boundaryPoints.size < 3 || isPointInsidePolygon(candidate, boundaryPoints)) return candidate
+
+        val center = polygonCentroid(boundaryPoints)
+        var t = 1.0f
+        while (t > 0.0f) {
+            val trial = FarmPoint(
+                x = center.x + (candidate.x - center.x) * t,
+                y = center.y + (candidate.y - center.y) * t,
+            )
+            if (isPointInsidePolygon(trial, boundaryPoints)) return trial
+            t -= 0.05f
+        }
+
+        return center
+    }
+
+    private fun isPointInsidePolygon(point: FarmPoint, polygon: List<FarmPoint>): Boolean {
+        if (polygon.size < 3) return true
+
+        var inside = false
+        var j = polygon.lastIndex
+        for (i in polygon.indices) {
+            val pi = polygon[i]
+            val pj = polygon[j]
+            val intersects = ((pi.y > point.y) != (pj.y > point.y)) &&
+                (point.x < (pj.x - pi.x) * (point.y - pi.y) / ((pj.y - pi.y).takeIf { it != 0f } ?: 0.000001f) + pi.x)
+            if (intersects) inside = !inside
+            j = i
+        }
+        return inside
+    }
+
+    private fun polygonCentroid(points: List<FarmPoint>): FarmPoint {
+        if (points.isEmpty()) return FarmPoint(0.5f, 0.5f)
+        val x = points.sumOf { it.x.toDouble() } / points.size
+        val y = points.sumOf { it.y.toDouble() } / points.size
+        return FarmPoint(x.toFloat(), y.toFloat())
     }
 }

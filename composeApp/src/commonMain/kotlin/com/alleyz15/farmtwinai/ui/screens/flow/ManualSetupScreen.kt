@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
 import com.alleyz15.farmtwinai.ui.components.DualActionButtons
@@ -51,6 +53,7 @@ fun ManualSetupScreen(
     var latitude by remember { mutableStateOf(6.0607) }
     var longitude by remember { mutableStateOf(100.5071) }
     var mapPin by remember { mutableStateOf(Offset(160f, 90f)) }
+    var mapSize by remember { mutableStateOf(IntSize.Zero) }
 
     val cropHint = remember(soilType, waterAvailability, preferredCrop) {
         buildCropHint(soilType, waterAvailability, preferredCrop)
@@ -77,7 +80,7 @@ fun ManualSetupScreen(
                     val (lat, lng) = geocodeAddressDemo(address)
                     latitude = lat
                     longitude = lng
-                    mapPin = latLngToPin(lat, lng)
+                    mapPin = latLngToPin(lat, lng, mapSize)
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -88,7 +91,7 @@ fun ManualSetupScreen(
                 onClick = {
                     latitude = 3.1390
                     longitude = 101.6869
-                    mapPin = latLngToPin(latitude, longitude)
+                    mapPin = latLngToPin(latitude, longitude, mapSize)
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -106,10 +109,11 @@ fun ManualSetupScreen(
                     .height(190.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+                    .onSizeChanged { mapSize = it }
                     .pointerInput(Unit) {
                         detectTapGestures { tapOffset ->
                             mapPin = tapOffset
-                            val (lat, lng) = pinToLatLng(tapOffset)
+                            val (lat, lng) = pinToLatLng(tapOffset, mapSize)
                             latitude = lat
                             longitude = lng
                         }
@@ -246,7 +250,7 @@ fun ManualSetupScreen(
                     address = "Alor Setar, Kedah"
                     latitude = 6.1248
                     longitude = 100.3678
-                    mapPin = latLngToPin(latitude, longitude)
+                    mapPin = latLngToPin(latitude, longitude, mapSize)
                     soilType = "Loamy"
                     waterAvailability = "Medium"
                     preferredCrop = "Okra"
@@ -265,9 +269,9 @@ private fun geocodeAddressDemo(address: String): Pair<Double, Double> {
     return lat to lng
 }
 
-private fun pinToLatLng(pin: Offset): Pair<Double, Double> {
-    val width = 320f
-    val height = 190f
+private fun pinToLatLng(pin: Offset, mapSize: IntSize): Pair<Double, Double> {
+    val width = if (mapSize.width > 0) mapSize.width.toFloat() else 320f
+    val height = if (mapSize.height > 0) mapSize.height.toFloat() else 190f
     val x = pin.x.coerceIn(0f, width)
     val y = pin.y.coerceIn(0f, height)
     val lat = 7.5 - (y / height) * 6.5
@@ -275,9 +279,9 @@ private fun pinToLatLng(pin: Offset): Pair<Double, Double> {
     return lat to lng
 }
 
-private fun latLngToPin(lat: Double, lng: Double): Offset {
-    val width = 320f
-    val height = 190f
+private fun latLngToPin(lat: Double, lng: Double, mapSize: IntSize): Offset {
+    val width = if (mapSize.width > 0) mapSize.width.toFloat() else 320f
+    val height = if (mapSize.height > 0) mapSize.height.toFloat() else 190f
     val x = (((lng - 99.5) / 6.5) * width).toFloat().coerceIn(0f, width)
     val y = (((7.5 - lat) / 6.5) * height).toFloat().coerceIn(0f, height)
     return Offset(x, y)

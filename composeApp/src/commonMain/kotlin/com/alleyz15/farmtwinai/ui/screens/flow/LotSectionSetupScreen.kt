@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -76,8 +75,8 @@ fun LotSectionSetupScreen(
     var draggingPointIndex by remember { mutableIntStateOf(-1) }
     var warning by remember { mutableStateOf<String?>(null) }
 
-    val selectedIndex = lots.indexOfFirst { it.id == selectedLotId }.coerceAtLeast(0)
-    val selectedLot = lots.getOrNull(selectedIndex)
+    val selectedIndex = lots.indexOfFirst { it.id == selectedLotId }
+    val selectedLot = if (selectedIndex >= 0) lots[selectedIndex] else null
 
     AppScaffold(title = "Farm Setup", subtitle = "Divide farm into lot sections", onBack = onBack) { _ ->
         ScreenColumn {
