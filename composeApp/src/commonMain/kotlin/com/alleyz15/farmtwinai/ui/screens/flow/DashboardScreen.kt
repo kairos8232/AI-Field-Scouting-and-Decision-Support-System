@@ -115,30 +115,12 @@ fun DashboardScreen(
                 }
 
                 selectedLot?.let { lot ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp))
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
-                            .clickable(onClick = onOpenTimeline)
-                            .padding(16.dp),
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = if (hasMultipleLots) "${lot.name} details" else "Whole lot details",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                            Text(
-                                text = "Crop: ${lot.cropPlan}",
-                                style = MaterialTheme.typography.headlineSmall,
-                            )
-                            Text(
-                                text = "Soil: ${lot.soilType} • Water: ${lot.waterAvailability} • Points: ${lot.points.size}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    InfoCard(
+                        title = if (hasMultipleLots) "${lot.name} details" else "Whole lot details",
+                        value = "Crop: ${lot.cropPlan}",
+                        supporting = "Soil: ${lot.soilType} • Water: ${lot.waterAvailability} • Points: ${lot.points.size}\nTap to view digital twin timeline.",
+                        modifier = Modifier.clickable(onClick = onOpenTimeline)
+                    )
 
                     MetricRow(
                         leftTitle = "Current day",
@@ -163,14 +145,21 @@ fun DashboardScreen(
                     )
                 }
             }
-            DualActionButtons(
-                primaryLabel = "Open AI Chat",
-                onPrimary = onOpenChat,
-            )
-            DualActionButtons(
-                primaryLabel = "View History",
-                onPrimary = onOpenHistory,
-            )
+            
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onOpenHistory,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("View History", maxLines = 1)
+                }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = onOpenChat,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Open AI Chat", maxLines = 1)
+                }
+            }
         }
     }
 }

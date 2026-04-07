@@ -86,83 +86,6 @@ fun LotSectionSetupScreen(
                 body = "Use templates for quick equal splits, or draw manually. Lot vertices are constrained to remain inside farm boundary.",
             )
 
-            SectionHeader(
-                title = "Quick templates",
-                body = "Choose one template to pre-generate lots. You can still drag points afterward.",
-            )
-
-            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = {
-                            val generated = buildVerticalTemplate(boundaryPoints, count = 2)
-                            if (generated.isNotEmpty()) {
-                                lots.clear()
-                                lots.addAll(generated)
-                                selectedLotId = generated.first().id
-                                warning = null
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("2 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = {
-                            val generated = buildGridTemplate(boundaryPoints)
-                            if (generated.isNotEmpty()) {
-                                lots.clear()
-                                lots.addAll(generated)
-                                selectedLotId = generated.first().id
-                                warning = null
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("4 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-                }
-
-                androidx.compose.foundation.layout.Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = {
-                            val generated = buildHorizontalTemplate(boundaryPoints, count = 3)
-                            if (generated.isNotEmpty()) {
-                                lots.clear()
-                                lots.addAll(generated)
-                                selectedLotId = generated.first().id
-                                warning = null
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("H. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-
-                    androidx.compose.material3.OutlinedButton(
-                        onClick = {
-                            val generated = buildVerticalTemplate(boundaryPoints, count = 3)
-                            if (generated.isNotEmpty()) {
-                                lots.clear()
-                                lots.addAll(generated)
-                                selectedLotId = generated.first().id
-                                warning = null
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("V. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-                }
-            }
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -254,6 +177,124 @@ fun LotSectionSetupScreen(
                 }
             }
 
+            if (selectedLot != null) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Edges: ${selectedLot.points.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                val mutable = lots[selectedIndex].points.toMutableList()
+                                if (mutable.isNotEmpty()) {
+                                    mutable.removeLast()
+                                    lots[selectedIndex] = lots[selectedIndex].copy(points = mutable)
+                                }
+                            }
+                        ) {
+                            Text("Undo")
+                        }
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                if (lots.size > 1) {
+                                    lots.removeAt(selectedIndex)
+                                    selectedLotId = lots.lastOrNull()?.id ?: ""
+                                }
+                            },
+                            enabled = lots.size > 1,
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Delete Lot")
+                        }
+                    }
+                }
+            }
+
+            SectionHeader(
+                title = "Quick templates",
+                body = "Choose one template to pre-generate lots. You can still drag points afterward.",
+            )
+
+            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildVerticalTemplate(boundaryPoints, count = 2)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("2 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildGridTemplate(boundaryPoints)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("4 Zones", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                }
+
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildHorizontalTemplate(boundaryPoints, count = 3)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("H. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val generated = buildVerticalTemplate(boundaryPoints, count = 3)
+                            if (generated.isNotEmpty()) {
+                                lots.clear()
+                                lots.addAll(generated)
+                                selectedLotId = generated.first().id
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("V. Stripes", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = totalFarmAreaHectare,
                 onValueChange = { totalFarmAreaHectare = it },
@@ -333,19 +374,6 @@ fun LotSectionSetupScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
-
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        val mutable = lots[selectedIndex].points.toMutableList()
-                        if (mutable.isNotEmpty()) {
-                            mutable.removeLast()
-                            lots[selectedIndex] = lots[selectedIndex].copy(points = mutable)
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Undo Last Point (Selected Lot)")
-                }
             }
 
             if (warning != null) {
