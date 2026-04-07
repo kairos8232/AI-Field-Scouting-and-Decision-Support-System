@@ -24,12 +24,13 @@ fun WelcomeScreen(
     onSignUp: () -> Unit,
     onTryDemo: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(20.dp),
-    ) {
+    androidx.compose.material3.Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(20.dp),
+        ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -61,5 +62,6 @@ fun WelcomeScreen(
                 OutlinedButton(onClick = onTryDemo, modifier = Modifier.fillMaxWidth()) { Text("Try Demo") }
             }
         }
+    }
     }
 }

@@ -16,7 +16,7 @@ fun UserSituationScreen(
         ScreenColumn {
             SectionHeader(
                 title = "How are you starting?",
-                body = "Phase 1 supports planning mode, live monitoring mode, and a direct demo shortcut.",
+                body = "Phase 1 supports planning mode and live monitoring mode.",
             )
             OptionCard(
                 title = "I have not planted yet",
@@ -27,11 +27,6 @@ fun UserSituationScreen(
                 title = "I already planted",
                 description = "Start in live monitoring mode and compare actual progress against the expected simulation.",
                 onClick = { onSituationSelected(AppMode.LIVE_MONITORING) },
-            )
-            OptionCard(
-                title = "Try demo flow",
-                description = "Skip setup and load the mocked dashboard immediately.",
-                onClick = { onSituationSelected(AppMode.DEMO) },
             )
         }
     }

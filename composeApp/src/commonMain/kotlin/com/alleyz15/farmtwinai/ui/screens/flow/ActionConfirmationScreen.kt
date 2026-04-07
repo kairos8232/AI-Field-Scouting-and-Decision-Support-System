@@ -49,8 +49,6 @@ fun ActionConfirmationScreen(
             DualActionButtons(
                 primaryLabel = "Save Mock Result",
                 onPrimary = { onSubmit(selectedAction, selectedState) },
-                secondaryLabel = "Back to Chat",
-                onSecondary = onBack,
             )
         }
     }
