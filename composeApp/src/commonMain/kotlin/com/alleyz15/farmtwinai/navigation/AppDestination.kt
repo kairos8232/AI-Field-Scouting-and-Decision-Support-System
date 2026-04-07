@@ -11,7 +11,6 @@ sealed interface AppDestination {
     data object DocumentSetup : AppDestination
     data object QuickSetup : AppDestination
     data object Dashboard : AppDestination
-    data object DigitalTwinMap : AppDestination
     data class ZoneDetail(val zoneId: String) : AppDestination
     data object Timeline : AppDestination
     data object AiChat : AppDestination

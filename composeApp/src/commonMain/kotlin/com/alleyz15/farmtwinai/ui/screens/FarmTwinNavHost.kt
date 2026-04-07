@@ -11,7 +11,6 @@ import com.alleyz15.farmtwinai.ui.screens.flow.ActionConfirmationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.DigitalTwinMapScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
@@ -104,23 +103,13 @@ fun FarmTwinNavHost(
         AppDestination.Dashboard -> DashboardScreen(
             snapshot = appState.snapshot,
             selectedMode = appState.selectedMode,
-            onOpenMap = { navigator.navigate(AppDestination.DigitalTwinMap) },
+            lotSections = appState.lotSections,
             onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onOpenHistory = { navigator.navigate(AppDestination.History) },
             isTabBarVisible = appState.isAuthenticated,
             onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
             onSelectMeTab = { navigator.replace(AppDestination.Me) },
-        )
-        AppDestination.DigitalTwinMap -> DigitalTwinMapScreen(
-            zones = appState.snapshot.zones,
-            onBack = { navigator.pop() },
-            onZoneSelected = { zoneId ->
-                appState.selectZone(zoneId)
-                navigator.navigate(AppDestination.ZoneDetail(zoneId))
-            },
-            onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
-            onOpenHistory = { navigator.navigate(AppDestination.History) },
         )
         is AppDestination.ZoneDetail -> ZoneDetailScreen(
             zone = appState.snapshot.zones.first { it.id == current.zoneId },
