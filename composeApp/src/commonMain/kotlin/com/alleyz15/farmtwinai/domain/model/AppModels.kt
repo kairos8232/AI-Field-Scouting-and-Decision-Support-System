@@ -139,3 +139,17 @@ data class FarmTwinSnapshot(
     val actionRecords: List<ActionRecord>,
     val documentSummary: DocumentExtractionSummary,
 )
+
+data class FarmPoint(
+    val x: Float,
+    val y: Float,
+)
+
+data class LotSectionDraft(
+    val id: String,
+    val name: String,
+    val points: List<FarmPoint>,
+    val cropPlan: String,
+    val soilType: String,
+    val waterAvailability: String,
+)

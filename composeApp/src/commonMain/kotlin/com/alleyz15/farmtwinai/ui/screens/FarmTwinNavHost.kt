@@ -2,8 +2,6 @@ package com.alleyz15.farmtwinai.ui.screens
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import com.alleyz15.farmtwinai.domain.model.AppMode
-import com.alleyz15.farmtwinai.domain.model.SetupMethod
 import com.alleyz15.farmtwinai.navigation.AppDestination
 import com.alleyz15.farmtwinai.navigation.AppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
@@ -11,10 +9,11 @@ import com.alleyz15.farmtwinai.ui.screens.flow.ActionConfirmationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.DigitalTwinMapScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.ManualSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.TimelineScreen
@@ -31,26 +30,20 @@ fun FarmTwinNavHost(
 
     when (val current = destination) {
         AppDestination.Welcome -> WelcomeScreen(
-            onLogin = { navigator.navigate(AppDestination.Auth) },
-            onSignUp = { navigator.navigate(AppDestination.Auth) },
-            onTryDemo = {
-                appState.setMode(AppMode.DEMO)
-                navigator.navigate(AppDestination.UserSituation)
-            },
+            onLogin = { navigator.navigate(AppDestination.Auth(isLogin = true)) },
+            onSignUp = { navigator.navigate(AppDestination.Auth(isLogin = false)) },
         )
-        AppDestination.Auth -> AuthScreen(
+        is AppDestination.Auth -> AuthScreen(
+            isLogin = current.isLogin,
             onBack = { navigator.pop() },
+            onSwitchMode = { navigator.replace(AppDestination.Auth(isLogin = !current.isLogin)) },
             onContinue = { navigator.navigate(AppDestination.UserSituation) },
         )
         AppDestination.UserSituation -> UserSituationScreen(
             onBack = { navigator.pop() },
             onSituationSelected = { mode ->
                 appState.setMode(mode)
-                if (mode == AppMode.DEMO) {
-                    navigator.resetTo(AppDestination.Dashboard)
-                } else {
-                    navigator.navigate(AppDestination.SetupMethod)
-                }
+                navigator.navigate(AppDestination.FarmMapSetup)
             },
         )
         AppDestination.SetupMethod -> SetupMethodScreen(
@@ -58,13 +51,23 @@ fun FarmTwinNavHost(
             onMethodSelected = { method ->
                 appState.setSetupMethod(method)
                 when (method) {
-                    SetupMethod.MANUAL -> navigator.navigate(AppDestination.ManualSetup)
-                    SetupMethod.DOCUMENT -> navigator.navigate(AppDestination.DocumentSetup)
-                    SetupMethod.QUICK_ESTIMATE -> navigator.navigate(AppDestination.QuickSetup)
+                    com.alleyz15.farmtwinai.domain.model.SetupMethod.MANUAL -> navigator.navigate(AppDestination.ManualSetup)
+                    com.alleyz15.farmtwinai.domain.model.SetupMethod.DOCUMENT -> navigator.navigate(AppDestination.DocumentSetup)
+                    com.alleyz15.farmtwinai.domain.model.SetupMethod.QUICK_ESTIMATE -> navigator.navigate(AppDestination.QuickSetup)
                 }
             },
         )
-        AppDestination.ManualSetup -> ManualSetupScreen(
+        AppDestination.ManualSetup,
+        AppDestination.FarmMapSetup -> FarmMapSetupScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            onBoundaryChanged = appState::updateFarmBoundary,
+            onBack = { navigator.pop() },
+            onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
+        )
+        AppDestination.LotSectionSetup -> LotSectionSetupScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            initialSections = appState.lotSections,
+            onSaveSections = appState::updateLotSections,
             onBack = { navigator.pop() },
             onContinue = { navigator.resetTo(AppDestination.Dashboard) },
         )
@@ -80,20 +83,13 @@ fun FarmTwinNavHost(
         AppDestination.Dashboard -> DashboardScreen(
             snapshot = appState.snapshot,
             selectedMode = appState.selectedMode,
-            onOpenMap = { navigator.navigate(AppDestination.DigitalTwinMap) },
+            lotSections = appState.lotSections,
             onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onOpenHistory = { navigator.navigate(AppDestination.History) },
-        )
-        AppDestination.DigitalTwinMap -> DigitalTwinMapScreen(
-            zones = appState.snapshot.zones,
-            onBack = { navigator.pop() },
-            onZoneSelected = { zoneId ->
-                appState.selectZone(zoneId)
-                navigator.navigate(AppDestination.ZoneDetail(zoneId))
-            },
-            onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
-            onOpenHistory = { navigator.navigate(AppDestination.History) },
+            isTabBarVisible = appState.isAuthenticated,
+            onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
+            onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )
         is AppDestination.ZoneDetail -> ZoneDetailScreen(
             zone = appState.snapshot.zones.first { it.id == current.zoneId },
@@ -110,6 +106,7 @@ fun FarmTwinNavHost(
             messages = appState.snapshot.chatMessages,
             onBack = { navigator.pop() },
             onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
+            authenticatedUser = appState.authenticatedUser,
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             latestAction = appState.snapshot.cropSummary.latestRecommendation,
@@ -122,6 +119,23 @@ fun FarmTwinNavHost(
         AppDestination.History -> HistoryScreen(
             snapshot = appState.snapshot,
             onBack = { navigator.pop() },
+        )
+        AppDestination.Me -> MePanelScreen(
+            snapshot = appState.snapshot,
+            authenticatedUser = appState.authenticatedUser,
+            onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
+            onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
+            onAddFarm = {
+                appState.prepareNewFarmDraft()
+                navigator.navigate(AppDestination.FarmMapSetup)
+            },
+            onSignOut = {
+                appState.signOut()
+                navigator.resetTo(AppDestination.Welcome)
+            },
+            isTabBarVisible = appState.isAuthenticated,
+            onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
+            onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )
     }
 }

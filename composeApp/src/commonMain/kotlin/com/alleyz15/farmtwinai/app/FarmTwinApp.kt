@@ -1,8 +1,10 @@
 package com.alleyz15.farmtwinai.app
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.navigation.rememberAppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
@@ -16,7 +18,7 @@ fun FarmTwinApp() {
     val navigator = rememberAppNavigator()
 
     FarmTwinTheme {
-        Surface {
+        Surface(modifier = Modifier.fillMaxSize()) {
             FarmTwinNavHost(
                 navigator = navigator,
                 appState = appState,

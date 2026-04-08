@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
@@ -27,6 +28,7 @@ fun AiChatScreen(
     messages: List<ChatMessage>,
     onBack: () -> Unit,
     onConfirmAction: () -> Unit,
+    authenticatedUser: AuthUser?,
 ) {
     val draft = remember { mutableStateOf("") }
 
@@ -35,6 +37,15 @@ fun AiChatScreen(
             SectionHeader(
                 title = "Ask why actual conditions differ",
                 body = "This Phase 1 screen demonstrates the consultation pattern. The chat is static for now, but the layout is ready for real model integration later.",
+            )
+            Text(
+                text = if (authenticatedUser != null) {
+                    "Signed in as ${authenticatedUser.email}. Ready to send authenticated requests to Gemini backend."
+                } else {
+                    "Not signed in. Use Account Access screen to enable authenticated Gemini requests."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             messages.forEach { message ->
                 Card(
@@ -47,14 +58,8 @@ fun AiChatScreen(
                         }
                     ),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            if (message.sender == MessageSender.USER) "Farmer" else "FarmTwin AI",
-                            style = MaterialTheme.typography.labelLarge,
-                        )
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(if (message.sender == MessageSender.USER) "Farmer" else "FarmTwin AI", style = MaterialTheme.typography.labelLarge)
                         Text(message.content, style = MaterialTheme.typography.bodyLarge)
                         Text(message.timestamp, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -66,12 +71,8 @@ fun AiChatScreen(
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Type your question or follow-up action...") },
             )
-            Button(onClick = {}, modifier = Modifier.fillMaxWidth()) {
-                Text("Send")
-            }
-            Button(onClick = onConfirmAction, modifier = Modifier.fillMaxWidth()) {
-                Text("Confirm Recommended Action")
-            }
+            Button(onClick = {}, modifier = Modifier.fillMaxWidth()) { Text("Send") }
+            Button(onClick = onConfirmAction, modifier = Modifier.fillMaxWidth()) { Text("Confirm Recommended Action") }
         }
     }
 }
