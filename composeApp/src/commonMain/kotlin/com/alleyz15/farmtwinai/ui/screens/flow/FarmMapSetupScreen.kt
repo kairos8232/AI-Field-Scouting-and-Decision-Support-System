@@ -31,9 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
 import com.alleyz15.farmtwinai.ui.components.DualActionButtons
+import com.alleyz15.farmtwinai.ui.components.PlatformGoogleMap
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
 import com.alleyz15.farmtwinai.ui.components.SectionHeader
-import kotlin.math.abs
 
 @Composable
 fun FarmMapSetupScreen(
@@ -46,13 +46,16 @@ fun FarmMapSetupScreen(
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedVertex by remember { mutableIntStateOf(-1) }
     var address by remember { mutableStateOf("Pendang, Kedah") }
+    var mapQuery by remember { mutableStateOf(address) }
+    var mapFrozenForSelection by remember { mutableStateOf(false) }
+    var useCurrentLocationTrigger by remember { mutableIntStateOf(0) }
     var warningMessage by remember { mutableStateOf<String?>(null) }
 
     AppScaffold(title = "Farm Setup", subtitle = "Draw farm boundary on map", onBack = onBack) { _ ->
         ScreenColumn {
             SectionHeader(
-                title = "Farm map (2D boundary editor)",
-                body = "Google Maps SDK layer can be attached next. For now, define your exact farm shape by adding and dragging boundary vertices.",
+                title = "Farm map (Google Maps)",
+                body = "Search a location, then draw and drag boundary vertices on top of the map.",
             )
 
             OutlinedTextField(
@@ -69,17 +72,8 @@ fun FarmMapSetupScreen(
             ) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
-                        val seed = abs(address.lowercase().hashCode())
-                        val shiftX = ((seed % 100) - 50) / 1000f
-                        val shiftY = (((seed / 3) % 100) - 50) / 1000f
-                        for (index in points.indices) {
-                            val p = points[index]
-                            points[index] = p.copy(
-                                x = (p.x + shiftX).coerceIn(0.05f, 0.95f),
-                                y = (p.y + shiftY).coerceIn(0.05f, 0.95f),
-                            )
-                        }
-                        onBoundaryChanged(points.toList())
+                        mapQuery = address.trim()
+                        mapFrozenForSelection = true
                     },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -88,16 +82,10 @@ fun FarmMapSetupScreen(
 
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
+                        useCurrentLocationTrigger += 1
+                        mapFrozenForSelection = false
                         points.clear()
-                        points.addAll(
-                            listOf(
-                                FarmPoint(0.20f, 0.25f),
-                                FarmPoint(0.82f, 0.22f),
-                                FarmPoint(0.88f, 0.70f),
-                                FarmPoint(0.26f, 0.78f),
-                            )
-                        )
-                        onBoundaryChanged(points.toList())
+                        onBoundaryChanged(emptyList())
                     },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -105,76 +93,102 @@ fun FarmMapSetupScreen(
                 }
             }
 
+            androidx.compose.material3.TextButton(
+                onClick = { mapFrozenForSelection = !mapFrozenForSelection },
+            ) {
+                Text(if (mapFrozenForSelection) "Adjust Map Again" else "Freeze Map For Boundary")
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(320.dp)
                     .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
-                    .onSizeChanged { mapSize = it }
-                    .pointerInput(points.size, mapSize) {
-                        detectTapGestures { tap ->
-                            val normalized = toFarmPoint(tap, mapSize)
-                            points.add(normalized)
-                            onBoundaryChanged(points.toList())
-                            warningMessage = null
-                        }
-                    }
-                    .pointerInput(points.size, mapSize) {
-                        detectDragGestures(
-                            onDragStart = { start ->
-                                selectedVertex = nearestVertexIndex(points, start, mapSize)
-                            },
-                            onDragEnd = {
-                                selectedVertex = -1
-                                onBoundaryChanged(points.toList())
-                            },
-                            onDragCancel = { selectedVertex = -1 },
-                            onDrag = { change, _ ->
-                                val index = selectedVertex
-                                if (index in points.indices) {
-                                    points[index] = toFarmPoint(change.position, mapSize)
-                                }
-                            },
-                        )
-                    },
+                    .onSizeChanged { mapSize = it },
             ) {
-                Canvas(modifier = Modifier.matchParentSize()) {
-                    val gridStepX = size.width / 8f
-                    val gridStepY = size.height / 8f
+                PlatformGoogleMap(
+                    modifier = Modifier.matchParentSize(),
+                    locationQuery = mapQuery,
+                    allowMapInteraction = !mapFrozenForSelection,
+                    useCurrentLocationTrigger = useCurrentLocationTrigger,
+                )
 
-                    for (i in 1..7) {
-                        drawLine(Color(0xFFBAC8C2), Offset(gridStepX * i, 0f), Offset(gridStepX * i, size.height), 1f)
-                        drawLine(Color(0xFFBAC8C2), Offset(0f, gridStepY * i), Offset(size.width, gridStepY * i), 1f)
-                    }
-
-                    if (points.isNotEmpty()) {
-                        val path = Path().apply {
-                            val first = toOffset(points.first(), size)
-                            moveTo(first.x, first.y)
-                            for (i in 1 until points.size) {
-                                val p = toOffset(points[i], size)
-                                lineTo(p.x, p.y)
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .pointerInput(points.size, mapSize, mapFrozenForSelection) {
+                            if (mapFrozenForSelection) {
+                                detectTapGestures { tap ->
+                                    val normalized = toFarmPoint(tap, mapSize)
+                                    points.add(normalized)
+                                    onBoundaryChanged(points.toList())
+                                    warningMessage = null
+                                }
                             }
-                            if (points.size > 2) close()
+                        }
+                        .pointerInput(points.size, mapSize, mapFrozenForSelection) {
+                            if (mapFrozenForSelection) {
+                                detectDragGestures(
+                                    onDragStart = { start ->
+                                        selectedVertex = nearestVertexIndex(points, start, mapSize)
+                                    },
+                                    onDragEnd = {
+                                        selectedVertex = -1
+                                        onBoundaryChanged(points.toList())
+                                    },
+                                    onDragCancel = { selectedVertex = -1 },
+                                    onDrag = { change, _ ->
+                                        val index = selectedVertex
+                                        if (index in points.indices) {
+                                            points[index] = toFarmPoint(change.position, mapSize)
+                                        }
+                                    },
+                                )
+                            }
+                        },
+                ) {
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        val gridStepX = size.width / 8f
+                        val gridStepY = size.height / 8f
+
+                        for (i in 1..7) {
+                            drawLine(Color(0x66BAC8C2), Offset(gridStepX * i, 0f), Offset(gridStepX * i, size.height), 1f)
+                            drawLine(Color(0x66BAC8C2), Offset(0f, gridStepY * i), Offset(size.width, gridStepY * i), 1f)
                         }
 
-                        drawPath(path = path, color = Color(0x33558B2F))
-                        drawPath(path = path, color = Color(0xFF2E7D32))
-                    }
+                        if (points.isNotEmpty()) {
+                            val path = Path().apply {
+                                val first = toOffset(points.first(), size)
+                                moveTo(first.x, first.y)
+                                for (i in 1 until points.size) {
+                                    val p = toOffset(points[i], size)
+                                    lineTo(p.x, p.y)
+                                }
+                                if (points.size > 2) close()
+                            }
 
-                    points.forEachIndexed { index, point ->
-                        val marker = toOffset(point, size)
-                        drawCircle(
-                            color = if (index == selectedVertex) Color(0xFFD32F2F) else Color(0xFF1B5E20),
-                            radius = 7f,
-                            center = marker,
-                        )
+                            drawPath(path = path, color = Color(0x33558B2F))
+                            drawPath(path = path, color = Color(0xFF2E7D32))
+                        }
+
+                        points.forEachIndexed { index, point ->
+                            val marker = toOffset(point, size)
+                            drawCircle(
+                                color = if (index == selectedVertex) Color(0xFFD32F2F) else Color(0xFF1B5E20),
+                                radius = 7f,
+                                center = marker,
+                            )
+                        }
                     }
                 }
             }
 
             Text(
-                text = "Tap map to add edge points. Drag any point to reshape.",
+                text = if (mapFrozenForSelection) {
+                    "Map frozen. Tap to add edge points and drag any point to reshape."
+                } else {
+                    "Search and adjust map first, then freeze map to start selecting boundary edges."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

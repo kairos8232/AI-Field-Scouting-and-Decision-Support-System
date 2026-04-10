@@ -4,5 +4,9 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>GMSApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY_IOS)</string>
+	<key>GOOGLE_MAPS_API_KEY_IOS</key>
+	<string>$(GOOGLE_MAPS_API_KEY_IOS)</string>
 </dict>
 </plist>

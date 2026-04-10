@@ -1,5 +1,15 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
+val envProperties = Properties().apply {
+    val envFile = rootProject.file(".env")
+    if (envFile.exists()) {
+        envFile.inputStream().use { load(it) }
+    }
+}
+
+fun env(name: String): String = (envProperties.getProperty(name) ?: "").trim()
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -63,6 +73,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = env("GOOGLE_MAPS_API_KEY_ANDROID")
     }
     packaging {
         resources {

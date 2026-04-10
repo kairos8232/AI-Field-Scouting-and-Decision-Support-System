@@ -47,6 +47,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6D4427F5B9E34E7CDAA35916 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5089FE8B22B2E0C0A5F89E32 /* FarmTwinAI.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		9CE5D43F97E0EC6CB871E1E1 = {
 			isa = PBXGroup;
 			children = (
@@ -54,14 +62,6 @@
 				0318C211511391E8BFE8FAF9 /* iosApp */,
 				6D4427F5B9E34E7CDAA35916 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		6D4427F5B9E34E7CDAA35916 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				5089FE8B22B2E0C0A5F89E32 /* FarmTwinAI.app */,
-			);
-			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -152,7 +152,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\n\nJAVA_21_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)\nif [ -z \"$JAVA_21_HOME\" ]; then\n  echo \"ERROR: JDK 21 is required for this project but was not found.\"\n  /usr/libexec/java_home -V 2>&1\n  exit 1\nfi\n\nexport JAVA_HOME=\"$JAVA_21_HOME\"\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\n\nif [ -z \"$SDK_NAME\" ] && [ -n \"$PLATFORM_NAME\" ]; then\n  export SDK_NAME=\"$PLATFORM_NAME\"\nfi\n\nif [ -z \"$ARCHS\" ]; then\n  export ARCHS=arm64\nfi\n\nif [ -z \"$KOTLIN_FRAMEWORK_BUILD_TYPE\" ]; then\n  case \"$CONFIGURATION\" in\n    *Release*) export KOTLIN_FRAMEWORK_BUILD_TYPE=release ;;\n    *) export KOTLIN_FRAMEWORK_BUILD_TYPE=debug ;;\n  esac\nfi\n\necho \"Using JAVA_HOME=$JAVA_HOME\"\necho \"Xcode env: SDK_NAME=$SDK_NAME ARCHS=$ARCHS CONFIGURATION=$CONFIGURATION KOTLIN_FRAMEWORK_BUILD_TYPE=$KOTLIN_FRAMEWORK_BUILD_TYPE\"\njava -version\n\ncd \"$SRCROOT/..\"\n./gradlew --no-configuration-cache :composeApp:embedAndSignAppleFrameworkForXcode --stacktrace\n";
+			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\n\nJAVA_21_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)\nif [ -z \"$JAVA_21_HOME\" ]; then\n  echo \"ERROR: JDK 21 is required for this project but was not found.\"\n  /usr/libexec/java_home -V 2>&1\n  exit 1\nfi\n\nexport JAVA_HOME=\"$JAVA_21_HOME\"\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\n\nif [ -z \"$SDK_NAME\" ] && [ -n \"$PLATFORM_NAME\" ]; then\n  export SDK_NAME=\"$PLATFORM_NAME\"\nfi\n\nif [ -z \"$ARCHS\" ]; then\n  export ARCHS=arm64\nfi\n\nif [ -z \"$KOTLIN_FRAMEWORK_BUILD_TYPE\" ]; then\n  case \"$CONFIGURATION\" in\n    *Release*) export KOTLIN_FRAMEWORK_BUILD_TYPE=release ;;\n    *) export KOTLIN_FRAMEWORK_BUILD_TYPE=debug ;;\n  esac\nfi\n\nENV_FILE=\"$SRCROOT/../.env\"\nIOS_SECRETS_FILE=\"$SRCROOT/Configuration/Secrets.xcconfig\"\nif [ -f \"$ENV_FILE\" ]; then\n  IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_IOS=/{sub(/^[^=]*=/,\"\"); val=$0} END{print val}' \"$ENV_FILE\" | tr -d '\\r')\n  if [ -z \"$IOS_KEY\" ]; then\n    IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_ANDROID=/{sub(/^[^=]*=/,\"\"); val=$0} END{print val}' \"$ENV_FILE\" | tr -d '\\r')\n  fi\n\n  if [ -n \"$IOS_KEY\" ]; then\n    printf \"GOOGLE_MAPS_API_KEY_IOS=%s\\n\" \"$IOS_KEY\" > \"$IOS_SECRETS_FILE\"\n  else\n    rm -f \"$IOS_SECRETS_FILE\"\n  fi\nelse\n  rm -f \"$IOS_SECRETS_FILE\"\nfi\n\necho \"Using JAVA_HOME=$JAVA_HOME\"\necho \"Xcode env: SDK_NAME=$SDK_NAME ARCHS=$ARCHS CONFIGURATION=$CONFIGURATION KOTLIN_FRAMEWORK_BUILD_TYPE=$KOTLIN_FRAMEWORK_BUILD_TYPE\"\njava -version\n\ncd \"$SRCROOT/..\"\n./gradlew --no-configuration-cache :composeApp:embedAndSignAppleFrameworkForXcode --stacktrace\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -167,6 +167,34 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		3C93DDE0DDCC1FD34AEB6426 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
+				DEVELOPMENT_TEAM = "${TEAM_ID}";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		71EA478E94D4B80D22F2DC5C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = 603414050A262D6AA4F01486 /* Configuration */;
@@ -290,34 +318,6 @@
 			};
 			name = Release;
 		};
-		3C93DDE0DDCC1FD34AEB6426 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_ASSET_PATHS = "\"iosApp/Preview Content\"";
-				DEVELOPMENT_TEAM = "${TEAM_ID}";
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = iosApp/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
 		AED2BF763A94983D85A50794 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -349,20 +349,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		932017DB20CF4453A6193A19 /* Build configuration list for PBXProject "iosApp" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				71EA478E94D4B80D22F2DC5C /* Debug */,
-				8461F78E1BB2E495F6E8BAEB /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		7430DD43AEA36778D5E07166 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3C93DDE0DDCC1FD34AEB6426 /* Debug */,
 				AED2BF763A94983D85A50794 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		932017DB20CF4453A6193A19 /* Build configuration list for PBXProject "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				71EA478E94D4B80D22F2DC5C /* Debug */,
+				8461F78E1BB2E495F6E8BAEB /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
