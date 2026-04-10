@@ -193,15 +193,37 @@ private fun buildGoogleMapHtml(apiKey: String): String {
       <meta name="viewport" content="initial-scale=1.0, width=device-width" />
       <style>
         html, body, #map { height: 100%; margin: 0; padding: 0; background: #d7e3d7; }
+        #status {
+          position: absolute;
+          left: 12px;
+          right: 12px;
+          top: 12px;
+          z-index: 1000;
+          display: none;
+          padding: 10px;
+          border-radius: 8px;
+          font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          color: #3a2e00;
+          background: #fff2c2;
+          border: 1px solid #e9d98c;
+        }
       </style>
-      <script src="https://maps.googleapis.com/maps/api/js?key=$apiKey"></script>
       <script>
         let map;
         let geocoder;
         let mapReady = false;
         let pendingQuery = null;
-        let fixedCenter = null;
-        let fixedZoom = null;
+
+        function showStatus(message) {
+          const el = document.getElementById('status');
+          if (!el) return;
+          el.style.display = 'block';
+          el.textContent = message;
+        }
+
+        window.onerror = function(message, source, line, col) {
+          showStatus('Map script error: ' + message + ' @ ' + line + ':' + col);
+        };
 
         function saveMapView() {
           if (!map) return;
@@ -252,25 +274,31 @@ private fun buildGoogleMapHtml(apiKey: String): String {
         }
 
         function init() {
-          geocoder = new google.maps.Geocoder();
-          map = new google.maps.Map(document.getElementById('map'), {
-            center: { lat: 6.1184, lng: 100.3685 },
-            zoom: 14,
-            mapTypeControl: false,
-            streetViewControl: false,
-            fullscreenControl: false
-          });
+          try {
+            geocoder = new google.maps.Geocoder();
+            map = new google.maps.Map(document.getElementById('map'), {
+              center: { lat: 6.1184, lng: 100.3685 },
+              zoom: 14,
+              mapTypeControl: false,
+              streetViewControl: false,
+              fullscreenControl: false
+            });
 
-          map.addListener('idle', function() {
-            saveMapView();
-          });
+            map.addListener('idle', function() {
+              saveMapView();
+            });
 
-          mapReady = true;
-          restoreMapView();
-          if (pendingQuery) {
-            geocodeAddress(pendingQuery);
+            mapReady = true;
+            restoreMapView();
+            if (pendingQuery) {
+              geocodeAddress(pendingQuery);
+            }
+          } catch (e) {
+            showStatus('Map init failed: ' + (e && e.message ? e.message : e));
           }
         }
+
+        window.initFarmMap = init;
 
         window.updateLocation = function(query) {
           pendingQuery = query;
@@ -289,10 +317,16 @@ private fun buildGoogleMapHtml(apiKey: String): String {
           });
         }
 
-        window.onload = init;
+        setTimeout(function() {
+          if (!mapReady) {
+            showStatus('Map did not initialize. Check FarmMapWebView logs for API restriction errors.');
+          }
+        }, 6000);
       </script>
+      <script async defer src="https://maps.googleapis.com/maps/api/js?key=$apiKey&loading=async&callback=initFarmMap"></script>
     </head>
     <body>
+      <div id="status"></div>
       <div id="map"></div>
     </body>
     </html>
