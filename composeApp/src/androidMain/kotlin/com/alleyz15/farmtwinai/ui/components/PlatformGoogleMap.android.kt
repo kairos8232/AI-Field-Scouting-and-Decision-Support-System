@@ -1,8 +1,11 @@
 package com.alleyz15.farmtwinai.ui.components
 
 import android.annotation.SuppressLint
+import android.webkit.GeolocationPermissions
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.ViewGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -11,13 +14,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 
+private var sharedMapWebView: WebView? = null
+private var sharedMapApiKey: String? = null
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 actual fun PlatformGoogleMap(
     modifier: Modifier,
     locationQuery: String,
-  allowMapInteraction: Boolean,
-  useCurrentLocationTrigger: Int,
+    searchTrigger: Int,
+    allowMapInteraction: Boolean,
+    useCurrentLocationTrigger: Int,
 ) {
     val context = LocalContext.current
     val apiKey = remember(context) {
@@ -26,17 +33,34 @@ actual fun PlatformGoogleMap(
     }
 
     val mapHtml = remember(apiKey) { buildGoogleMapHtml(apiKey) }
-    val webView = remember {
+    val webView = remember(apiKey) {
+      val existing = sharedMapWebView
+      if (existing != null && sharedMapApiKey == apiKey) {
+        existing
+      } else {
         WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            webViewClient = WebViewClient()
-            loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
+          settings.javaScriptEnabled = true
+          settings.domStorageEnabled = true
+          settings.setGeolocationEnabled(true)
+          webViewClient = WebViewClient()
+          webChromeClient = object : WebChromeClient() {
+            override fun onGeolocationPermissionsShowPrompt(
+              origin: String?,
+              callback: GeolocationPermissions.Callback?,
+            ) {
+              callback?.invoke(origin, true, false)
+            }
+          }
+          loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
+        }.also {
+          sharedMapWebView = it
+          sharedMapApiKey = apiKey
         }
+      }
     }
 
-    LaunchedEffect(locationQuery) {
-        if (locationQuery.isNotBlank()) {
+    LaunchedEffect(searchTrigger) {
+      if (searchTrigger > 0 && locationQuery.isNotBlank()) {
             val quoted = JSONObject.quote(locationQuery)
             webView.evaluateJavascript("window.updateLocation($quoted);", null)
         }
@@ -50,14 +74,17 @@ actual fun PlatformGoogleMap(
 
     AndroidView(
         modifier = modifier,
-        factory = { webView },
-      update = {
-        it.isClickable = allowMapInteraction
-        it.isLongClickable = allowMapInteraction
-        it.isFocusable = allowMapInteraction
-        it.isFocusableInTouchMode = allowMapInteraction
-        it.isEnabled = allowMapInteraction
+      factory = {
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        webView
       },
+        update = {
+            it.isClickable = allowMapInteraction
+            it.isLongClickable = allowMapInteraction
+            it.isFocusable = allowMapInteraction
+            it.isFocusableInTouchMode = allowMapInteraction
+            it.isEnabled = allowMapInteraction
+        },
     )
 }
 
@@ -76,13 +103,53 @@ private fun buildGoogleMapHtml(apiKey: String): String =
         let geocoder;
         let mapReady = false;
         let pendingQuery = null;
+        let fixedCenter = null;
+        let fixedZoom = null;
+
+        function saveMapView() {
+          if (!map) return;
+          const c = map.getCenter();
+          if (!c) return;
+          window.__farmMapView = {
+            lat: c.lat(),
+            lng: c.lng(),
+            zoom: map.getZoom() || 14
+          };
+        }
+
+        function restoreMapView() {
+          if (!map || !window.__farmMapView) return;
+          map.setCenter({ lat: window.__farmMapView.lat, lng: window.__farmMapView.lng });
+          map.setZoom(window.__farmMapView.zoom || 14);
+        }
 
         function geocodeAddress(query) {
-          if (!query || !geocoder || !map) return;
+          if (!query || !map) return;
+          if (!geocoder) {
+            geocoder = new google.maps.Geocoder();
+          }
           geocoder.geocode({ address: query }, function(results, status) {
             if (status === 'OK' && results && results.length > 0) {
               map.setCenter(results[0].geometry.location);
               map.setZoom(16);
+              saveMapView();
+              return;
+            }
+
+            if (status === 'ZERO_RESULTS' || status === 'REQUEST_DENIED' || status === 'INVALID_REQUEST') {
+              const encoded = encodeURIComponent(query);
+              fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encoded)
+                .then(r => r.json())
+                .then(items => {
+                  if (items && items.length > 0) {
+                    const lat = parseFloat(items[0].lat);
+                    const lng = parseFloat(items[0].lon);
+                    map.setCenter({ lat: lat, lng: lng });
+                    map.setZoom(16);
+                    saveMapView();
+                  }
+                })
+                .catch(() => {});
             }
           });
         }
@@ -96,7 +163,13 @@ private fun buildGoogleMapHtml(apiKey: String): String =
             streetViewControl: false,
             fullscreenControl: false
           });
+
+          map.addListener('idle', function() {
+            saveMapView();
+          });
+
           mapReady = true;
+          restoreMapView();
           if (pendingQuery) {
             geocodeAddress(pendingQuery);
           }
@@ -115,6 +188,7 @@ private fun buildGoogleMapHtml(apiKey: String): String =
             const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
             map.setCenter(loc);
             map.setZoom(17);
+            saveMapView();
           });
         }
 

@@ -50,9 +50,14 @@ fun LotSectionSetupScreen(
 ) {
     val lots = remember(initialSections, boundaryPoints) {
         mutableStateListOf<LotSectionDraft>().apply {
-            if (initialSections.isNotEmpty()) addAll(initialSections) else add(
-                LotSectionDraft("lot-1", "Lot 1", boundaryPoints, "Tomato", "Loamy", "Medium")
-            )
+            if (initialSections.isNotEmpty()) {
+                addAll(initialSections)
+                if (size == 1 && boundaryPoints.size >= 3 && first().points.size < 3) {
+                    this[0] = first().copy(points = boundaryPoints)
+                }
+            } else {
+                add(LotSectionDraft("lot-1", "Lot 1", boundaryPoints, "Tomato", "Loamy", "Medium"))
+            }
         }
     }
 
@@ -158,6 +163,54 @@ fun LotSectionSetupScreen(
                 }
             }
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val lotIndex = lots.indexOfFirst { it.id == selectedLotId }
+                        if (lotIndex >= 0 && lots[lotIndex].points.isNotEmpty()) {
+                            val updated = lots[lotIndex].points.dropLast(1)
+                            lots[lotIndex] = lots[lotIndex].copy(points = updated)
+                            warning = null
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Undo")
+                }
+
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val lotIndex = lots.indexOfFirst { it.id == selectedLotId }
+                        if (lotIndex >= 0) {
+                            lots[lotIndex] = lots[lotIndex].copy(points = emptyList())
+                            warning = null
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Clear Lot")
+                }
+
+                if (lots.size > 1) {
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                            val lotIndex = lots.indexOfFirst { it.id == selectedLotId }
+                            if (lotIndex >= 0) {
+                                lots.removeAt(lotIndex)
+                                selectedLotId = lots.firstOrNull()?.id.orEmpty()
+                                warning = null
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Delete Lot")
+                    }
+                }
+            }
+
             SectionHeader(
                 title = "Quick templates",
                 body = "Choose one template to pre-generate lots. You can still drag points afterward.",
@@ -175,8 +228,51 @@ fun LotSectionSetupScreen(
                         }
                     },
                     modifier = Modifier.weight(1f),
-                ) { Text("2 Zones") }
+                ) { Text("Vertical 2") }
 
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val generated = buildHorizontalTemplate(boundaryPoints, 2)
+                        if (generated.isNotEmpty()) {
+                            lots.clear()
+                            lots.addAll(generated)
+                            selectedLotId = generated.first().id
+                            warning = null
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Horizontal 2") }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val generated = buildVerticalTemplate(boundaryPoints, 3)
+                        if (generated.isNotEmpty()) {
+                            lots.clear()
+                            lots.addAll(generated)
+                            selectedLotId = generated.first().id
+                            warning = null
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Vertical 3") }
+
+                androidx.compose.material3.OutlinedButton(
+                    onClick = {
+                        val generated = buildHorizontalTemplate(boundaryPoints, 3)
+                        if (generated.isNotEmpty()) {
+                            lots.clear()
+                            lots.addAll(generated)
+                            selectedLotId = generated.first().id
+                            warning = null
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Horizontal 3") }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = {
                         val generated = buildGridTemplate(boundaryPoints)
@@ -187,8 +283,8 @@ fun LotSectionSetupScreen(
                             warning = null
                         }
                     },
-                    modifier = Modifier.weight(1f),
-                ) { Text("4 Zones") }
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Grid 4") }
             }
 
             OutlinedTextField(
@@ -209,16 +305,61 @@ fun LotSectionSetupScreen(
                 )
             }
 
+            if (selectedLot != null) {
+                SectionHeader(
+                    title = "Lot details",
+                    body = "Set crop only. Soil type and water availability will be auto-filled by Earth Engine + Gemini in next step.",
+                )
+
+                OutlinedTextField(
+                    value = selectedLot.cropPlan,
+                    onValueChange = { value ->
+                        val index = lots.indexOfFirst { it.id == selectedLot.id }
+                        if (index >= 0) lots[index] = lots[index].copy(cropPlan = value)
+                    },
+                    label = { Text("Crop") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
+                Text(
+                    text = "Soil Type: ${selectedLot.soilType.ifBlank { "(auto-filled in AI step)" }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text(
+                    text = "Water Availability: ${selectedLot.waterAvailability.ifBlank { "(auto-filled in AI step)" }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val index = lots.indexOfFirst { it.id == selectedLot.id }
+                        if (index >= 0 && boundaryPoints.size >= 3) {
+                            lots[index] = lots[index].copy(points = boundaryPoints)
+                            warning = null
+                        }
+                    },
+                ) {
+                    Text("Reset selected lot to full farm boundary")
+                }
+            }
+
             if (warning != null) {
                 Text(text = warning!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
 
             DualActionButtons(
-                primaryLabel = "Create Farm Twin",
+                primaryLabel = "Next: AI Recommendation",
                 onPrimary = {
                     val hasInvalidLot = lots.any { it.points.size < 3 }
+                    val hasMissingCrop = lots.any { it.cropPlan.isBlank() }
                     if (hasInvalidLot) {
                         warning = "Each lot needs at least 3 points."
+                    } else if (hasMissingCrop) {
+                        warning = "Please fill crop for each lot before AI recommendation."
                     } else {
                         warning = null
                         onSaveSections(lots.toList())
@@ -328,6 +469,18 @@ private fun buildVerticalTemplate(boundaryPoints: List<FarmPoint>, count: Int): 
         val x0 = box.minX + (box.maxX - box.minX) * (i.toFloat() / count)
         val x1 = box.minX + (box.maxX - box.minX) * ((i + 1).toFloat() / count)
         val points = listOf(FarmPoint(x0, box.minY), FarmPoint(x1, box.minY), FarmPoint(x1, box.maxY), FarmPoint(x0, box.maxY))
+            .map { keepPointInsideBoundary(it, boundaryPoints) }
+        LotSectionDraft("lot-${i + 1}", "Lot ${i + 1}", points, "", "", "")
+    }
+}
+
+private fun buildHorizontalTemplate(boundaryPoints: List<FarmPoint>, count: Int): List<LotSectionDraft> {
+    if (boundaryPoints.size < 3 || count < 1) return emptyList()
+    val box = boundaryBounds(boundaryPoints)
+    return (0 until count).map { i ->
+        val y0 = box.minY + (box.maxY - box.minY) * (i.toFloat() / count)
+        val y1 = box.minY + (box.maxY - box.minY) * ((i + 1).toFloat() / count)
+        val points = listOf(FarmPoint(box.minX, y0), FarmPoint(box.maxX, y0), FarmPoint(box.maxX, y1), FarmPoint(box.minX, y1))
             .map { keepPointInsideBoundary(it, boundaryPoints) }
         LotSectionDraft("lot-${i + 1}", "Lot ${i + 1}", points, "", "", "")
     }

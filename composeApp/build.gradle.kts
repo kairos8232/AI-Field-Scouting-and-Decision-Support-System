@@ -10,6 +10,7 @@ val envProperties = Properties().apply {
 }
 
 fun env(name: String): String = (envProperties.getProperty(name) ?: "").trim()
+fun envOrDefault(name: String, fallback: String): String = env(name).ifBlank { fallback }
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -32,6 +33,7 @@ kotlin {
         iosTarget.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+            binaryOption("bundleId", "com.alleyz15.farmtwinai.composeapp")
         }
     }
     
@@ -67,6 +69,10 @@ android {
     namespace = "com.alleyz15.farmtwinai"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.alleyz15.farmtwinai"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -74,6 +80,11 @@ android {
         versionCode = 1
         versionName = "1.0"
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = env("GOOGLE_MAPS_API_KEY_ANDROID")
+        buildConfigField(
+            "String",
+            "FIELD_INSIGHTS_BASE_URL",
+            "\"${envOrDefault("FIELD_INSIGHTS_BASE_URL", "http://localhost:8080/api")}\"",
+        )
     }
     packaging {
         resources {
@@ -94,4 +105,7 @@ android {
 dependencies {
     debugImplementation(libs.compose.uiTooling)
 }
+
+// Compatibility shim for IDEs/plugins that still request this legacy sync task.
+tasks.register("prepareKotlinBuildScriptModel")
 

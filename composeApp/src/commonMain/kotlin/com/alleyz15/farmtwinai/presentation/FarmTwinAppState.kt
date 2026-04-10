@@ -4,19 +4,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.auth.AuthUser
+import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.AppMode
+import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.domain.model.SetupMethod
 import com.alleyz15.farmtwinai.domain.model.ZoneInfo
+import kotlin.math.abs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class FarmTwinAppState(
     repository: MockFarmTwinRepository,
+    private val fieldInsightsRepository: FieldInsightsRepository,
 ) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     var authenticatedUser by mutableStateOf<AuthUser?>(null)
         private set
 
@@ -33,6 +43,21 @@ class FarmTwinAppState(
         private set
 
     var selectedTimelineDay by mutableStateOf(snapshot.timeline.last())
+        private set
+
+    var farmSetupAddress by mutableStateOf("Pendang, Kedah")
+        private set
+
+    var farmSetupMapQuery by mutableStateOf("Pendang, Kedah")
+        private set
+
+    var farmSetupSearchTrigger by mutableStateOf(0)
+        private set
+
+    var farmSetupUseCurrentLocationTrigger by mutableStateOf(0)
+        private set
+
+    var isFarmMapFrozen by mutableStateOf(false)
         private set
 
     var farmBoundaryPoints by mutableStateOf(
@@ -52,11 +77,35 @@ class FarmTwinAppState(
                 name = "Lot 1",
                 points = farmBoundaryPoints,
                 cropPlan = "Tomato",
-                soilType = "Loamy",
-                waterAvailability = "Medium",
+                soilType = "",
+                waterAvailability = "",
             )
         )
     )
+        private set
+
+    var polygonInsightsReport by mutableStateOf<FieldInsightReport?>(null)
+        private set
+
+    var polygonInsightsError by mutableStateOf<String?>(null)
+        private set
+
+    var isSubmittingPolygon by mutableStateOf(false)
+        private set
+
+    var isAnalyzingLots by mutableStateOf(false)
+        private set
+
+    var lotRecommendationBestLotId by mutableStateOf<String?>(null)
+        private set
+
+    var lotRecommendationReason by mutableStateOf<String?>(null)
+        private set
+
+    var lotRecommendationError by mutableStateOf<String?>(null)
+        private set
+
+    var lotRecommendationDataSourceByLotId by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
     val isAuthenticated: Boolean
@@ -90,6 +139,9 @@ class FarmTwinAppState(
 
     fun updateFarmBoundary(points: List<FarmPoint>) {
         farmBoundaryPoints = points
+        polygonInsightsReport = null
+        polygonInsightsError = null
+        clearLotRecommendationState()
         if (lotSections.isEmpty()) {
             lotSections = listOf(
                 LotSectionDraft(
@@ -97,8 +149,8 @@ class FarmTwinAppState(
                     name = "Lot 1",
                     points = points,
                     cropPlan = "Tomato",
-                    soilType = "Loamy",
-                    waterAvailability = "Medium",
+                    soilType = "",
+                    waterAvailability = "",
                 )
             )
         } else {
@@ -111,24 +163,147 @@ class FarmTwinAppState(
         }
     }
 
+    fun updateFarmSetupAddress(value: String) {
+        farmSetupAddress = value
+    }
+
+    fun searchFarmSetupAddress() {
+        val query = farmSetupAddress.trim()
+        if (query.isBlank()) return
+        farmSetupMapQuery = query
+        farmSetupSearchTrigger += 1
+    }
+
+    fun useCurrentLocationForFarmSetup() {
+        farmSetupUseCurrentLocationTrigger += 1
+        updateFarmBoundary(emptyList())
+    }
+
+    fun continueToBoundaryDrawing() {
+        isFarmMapFrozen = true
+    }
+
     fun updateLotSections(sections: List<LotSectionDraft>) {
         lotSections = sections
+        clearLotRecommendationState()
     }
 
     fun prepareNewFarmDraft() {
         val defaultBoundary = defaultFarmBoundary()
         farmBoundaryPoints = defaultBoundary
+        farmSetupAddress = "Pendang, Kedah"
+        farmSetupMapQuery = farmSetupAddress
+        farmSetupSearchTrigger = 0
+        farmSetupUseCurrentLocationTrigger = 0
+        isFarmMapFrozen = false
         lotSections = listOf(
             LotSectionDraft(
                 id = "lot-1",
                 name = "Lot 1",
                 points = defaultBoundary,
                 cropPlan = snapshot.farm.cropName,
-                soilType = "Loamy",
-                waterAvailability = "Medium",
+                soilType = "",
+                waterAvailability = "",
             )
         )
         selectedSetupMethod = SetupMethod.MANUAL
+        polygonInsightsReport = null
+        polygonInsightsError = null
+        clearLotRecommendationState()
+    }
+
+    fun analyzeLotsForRecommendation() {
+        if (isAnalyzingLots) return
+        if (lotSections.isEmpty()) {
+            lotRecommendationError = "No lots available for analysis."
+            return
+        }
+
+        isAnalyzingLots = true
+        lotRecommendationError = null
+        lotRecommendationBestLotId = null
+        lotRecommendationReason = null
+        lotRecommendationDataSourceByLotId = emptyMap()
+
+        scope.launch {
+            runCatching {
+                val analyzed = lotSections.map { lot ->
+                    if (lot.points.size < 3) {
+                        AnalyzedLot(
+                            lot = lot,
+                            score = -1.0,
+                            reason = "Lot boundary is incomplete.",
+                            dataSource = "Unavailable",
+                        )
+                    } else {
+                        val report = fieldInsightsRepository.analyzePolygon(
+                            points = lot.points,
+                            targetCrops = listOf(lot.cropPlan),
+                        )
+                        val updatedLot = lot.copy(
+                            soilType = inferSoilType(report.summary.soilMoistureMean, report.summary.ndviMean),
+                            waterAvailability = inferWaterAvailability(report.summary.rainfallMm7d, report.summary.soilMoistureMean),
+                        )
+                        val score = scoreLotForCrop(updatedLot.cropPlan, report)
+                        val reason = lotReason(updatedLot.cropPlan, report)
+                        val earthSource = if (report.summary.notes.contains("mock", ignoreCase = true)) "Earth: mock" else "Earth: live"
+                        val aiSource = "Gemini: ${report.provider}"
+                        AnalyzedLot(
+                            lot = updatedLot,
+                            score = score,
+                            reason = reason,
+                            dataSource = "$earthSource | $aiSource",
+                        )
+                    }
+                }
+
+                lotSections = analyzed.map { it.lot }
+                lotRecommendationDataSourceByLotId = analyzed.associate { it.lot.id to it.dataSource }
+                analyzed.maxByOrNull { it.score }
+            }.onSuccess { best ->
+                if (best == null || best.score < 0) {
+                    lotRecommendationError = "Unable to determine best lot. Ensure each lot has a valid boundary."
+                } else {
+                    lotRecommendationBestLotId = best.lot.id
+                    lotRecommendationReason = "${best.lot.name} is recommended. ${best.reason}"
+                }
+            }.onFailure { error ->
+                lotRecommendationError = error.message ?: "Failed to analyze lots right now."
+            }
+
+            isAnalyzingLots = false
+        }
+    }
+
+    fun finalizeLotRecommendation(followRecommendation: Boolean) {
+        if (followRecommendation) {
+            val bestId = lotRecommendationBestLotId
+            val bestIndex = lotSections.indexOfFirst { it.id == bestId }
+            if (bestIndex > 0) {
+                val best = lotSections[bestIndex]
+                lotSections = buildList {
+                    add(best)
+                    lotSections.forEachIndexed { index, lot -> if (index != bestIndex) add(lot) }
+                }
+            }
+        }
+    }
+
+    fun submitPolygonForInsights() {
+        if (farmBoundaryPoints.size < 3 || isSubmittingPolygon) return
+
+        isSubmittingPolygon = true
+        polygonInsightsError = null
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.analyzePolygon(farmBoundaryPoints)
+            }.onSuccess { report ->
+                polygonInsightsReport = report
+            }.onFailure { error ->
+                polygonInsightsError = error.message ?: "Unable to analyze polygon right now."
+            }
+            isSubmittingPolygon = false
+        }
     }
 
     fun currentZone(): ZoneInfo {
@@ -202,4 +377,59 @@ class FarmTwinAppState(
         val y = points.sumOf { it.y.toDouble() } / points.size
         return FarmPoint(x.toFloat(), y.toFloat())
     }
+
+    private fun clearLotRecommendationState() {
+        isAnalyzingLots = false
+        lotRecommendationBestLotId = null
+        lotRecommendationReason = null
+        lotRecommendationError = null
+        lotRecommendationDataSourceByLotId = emptyMap()
+    }
+
+    private fun inferSoilType(soilMoisture: Double, ndvi: Double): String {
+        return when {
+            soilMoisture >= 0.58 && ndvi >= 0.55 -> "Clay Loam"
+            soilMoisture in 0.42..0.58 -> "Loamy"
+            soilMoisture < 0.30 -> "Sandy Loam"
+            else -> "Silty Loam"
+        }
+    }
+
+    private fun inferWaterAvailability(rainfallMm7d: Double, soilMoisture: Double): String {
+        return when {
+            rainfallMm7d >= 35 || soilMoisture >= 0.60 -> "High"
+            rainfallMm7d >= 18 || soilMoisture >= 0.40 -> "Medium"
+            else -> "Low"
+        }
+    }
+
+    private fun scoreLotForCrop(crop: String, report: FieldInsightReport): Double {
+        val normalized = crop.trim().lowercase()
+        val recommendation = report.recommendations.firstOrNull { it.cropName.trim().lowercase() == normalized }
+
+        val suitabilityScore = when (recommendation?.suitability?.trim()?.lowercase()) {
+            "high" -> 3.0
+            "moderate" -> 2.0
+            "low" -> 1.0
+            else -> if (recommendation != null) 1.5 else 0.0
+        }
+
+        val moistureFit = 1.0 - abs(report.summary.soilMoistureMean - 0.5).coerceIn(0.0, 1.0)
+        val ndviBoost = report.summary.ndviMean.coerceIn(0.0, 1.0)
+        return suitabilityScore * 2.0 + moistureFit + ndviBoost
+    }
+
+    private fun lotReason(crop: String, report: FieldInsightReport): String {
+        val normalized = crop.trim().lowercase()
+        val recommendation = report.recommendations.firstOrNull { it.cropName.trim().lowercase() == normalized }
+        return recommendation?.rationale
+            ?: "No direct crop match from Gemini. Used vegetation and moisture indicators from Earth Engine summary."
+    }
 }
+
+private data class AnalyzedLot(
+    val lot: LotSectionDraft,
+    val score: Double,
+    val reason: String,
+    val dataSource: String,
+)

@@ -5,7 +5,6 @@
 	};
 	objectVersion = 77;
 	objects = {
-
 /* Begin PBXFileReference section */
 		5089FE8B22B2E0C0A5F89E32 /* FarmTwinAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FarmTwinAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -135,7 +134,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		116CFEEDABFDA03AA3001FE2 /* Compile Kotlin Framework */ = {
+				116CFEEDABFDA03AA3001FE2 /* Compile Kotlin Framework */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -152,7 +151,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [ \"YES\" = \"$OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED\" ]; then\n  echo \"Skipping Gradle build task invocation due to OVERRIDE_KOTLIN_BUILD_IDE_SUPPORTED environment variable set to \\\"YES\\\"\"\n  exit 0\nfi\n\nJAVA_21_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null)\nif [ -z \"$JAVA_21_HOME\" ]; then\n  echo \"ERROR: JDK 21 is required for this project but was not found.\"\n  /usr/libexec/java_home -V 2>&1\n  exit 1\nfi\n\nexport JAVA_HOME=\"$JAVA_21_HOME\"\nexport PATH=\"$JAVA_HOME/bin:$PATH\"\n\nif [ -z \"$SDK_NAME\" ] && [ -n \"$PLATFORM_NAME\" ]; then\n  export SDK_NAME=\"$PLATFORM_NAME\"\nfi\n\nif [ -z \"$ARCHS\" ]; then\n  export ARCHS=arm64\nfi\n\nif [ -z \"$KOTLIN_FRAMEWORK_BUILD_TYPE\" ]; then\n  case \"$CONFIGURATION\" in\n    *Release*) export KOTLIN_FRAMEWORK_BUILD_TYPE=release ;;\n    *) export KOTLIN_FRAMEWORK_BUILD_TYPE=debug ;;\n  esac\nfi\n\nENV_FILE=\"$SRCROOT/../.env\"\nIOS_SECRETS_FILE=\"$SRCROOT/Configuration/Secrets.xcconfig\"\nif [ -f \"$ENV_FILE\" ]; then\n  IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_IOS=/{sub(/^[^=]*=/,\"\"); val=$0} END{print val}' \"$ENV_FILE\" | tr -d '\\r')\n  if [ -z \"$IOS_KEY\" ]; then\n    IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_ANDROID=/{sub(/^[^=]*=/,\"\"); val=$0} END{print val}' \"$ENV_FILE\" | tr -d '\\r')\n  fi\n\n  if [ -n \"$IOS_KEY\" ]; then\n    printf \"GOOGLE_MAPS_API_KEY_IOS=%s\\n\" \"$IOS_KEY\" > \"$IOS_SECRETS_FILE\"\n  else\n    rm -f \"$IOS_SECRETS_FILE\"\n  fi\nelse\n  rm -f \"$IOS_SECRETS_FILE\"\nfi\n\necho \"Using JAVA_HOME=$JAVA_HOME\"\necho \"Xcode env: SDK_NAME=$SDK_NAME ARCHS=$ARCHS CONFIGURATION=$CONFIGURATION KOTLIN_FRAMEWORK_BUILD_TYPE=$KOTLIN_FRAMEWORK_BUILD_TYPE\"\njava -version\n\ncd \"$SRCROOT/..\"\n./gradlew --no-configuration-cache :composeApp:embedAndSignAppleFrameworkForXcode --stacktrace\n";
+			shellScript = "sh \"$SRCROOT/scripts/compile_kotlin_framework.sh\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 

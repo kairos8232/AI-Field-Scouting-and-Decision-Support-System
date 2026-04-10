@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,8 +35,11 @@ import com.alleyz15.farmtwinai.ui.components.ScreenColumn
 import com.alleyz15.farmtwinai.ui.components.SectionHeader
 
 @Composable
-fun FarmMapSetupScreen(
+fun FarmBoundaryDrawScreen(
     boundaryPoints: List<FarmPoint>,
+    locationQuery: String,
+    searchTrigger: Int,
+    useCurrentLocationTrigger: Int,
     onBoundaryChanged: (List<FarmPoint>) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
@@ -45,62 +47,14 @@ fun FarmMapSetupScreen(
     val points = remember(boundaryPoints) { mutableStateListOf<FarmPoint>().apply { addAll(boundaryPoints) } }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedVertex by remember { mutableIntStateOf(-1) }
-    var address by remember { mutableStateOf("Pendang, Kedah") }
-    var mapQuery by remember { mutableStateOf(address) }
-    var searchTrigger by remember { mutableIntStateOf(0) }
-    var mapFrozenForSelection by remember { mutableStateOf(false) }
-    var useCurrentLocationTrigger by remember { mutableIntStateOf(0) }
     var warningMessage by remember { mutableStateOf<String?>(null) }
 
-    AppScaffold(title = "Farm Setup", subtitle = "Draw farm boundary on map", onBack = onBack) { _ ->
+    AppScaffold(title = "Farm Setup", subtitle = "Step 2 of 3 - Draw boundary", onBack = onBack) { _ ->
         ScreenColumn {
             SectionHeader(
-                title = "Farm map (Google Maps)",
-                body = "Search a location, then draw and drag boundary vertices on top of the map.",
+                title = "Draw boundary",
+                body = "Map view is already saved from Step 1. Tap to add points and drag to refine the farm boundary.",
             )
-
-            OutlinedTextField(
-                value = address,
-                onValueChange = { address = it },
-                label = { Text("Search location...") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        mapQuery = address.trim()
-                        searchTrigger += 1
-                        mapFrozenForSelection = true
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Search")
-                }
-
-                androidx.compose.material3.OutlinedButton(
-                    onClick = {
-                        useCurrentLocationTrigger += 1
-                        searchTrigger += 1
-                        mapFrozenForSelection = false
-                        points.clear()
-                        onBoundaryChanged(emptyList())
-                    },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("My Location")
-                }
-            }
-
-            androidx.compose.material3.TextButton(
-                onClick = { mapFrozenForSelection = !mapFrozenForSelection },
-            ) {
-                Text(if (mapFrozenForSelection) "Adjust Map Again" else "Freeze Map For Boundary")
-            }
 
             Box(
                 modifier = Modifier
@@ -111,44 +65,40 @@ fun FarmMapSetupScreen(
             ) {
                 PlatformGoogleMap(
                     modifier = Modifier.matchParentSize(),
-                    locationQuery = mapQuery,
+                    locationQuery = locationQuery,
                     searchTrigger = searchTrigger,
-                    allowMapInteraction = !mapFrozenForSelection,
+                    allowMapInteraction = false,
                     useCurrentLocationTrigger = useCurrentLocationTrigger,
                 )
 
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .pointerInput(points.size, mapSize, mapFrozenForSelection) {
-                            if (mapFrozenForSelection) {
-                                detectTapGestures { tap ->
-                                    val normalized = toFarmPoint(tap, mapSize)
-                                    points.add(normalized)
-                                    onBoundaryChanged(points.toList())
-                                    warningMessage = null
-                                }
+                        .pointerInput(points.size, mapSize) {
+                            detectTapGestures { tap ->
+                                val normalized = toFarmPoint(tap, mapSize)
+                                points.add(normalized)
+                                onBoundaryChanged(points.toList())
+                                warningMessage = null
                             }
                         }
-                        .pointerInput(points.size, mapSize, mapFrozenForSelection) {
-                            if (mapFrozenForSelection) {
-                                detectDragGestures(
-                                    onDragStart = { start ->
-                                        selectedVertex = nearestVertexIndex(points, start, mapSize)
-                                    },
-                                    onDragEnd = {
-                                        selectedVertex = -1
-                                        onBoundaryChanged(points.toList())
-                                    },
-                                    onDragCancel = { selectedVertex = -1 },
-                                    onDrag = { change, _ ->
-                                        val index = selectedVertex
-                                        if (index in points.indices) {
-                                            points[index] = toFarmPoint(change.position, mapSize)
-                                        }
-                                    },
-                                )
-                            }
+                        .pointerInput(points.size, mapSize) {
+                            detectDragGestures(
+                                onDragStart = { start ->
+                                    selectedVertex = nearestVertexIndex(points, start, mapSize)
+                                },
+                                onDragEnd = {
+                                    selectedVertex = -1
+                                    onBoundaryChanged(points.toList())
+                                },
+                                onDragCancel = { selectedVertex = -1 },
+                                onDrag = { change, _ ->
+                                    val index = selectedVertex
+                                    if (index in points.indices) {
+                                        points[index] = toFarmPoint(change.position, mapSize)
+                                    }
+                                },
+                            )
                         },
                 ) {
                     Canvas(modifier = Modifier.matchParentSize()) {
@@ -188,40 +138,34 @@ fun FarmMapSetupScreen(
             }
 
             Text(
-                text = if (mapFrozenForSelection) {
-                    "Map frozen. Tap to add edge points and drag any point to reshape."
-                } else {
-                    "Search and adjust map first, then freeze map to start selecting boundary edges."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = "Edges: ${points.size}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = "Edges: ${points.size}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    androidx.compose.material3.TextButton(
-                        onClick = {
-                            if (points.isNotEmpty()) {
-                                points.removeLast()
-                                onBoundaryChanged(points.toList())
-                            }
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        if (points.isNotEmpty()) {
+                            points.removeLast()
+                            onBoundaryChanged(points.toList())
                         }
-                    ) { Text("Undo") }
-                    androidx.compose.material3.TextButton(
-                        onClick = {
-                            points.clear()
-                            onBoundaryChanged(emptyList())
-                        }
-                    ) { Text("Clear All") }
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Undo")
+                }
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        points.clear()
+                        onBoundaryChanged(emptyList())
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Clear All")
                 }
             }
 
@@ -234,7 +178,7 @@ fun FarmMapSetupScreen(
             }
 
             DualActionButtons(
-                primaryLabel = "Next: Divide Into Lots",
+                primaryLabel = "Next: Divide Lots",
                 onPrimary = {
                     if (points.size < 3) {
                         warningMessage = "Add at least 3 boundary points first."

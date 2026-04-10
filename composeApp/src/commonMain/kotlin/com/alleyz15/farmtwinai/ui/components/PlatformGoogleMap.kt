@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 expect fun PlatformGoogleMap(
     modifier: Modifier,
     locationQuery: String,
+    searchTrigger: Int,
     allowMapInteraction: Boolean,
     useCurrentLocationTrigger: Int,
 )

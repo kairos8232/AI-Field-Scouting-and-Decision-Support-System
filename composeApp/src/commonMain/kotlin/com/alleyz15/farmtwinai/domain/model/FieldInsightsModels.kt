@@ -1,0 +1,23 @@
+package com.alleyz15.farmtwinai.domain.model
+
+data class EarthEngineSummary(
+    val centroidLat: Double,
+    val centroidLng: Double,
+    val ndviMean: Double,
+    val soilMoistureMean: Double,
+    val rainfallMm7d: Double,
+    val averageTempC: Double,
+    val notes: String,
+)
+
+data class CropRecommendation(
+    val cropName: String,
+    val suitability: String,
+    val rationale: String,
+)
+
+data class FieldInsightReport(
+    val summary: EarthEngineSummary,
+    val recommendations: List<CropRecommendation>,
+    val provider: String,
+)

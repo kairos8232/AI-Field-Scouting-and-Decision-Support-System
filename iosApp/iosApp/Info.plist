@@ -8,5 +8,9 @@
 	<string>$(GOOGLE_MAPS_API_KEY_IOS)</string>
 	<key>GOOGLE_MAPS_API_KEY_IOS</key>
 	<string>$(GOOGLE_MAPS_API_KEY_IOS)</string>
+	<key>FieldInsightsBaseUrl</key>
+	<string>$(FIELD_INSIGHTS_BASE_URL)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>FarmTwinAI uses your location to center the farm map around your current position.</string>
 </dict>
 </plist>

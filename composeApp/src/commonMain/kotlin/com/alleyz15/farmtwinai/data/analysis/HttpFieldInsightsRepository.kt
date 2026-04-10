@@ -1,0 +1,117 @@
+package com.alleyz15.farmtwinai.data.analysis
+
+import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
+import com.alleyz15.farmtwinai.domain.model.CropRecommendation
+import com.alleyz15.farmtwinai.domain.model.EarthEngineSummary
+import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
+import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.JsonPrimitive
+
+class HttpFieldInsightsRepository(
+    private val client: HttpClient = HttpClient(platformHttpClientEngineFactory()),
+    private val json: Json = Json { ignoreUnknownKeys = true },
+    private val baseUrl: String = resolvedFieldInsightsBaseUrl(),
+) : FieldInsightsRepository {
+
+    override suspend fun analyzePolygon(
+        points: List<FarmPoint>,
+        targetCrops: List<String>,
+    ): FieldInsightReport {
+        require(points.size >= 3) { "Polygon must contain at least 3 points." }
+        val cleanedTargetCrops = targetCrops.map { it.trim() }.filter { it.isNotEmpty() }
+
+        val centroid = centroid(points)
+        val payload = buildJsonObject {
+            put("polygon", buildJsonArray {
+                points.forEach { point ->
+                    add(
+                        buildJsonObject {
+                            put("x", point.x)
+                            put("y", point.y)
+                        }
+                    )
+                }
+            })
+            put(
+                "centroid",
+                buildJsonObject {
+                    put("x", centroid.x)
+                    put("y", centroid.y)
+                }
+            )
+            put("targetCrops", buildJsonArray {
+                cleanedTargetCrops.forEach { crop ->
+                    add(JsonPrimitive(crop))
+                }
+            })
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        return runCatching {
+            requestInsights(configuredBase, payload.toString())
+        }.getOrElse { cause ->
+            throw IllegalStateException(
+                "Backend unreachable (baseUrl from env: $configuredBase)",
+                cause,
+            )
+        }
+    }
+
+    private suspend fun requestInsights(base: String, body: String): FieldInsightReport {
+        val response = client.post("$base/field-insights") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        check(response.status.isSuccess()) { "Insights API failed: ${response.status}" }
+        return parseReport(response.body<String>())
+    }
+
+    private fun parseReport(raw: String): FieldInsightReport {
+        val root = json.parseToJsonElement(raw).jsonObject
+        val summary = root["summary"]?.jsonObject ?: error("Missing summary in backend response")
+        val recommendations = root["recommendations"]?.jsonArray.orEmpty()
+
+        return FieldInsightReport(
+            summary = EarthEngineSummary(
+                centroidLat = summary["centroidLat"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                centroidLng = summary["centroidLng"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                ndviMean = summary["ndviMean"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                soilMoistureMean = summary["soilMoistureMean"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                rainfallMm7d = summary["rainfallMm7d"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                averageTempC = summary["averageTempC"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+                notes = summary["notes"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            ),
+            recommendations = recommendations.map { item ->
+                val obj = item.jsonObject
+                CropRecommendation(
+                    cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    suitability = obj["suitability"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+                    rationale = obj["rationale"]?.jsonPrimitive?.contentOrNull ?: "No rationale returned",
+                )
+            },
+            provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
+        )
+    }
+
+    private fun centroid(points: List<FarmPoint>): FarmPoint {
+        val x = points.sumOf { it.x.toDouble() } / points.size
+        val y = points.sumOf { it.y.toDouble() } / points.size
+        return FarmPoint(x.toFloat(), y.toFloat())
+    }
+}

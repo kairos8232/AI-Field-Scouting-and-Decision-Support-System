@@ -10,10 +10,13 @@ import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.FarmMapSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.FarmAddressSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.FarmBoundaryDrawScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.LotRecommendationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.PolygonInsightsScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.TimelineScreen
@@ -58,10 +61,36 @@ fun FarmTwinNavHost(
             },
         )
         AppDestination.ManualSetup,
-        AppDestination.FarmMapSetup -> FarmMapSetupScreen(
+        AppDestination.FarmMapSetup -> FarmAddressSetupScreen(
+            address = appState.farmSetupAddress,
+            locationQuery = appState.farmSetupMapQuery,
+            searchTrigger = appState.farmSetupSearchTrigger,
+            useCurrentLocationTrigger = appState.farmSetupUseCurrentLocationTrigger,
+            onAddressChange = appState::updateFarmSetupAddress,
+            onSearch = appState::searchFarmSetupAddress,
+            onUseCurrentLocation = appState::useCurrentLocationForFarmSetup,
+            onBack = { navigator.pop() },
+            onContinue = {
+                appState.continueToBoundaryDrawing()
+                navigator.navigate(AppDestination.FarmBoundaryDraw)
+            },
+        )
+        AppDestination.FarmBoundaryDraw -> FarmBoundaryDrawScreen(
             boundaryPoints = appState.farmBoundaryPoints,
+            locationQuery = appState.farmSetupMapQuery,
+            searchTrigger = appState.farmSetupSearchTrigger,
+            useCurrentLocationTrigger = appState.farmSetupUseCurrentLocationTrigger,
             onBoundaryChanged = appState::updateFarmBoundary,
             onBack = { navigator.pop() },
+            onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
+        )
+        AppDestination.PolygonInsights -> PolygonInsightsScreen(
+            boundaryPoints = appState.farmBoundaryPoints,
+            report = appState.polygonInsightsReport,
+            isSubmitting = appState.isSubmittingPolygon,
+            errorMessage = appState.polygonInsightsError,
+            onBack = { navigator.pop() },
+            onSubmitPolygon = appState::submitPolygonForInsights,
             onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
         )
         AppDestination.LotSectionSetup -> LotSectionSetupScreen(
@@ -69,7 +98,25 @@ fun FarmTwinNavHost(
             initialSections = appState.lotSections,
             onSaveSections = appState::updateLotSections,
             onBack = { navigator.pop() },
-            onContinue = { navigator.resetTo(AppDestination.Dashboard) },
+            onContinue = { navigator.navigate(AppDestination.LotRecommendation) },
+        )
+        AppDestination.LotRecommendation -> LotRecommendationScreen(
+            lots = appState.lotSections,
+            isAnalyzing = appState.isAnalyzingLots,
+            bestLotId = appState.lotRecommendationBestLotId,
+            recommendationReason = appState.lotRecommendationReason,
+            errorMessage = appState.lotRecommendationError,
+            dataSourceByLotId = appState.lotRecommendationDataSourceByLotId,
+            onBack = { navigator.pop() },
+            onAnalyze = appState::analyzeLotsForRecommendation,
+            onFollowAndContinue = {
+                appState.finalizeLotRecommendation(followRecommendation = true)
+                navigator.resetTo(AppDestination.Dashboard)
+            },
+            onSkipAndContinue = {
+                appState.finalizeLotRecommendation(followRecommendation = false)
+                navigator.resetTo(AppDestination.Dashboard)
+            },
         )
         AppDestination.DocumentSetup -> DocumentSetupScreen(
             summary = appState.snapshot.documentSummary,
