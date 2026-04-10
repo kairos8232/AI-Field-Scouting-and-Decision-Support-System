@@ -1,7 +1,11 @@
 package com.alleyz15.farmtwinai.ui.components
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.webkit.GeolocationPermissions
+import android.webkit.ConsoleMessage
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -16,6 +20,7 @@ import org.json.JSONObject
 
 private var sharedMapWebView: WebView? = null
 private var sharedMapApiKey: String? = null
+private const val MAP_WEBVIEW_TAG = "FarmMapWebView"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -42,13 +47,33 @@ actual fun PlatformGoogleMap(
           settings.javaScriptEnabled = true
           settings.domStorageEnabled = true
           settings.setGeolocationEnabled(true)
-          webViewClient = WebViewClient()
+          webViewClient = object : WebViewClient() {
+            override fun onReceivedError(
+              view: WebView?,
+              request: WebResourceRequest?,
+              error: WebResourceError?,
+            ) {
+              super.onReceivedError(view, request, error)
+              Log.w(
+                MAP_WEBVIEW_TAG,
+                "WebView load error: ${error?.description} (code=${error?.errorCode}) url=${request?.url}",
+              )
+            }
+          }
           webChromeClient = object : WebChromeClient() {
             override fun onGeolocationPermissionsShowPrompt(
               origin: String?,
               callback: GeolocationPermissions.Callback?,
             ) {
               callback?.invoke(origin, true, false)
+            }
+
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+              Log.d(
+                MAP_WEBVIEW_TAG,
+                "JS ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}",
+              )
+              return super.onConsoleMessage(consoleMessage)
             }
           }
           loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
@@ -88,8 +113,68 @@ actual fun PlatformGoogleMap(
     )
 }
 
-private fun buildGoogleMapHtml(apiKey: String): String =
-    """
+private fun buildGoogleMapHtml(apiKey: String): String {
+    if (apiKey.isBlank()) {
+        return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="initial-scale=1.0, width=device-width" />
+      <style>
+        html, body {
+          height: 100%;
+          margin: 0;
+          padding: 0;
+          background: #f5f3ee;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          color: #1f2a21;
+        }
+        .wrap {
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+          box-sizing: border-box;
+        }
+        .card {
+          border: 1px solid #cad6ca;
+          border-radius: 12px;
+          background: #ffffff;
+          padding: 14px;
+          max-width: 380px;
+          line-height: 1.4;
+        }
+        .title {
+          font-size: 15px;
+          font-weight: 700;
+          margin-bottom: 8px;
+        }
+        .code {
+          margin-top: 8px;
+          padding: 8px;
+          border-radius: 8px;
+          background: #f3f6f3;
+          font-family: ui-monospace, Menlo, Consolas, monospace;
+          font-size: 12px;
+          word-break: break-all;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div class="card">
+          <div class="title">Google Maps API key is missing</div>
+          Set one of these values in the project root config:
+          <div class="code">local.properties: GOOGLE_MAPS_API_KEY_ANDROID=YOUR_KEY</div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """.trimIndent()
+    }
+
+    return """
     <!DOCTYPE html>
     <html>
     <head>
@@ -200,3 +285,4 @@ private fun buildGoogleMapHtml(apiKey: String): String =
     </body>
     </html>
     """.trimIndent()
+}

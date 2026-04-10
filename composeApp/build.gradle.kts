@@ -9,8 +9,25 @@ val envProperties = Properties().apply {
     }
 }
 
+val localProperties = Properties().apply {
+    val localPropsFile = rootProject.file("local.properties")
+    if (localPropsFile.exists()) {
+        localPropsFile.inputStream().use { load(it) }
+    }
+}
+
 fun env(name: String): String = (envProperties.getProperty(name) ?: "").trim()
 fun envOrDefault(name: String, fallback: String): String = env(name).ifBlank { fallback }
+fun configValue(name: String): String =
+    (
+        envProperties.getProperty(name)
+            ?: localProperties.getProperty(name)
+            ?: (project.findProperty(name) as String?)
+            ?: ""
+        ).trim()
+
+fun firstConfigured(vararg names: String): String =
+    names.asSequence().map(::configValue).firstOrNull { it.isNotBlank() }.orEmpty()
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -79,7 +96,11 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
-        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = env("GOOGLE_MAPS_API_KEY_ANDROID")
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = firstConfigured(
+            "GOOGLE_MAPS_API_KEY_ANDROID",
+            "GOOGLE_MAPS_API_KEY",
+            "MAPS_API_KEY",
+        )
         buildConfigField(
             "String",
             "FIELD_INSIGHTS_BASE_URL",
