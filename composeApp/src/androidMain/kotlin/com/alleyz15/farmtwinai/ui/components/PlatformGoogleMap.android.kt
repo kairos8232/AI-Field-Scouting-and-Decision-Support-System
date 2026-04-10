@@ -10,6 +10,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.ViewGroup
+import android.view.View
 import com.alleyz15.farmtwinai.BuildConfig
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -55,6 +56,28 @@ actual fun PlatformGoogleMap(
         settings.domStorageEnabled = true
         settings.setGeolocationEnabled(true)
         webViewClient = object : WebViewClient() {
+          override fun onPageFinished(view: WebView?, url: String?) {
+            super.onPageFinished(view, url)
+            view?.evaluateJavascript(
+              """
+              (function() {
+                var hasGoogle = !!window.google;
+                var hasMaps = !!(window.google && window.google.maps);
+                var statusEl = document.getElementById('status');
+                return JSON.stringify({
+                  readyState: document.readyState,
+                  hasGoogle: hasGoogle,
+                  hasMaps: hasMaps,
+                  statusText: statusEl ? statusEl.textContent : "",
+                  statusVisible: statusEl ? statusEl.style.display : ""
+                });
+              })();
+              """.trimIndent(),
+            ) { result ->
+              Log.i(MAP_WEBVIEW_TAG, "WebView health: $result")
+            }
+          }
+
           override fun onReceivedError(
             view: WebView?,
             request: WebResourceRequest?,
@@ -76,13 +99,14 @@ actual fun PlatformGoogleMap(
           }
 
           override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-            Log.d(
+            Log.i(
               MAP_WEBVIEW_TAG,
               "JS ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}",
             )
             return super.onConsoleMessage(consoleMessage)
           }
         }
+        setLayerType(View.LAYER_TYPE_HARDWARE, null)
       }
     }
 
