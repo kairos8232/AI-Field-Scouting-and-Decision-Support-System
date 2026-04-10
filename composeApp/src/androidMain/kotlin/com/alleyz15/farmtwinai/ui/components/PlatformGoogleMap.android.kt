@@ -12,6 +12,7 @@ import android.webkit.WebViewClient
 import android.view.ViewGroup
 import com.alleyz15.farmtwinai.BuildConfig
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -19,8 +20,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 
-private var sharedMapWebView: WebView? = null
-private var sharedMapApiKey: String? = null
 private const val MAP_WEBVIEW_TAG = "FarmMapWebView"
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -50,50 +49,53 @@ actual fun PlatformGoogleMap(
     }
 
     val mapHtml = remember(apiKey) { buildGoogleMapHtml(apiKey) }
-    val webView = remember(apiKey) {
-      val existing = sharedMapWebView
-      if (existing != null && sharedMapApiKey == apiKey) {
-        existing
-      } else {
-        WebView(context).apply {
-          settings.javaScriptEnabled = true
-          settings.domStorageEnabled = true
-          settings.setGeolocationEnabled(true)
-          webViewClient = object : WebViewClient() {
-            override fun onReceivedError(
-              view: WebView?,
-              request: WebResourceRequest?,
-              error: WebResourceError?,
-            ) {
-              super.onReceivedError(view, request, error)
-              Log.w(
-                MAP_WEBVIEW_TAG,
-                "WebView load error: ${error?.description} (code=${error?.errorCode}) url=${request?.url}",
-              )
-            }
+    val webView = remember(context) {
+      WebView(context).apply {
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.setGeolocationEnabled(true)
+        webViewClient = object : WebViewClient() {
+          override fun onReceivedError(
+            view: WebView?,
+            request: WebResourceRequest?,
+            error: WebResourceError?,
+          ) {
+            super.onReceivedError(view, request, error)
+            Log.w(
+              MAP_WEBVIEW_TAG,
+              "WebView load error: ${error?.description} (code=${error?.errorCode}) url=${request?.url}",
+            )
           }
-          webChromeClient = object : WebChromeClient() {
-            override fun onGeolocationPermissionsShowPrompt(
-              origin: String?,
-              callback: GeolocationPermissions.Callback?,
-            ) {
-              callback?.invoke(origin, true, false)
-            }
+        }
+        webChromeClient = object : WebChromeClient() {
+          override fun onGeolocationPermissionsShowPrompt(
+            origin: String?,
+            callback: GeolocationPermissions.Callback?,
+          ) {
+            callback?.invoke(origin, true, false)
+          }
 
-            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-              Log.d(
-                MAP_WEBVIEW_TAG,
-                "JS ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}",
-              )
-              return super.onConsoleMessage(consoleMessage)
-            }
+          override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+            Log.d(
+              MAP_WEBVIEW_TAG,
+              "JS ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}",
+            )
+            return super.onConsoleMessage(consoleMessage)
           }
-          loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
-        }.also {
-          sharedMapWebView = it
-          sharedMapApiKey = apiKey
         }
       }
+    }
+
+    DisposableEffect(webView) {
+      onDispose {
+        (webView.parent as? ViewGroup)?.removeView(webView)
+        webView.stopLoading()
+        webView.destroy()
+      }
+    }
+
+    LaunchedEffect(mapHtml) {
+      webView.loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
     }
 
     LaunchedEffect(searchTrigger) {
