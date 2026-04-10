@@ -18,6 +18,7 @@ val localProperties = Properties().apply {
 
 fun env(name: String): String = (envProperties.getProperty(name) ?: "").trim()
 fun envOrDefault(name: String, fallback: String): String = env(name).ifBlank { fallback }
+fun asBuildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 fun configValue(name: String): String =
     (
         envProperties.getProperty(name)
@@ -96,15 +97,17 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
-        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = firstConfigured(
+        val mapsApiKey = firstConfigured(
             "GOOGLE_MAPS_API_KEY_ANDROID",
             "GOOGLE_MAPS_API_KEY",
             "MAPS_API_KEY",
         )
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKey
+        buildConfigField("String", "GOOGLE_MAPS_API_KEY", asBuildConfigString(mapsApiKey))
         buildConfigField(
             "String",
             "FIELD_INSIGHTS_BASE_URL",
-            "\"${envOrDefault("FIELD_INSIGHTS_BASE_URL", "http://localhost:8080/api")}\"",
+            asBuildConfigString(envOrDefault("FIELD_INSIGHTS_BASE_URL", "http://localhost:8080/api")),
         )
     }
     packaging {

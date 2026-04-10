@@ -10,6 +10,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.ViewGroup
+import com.alleyz15.farmtwinai.BuildConfig
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -33,8 +34,16 @@ actual fun PlatformGoogleMap(
 ) {
     val context = LocalContext.current
     val apiKey = remember(context) {
-        val appInfo = context.packageManager.getApplicationInfo(context.packageName, android.content.pm.PackageManager.GET_META_DATA)
-        appInfo.metaData?.getString("com.google.android.geo.API_KEY").orEmpty()
+    val fromBuildConfig = BuildConfig.GOOGLE_MAPS_API_KEY.trim()
+    if (fromBuildConfig.isNotBlank()) {
+      fromBuildConfig
+    } else {
+      val appInfo = context.packageManager.getApplicationInfo(
+        context.packageName,
+        android.content.pm.PackageManager.GET_META_DATA,
+      )
+      appInfo.metaData?.getString("com.google.android.geo.API_KEY").orEmpty().trim()
+    }
     }
 
     val mapHtml = remember(apiKey) { buildGoogleMapHtml(apiKey) }
