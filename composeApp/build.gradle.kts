@@ -1,29 +1,52 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
 import java.util.Properties
 
-val envProperties = Properties().apply {
-    val envFile = rootProject.file(".env")
-    if (envFile.exists()) {
-        envFile.inputStream().use { load(it) }
-    }
+fun loadPropertiesFile(file: File): Map<String, String> {
+    if (!file.exists()) return emptyMap()
+    val props = Properties()
+    file.inputStream().use { props.load(it) }
+    return props.entries.associate { (k, v) -> k.toString().trim() to v.toString().trim() }
 }
 
-val localProperties = Properties().apply {
-    val localPropsFile = rootProject.file("local.properties")
-    if (localPropsFile.exists()) {
-        localPropsFile.inputStream().use { load(it) }
+fun loadDotEnvFile(file: File): Map<String, String> {
+    if (!file.exists()) return emptyMap()
+    val result = mutableMapOf<String, String>()
+    file.forEachLine { raw ->
+        val line = raw.trim()
+        if (line.isEmpty() || line.startsWith("#")) return@forEachLine
+
+        val normalized = if (line.startsWith("export ")) line.removePrefix("export ").trim() else line
+        val sep = normalized.indexOf('=')
+        if (sep <= 0) return@forEachLine
+
+        val key = normalized.substring(0, sep).trim()
+        var value = normalized.substring(sep + 1).trim()
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+            value = value.substring(1, value.length - 1)
+        }
+        result[key] = value
     }
+    return result
 }
 
-fun env(name: String): String = (envProperties.getProperty(name) ?: "").trim()
-fun envOrDefault(name: String, fallback: String): String = env(name).ifBlank { fallback }
+val moduleDotEnv = loadDotEnvFile(project.file(".env"))
+val rootDotEnv = loadDotEnvFile(rootProject.file(".env"))
+val moduleLocalProperties = loadPropertiesFile(project.file("local.properties"))
+val rootLocalProperties = loadPropertiesFile(rootProject.file("local.properties"))
+
+fun env(name: String): String = configValue(name)
+fun envOrDefault(name: String, fallback: String): String = configValue(name).ifBlank { fallback }
 fun asBuildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 fun configValue(name: String): String =
     (
-        envProperties.getProperty(name)
-            ?: localProperties.getProperty(name)
-            ?: (project.findProperty(name) as String?)
+        (project.findProperty(name) as String?)
+            ?: moduleLocalProperties[name]
+            ?: rootLocalProperties[name]
+            ?: moduleDotEnv[name]
+            ?: rootDotEnv[name]
+            ?: System.getenv(name)
             ?: ""
         ).trim()
 
@@ -102,6 +125,9 @@ android {
             "GOOGLE_MAPS_API_KEY",
             "MAPS_API_KEY",
         )
+        if (mapsApiKey.isBlank()) {
+            logger.warn("GOOGLE_MAPS_API_KEY_ANDROID is blank. Checked project/root local.properties and .env files.")
+        }
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "GOOGLE_MAPS_API_KEY", asBuildConfigString(mapsApiKey))
         buildConfigField(

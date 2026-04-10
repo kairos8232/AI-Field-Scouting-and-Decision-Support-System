@@ -36,13 +36,16 @@ actual fun PlatformGoogleMap(
     val apiKey = remember(context) {
     val fromBuildConfig = BuildConfig.GOOGLE_MAPS_API_KEY.trim()
     if (fromBuildConfig.isNotBlank()) {
+        Log.i(MAP_WEBVIEW_TAG, "Using BuildConfig key (length=${fromBuildConfig.length})")
       fromBuildConfig
     } else {
       val appInfo = context.packageManager.getApplicationInfo(
         context.packageName,
         android.content.pm.PackageManager.GET_META_DATA,
       )
-      appInfo.metaData?.getString("com.google.android.geo.API_KEY").orEmpty().trim()
+        val fromManifest = appInfo.metaData?.getString("com.google.android.geo.API_KEY").orEmpty().trim()
+        Log.i(MAP_WEBVIEW_TAG, "Using manifest key (length=${fromManifest.length})")
+        fromManifest
     }
     }
 
