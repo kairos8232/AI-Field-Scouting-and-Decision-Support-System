@@ -95,8 +95,31 @@ fun FarmTwinNavHost(
         )
         AppDestination.LotSectionSetup -> LotSectionSetupScreen(
             boundaryPoints = appState.farmBoundaryPoints,
-            initialSections = appState.lotSections,
-            onSaveSections = appState::updateLotSections,
+            totalAreaHa = appState.snapshot.farm.fieldSize,
+            lots = appState.lotSections.map { it.points },
+            lotCropTypes = appState.lotSections.mapIndexed { index, lot -> index to lot.cropPlan }.toMap(),
+            onTotalAreaChange = { },
+            onLotsChange = { updatedLots ->
+                val existing = appState.lotSections
+                val updatedSections = updatedLots.mapIndexed { index, points ->
+                    val previous = existing.getOrNull(index)
+                    com.alleyz15.farmtwinai.domain.model.LotSectionDraft(
+                        id = previous?.id ?: "lot-${index + 1}",
+                        name = previous?.name ?: "Lot ${index + 1}",
+                        points = points,
+                        cropPlan = previous?.cropPlan ?: appState.snapshot.farm.cropName,
+                        soilType = previous?.soilType ?: "",
+                        waterAvailability = previous?.waterAvailability ?: "",
+                    )
+                }
+                appState.updateLotSections(updatedSections)
+            },
+            onLotCropTypeChange = { index, crop ->
+                val updated = appState.lotSections.mapIndexed { i, lot ->
+                    if (i == index) lot.copy(cropPlan = crop) else lot
+                }
+                appState.updateLotSections(updated)
+            },
             onBack = { navigator.pop() },
             onContinue = { navigator.navigate(AppDestination.LotRecommendation) },
         )
