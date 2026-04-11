@@ -45,13 +45,20 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
-import com.alleyz15.farmtwinai.ui.components.OnboardingBackground
 import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
+import farmtwinai.composeapp.generated.resources.Res
+import farmtwinai.composeapp.generated.resources.ic_farm_bg
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.painterResource
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 
 @Composable
 fun AuthScreen(
@@ -80,45 +87,54 @@ fun AuthScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        OnboardingBackground(overlayAlpha = 0.52f)
+    Box(modifier = Modifier.fillMaxSize().background(CardDark)) {
+        Image(
+            painter = painterResource(Res.drawable.ic_farm_bg),
+            contentDescription = "Farm Background",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f)
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.6f)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            CardDark.copy(alpha = 0.8f),
+                            CardDark
+                        )
+                    )
+                )
+        )
 
         OnboardingAdaptiveWidth { maxContentWidth, _ ->
             AnimatedVisibility(
                 visible = showCard,
-                enter = fadeIn(animationSpec = tween(320)) +
-                    slideInVertically(
-                        initialOffsetY = { it / 8 },
-                        animationSpec = tween(360),
-                    ) +
-                    scaleIn(
-                        initialScale = 0.96f,
-                        animationSpec = tween(360),
-                    ),
-                exit = fadeOut(animationSpec = tween(220)) +
-                    slideOutVertically(
-                        targetOffsetY = { it / 10 },
-                        animationSpec = tween(240),
-                    ) +
-                    scaleOut(
-                        targetScale = 0.97f,
-                        animationSpec = tween(240),
-                    ),
-                modifier = Modifier.align(Alignment.Center),
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(400),
+                ) + fadeIn(animationSpec = tween(300)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(300),
+                ) + fadeOut(animationSpec = tween(200)),
+                modifier = Modifier.align(Alignment.BottomCenter),
             ) {
-                Card(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = maxContentWidth)
-                        .padding(horizontal = 24.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = CardDark.copy(alpha = 0.92f),
-                    ),
+                        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+                        .background(CardDark)
                 ) {
                     Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, end = 24.dp, top = 32.dp, bottom = 48.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         val authFieldColors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Sand100,
@@ -132,13 +148,13 @@ fun AuthScreen(
                             unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
                         )
 
-                        Row(
+                        Box(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             IconButton(
                                 onClick = { pendingBack = true },
                                 modifier = Modifier
+                                    .align(Alignment.CenterStart)
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(Color.White.copy(alpha = 0.08f)),
                             ) {
@@ -148,14 +164,15 @@ fun AuthScreen(
                                     tint = Sand100,
                                 )
                             }
-                        }
 
-                        Text(
-                            text = if (isLogin) "Login" else "Sign Up",
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Sand100,
-                        )
+                            Text(
+                                text = if (isLogin) "Login" else "Sign Up",
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Sand100,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
                         Text(
                             text = if (isLogin) {
                                 "Welcome back. Enter your account details to continue."
@@ -164,6 +181,7 @@ fun AuthScreen(
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = Sand100.copy(alpha = 0.78f),
+                            modifier = Modifier.padding(bottom = 8.dp)
                         )
 
                         if (!isLogin) {
@@ -215,7 +233,6 @@ fun AuthScreen(
                         Button(
                             onClick = {
                                 authMessage = null
-
                                 val trimmedEmail = email.trim()
                                 val trimmedPassword = password.trim()
                                 val trimmedDisplayName = displayName.trim()
@@ -225,25 +242,21 @@ fun AuthScreen(
                                     trimmedEmail.isBlank() || !trimmedEmail.contains("@") -> {
                                         authMessage = "Please enter a valid email address."
                                     }
-
                                     trimmedPassword.length < 6 -> {
                                         authMessage = "Password must be at least 6 characters."
                                     }
-
                                     !isLogin && trimmedDisplayName.isBlank() -> {
                                         authMessage = "Full name is required for sign up."
                                     }
-
                                     !isLogin && trimmedConfirmPassword != trimmedPassword -> {
                                         authMessage = "Passwords do not match."
                                     }
-
                                     else -> onContinue()
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(56.dp).padding(top = 8.dp),
                         ) {
-                            Text(if (isLogin) "Login" else "Create Account")
+                            Text(if (isLogin) "Login" else "Create Account", style = MaterialTheme.typography.titleMedium)
                         }
 
                         if (authMessage != null) {
@@ -259,9 +272,9 @@ fun AuthScreen(
                                 authMessage = null
                                 onSwitchMode()
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
                         ) {
-                            Text(if (isLogin) "Sign Up instead" else "Login instead")
+                            Text(if (isLogin) "Sign Up instead" else "Login instead", style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }

@@ -1,5 +1,6 @@
 package com.alleyz15.farmtwinai.ui.screens.flow
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,67 +22,94 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
-import com.alleyz15.farmtwinai.ui.components.OnboardingBackground
+import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Forest500
 import com.alleyz15.farmtwinai.ui.theme.Forest900
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
+import farmtwinai.composeapp.generated.resources.Res
+import farmtwinai.composeapp.generated.resources.ic_farm_bg
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun WelcomeScreen(
     onLogin: () -> Unit,
     onSignUp: () -> Unit,
 ) {
-    Scaffold(containerColor = Color.Black) { padding ->
-        OnboardingAdaptiveWidth(
+    Box(modifier = Modifier.fillMaxSize().background(CardDark)) {
+        Image(
+            painter = painterResource(Res.drawable.ic_farm_bg),
+            contentDescription = "Farm Background",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding),
-        ) { maxContentWidth, _ ->
-            Box(modifier = Modifier.fillMaxSize()) {
-                OnboardingBackground(overlayAlpha = 0.46f)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.2f),
+                            Color.Transparent,
+                            CardDark.copy(alpha = 0.8f),
+                            CardDark
+                        ),
+                        startY = 0f,
+                        endY = Float.POSITIVE_INFINITY
+                    )
+                )
+        )
 
+        Scaffold(containerColor = Color.Transparent) { padding ->
+            OnboardingAdaptiveWidth(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            ) { maxContentWidth, _ ->
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 28.dp, vertical = 36.dp),
+                        .padding(horizontal = 24.dp, vertical = 48.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Spacer(modifier = Modifier.height(64.dp))
-                    AppBrandBlock()
                     Spacer(modifier = Modifier.weight(1f))
+                    AppBrandBlock()
+                    Spacer(modifier = Modifier.height(64.dp))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .widthIn(max = maxContentWidth),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Button(
                             onClick = onLogin,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(54.dp),
+                                .height(56.dp),
                         ) {
-                            Text("Login")
+                            Text("Login", style = MaterialTheme.typography.titleMedium)
                         }
                         OutlinedButton(
                             onClick = onSignUp,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(54.dp),
+                                .height(56.dp),
                         ) {
-                            Text("Sign Up")
+                            Text("Sign Up", style = MaterialTheme.typography.titleMedium)
                         }
                     }
-                    Spacer(modifier = Modifier.height(96.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
@@ -92,36 +120,38 @@ fun WelcomeScreen(
 private fun AppBrandBlock() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(80.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.White.copy(alpha = 0.14f)),
+                .size(72.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.White.copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center,
         ) {
             androidx.compose.material3.Icon(
                 imageVector = FarmLogoIcon,
                 contentDescription = "FarmTwin logo",
                 tint = Sand100,
-                modifier = Modifier.size(42.dp),
+                modifier = Modifier.size(36.dp),
             )
         }
 
-        Text(
-            text = "FarmTwin",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = Sand100,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "Your Farm, Reimagined by AI",
-            style = MaterialTheme.typography.bodyLarge,
-            color = Sand100.copy(alpha = 0.92f),
-            textAlign = TextAlign.Center,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "FarmTwin",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Bold,
+                color = Sand100,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "Your Farm, Reimagined by AI",
+                style = MaterialTheme.typography.titleMedium,
+                color = Sand100.copy(alpha = 0.85f),
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
