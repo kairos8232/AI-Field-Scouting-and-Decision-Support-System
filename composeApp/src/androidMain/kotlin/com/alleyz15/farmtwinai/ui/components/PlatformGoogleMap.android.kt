@@ -9,8 +9,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.view.MotionEvent
 import android.view.ViewGroup
-import android.view.View
 import com.alleyz15.farmtwinai.BuildConfig
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -22,6 +22,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import org.json.JSONObject
 
 private const val MAP_WEBVIEW_TAG = "FarmMapWebView"
+private var sharedMapWebView: WebView? = null
+private var sharedMapApiKey: String? = null
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -50,76 +52,75 @@ actual fun PlatformGoogleMap(
     }
 
     val mapHtml = remember(apiKey) { buildGoogleMapHtml(apiKey) }
-    val webView = remember(context) {
-      WebView(context).apply {
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.setGeolocationEnabled(true)
-        webViewClient = object : WebViewClient() {
-          override fun onPageFinished(view: WebView?, url: String?) {
-            super.onPageFinished(view, url)
-            view?.evaluateJavascript(
-              """
-              (function() {
-                var hasGoogle = !!window.google;
-                var hasMaps = !!(window.google && window.google.maps);
-                var statusEl = document.getElementById('status');
-                return JSON.stringify({
-                  readyState: document.readyState,
-                  hasGoogle: hasGoogle,
-                  hasMaps: hasMaps,
-                  statusText: statusEl ? statusEl.textContent : "",
-                  statusVisible: statusEl ? statusEl.style.display : ""
-                });
-              })();
-              """.trimIndent(),
-            ) { result ->
-              Log.i(MAP_WEBVIEW_TAG, "WebView health: $result")
+    val webView = remember(context, apiKey, mapHtml) {
+      val existing = sharedMapWebView
+      if (existing != null && sharedMapApiKey == apiKey) {
+        existing
+      } else {
+        WebView(context).apply {
+          settings.javaScriptEnabled = true
+          settings.domStorageEnabled = true
+          settings.setGeolocationEnabled(true)
+          settings.useWideViewPort = true
+          settings.loadWithOverviewMode = true
+          webViewClient = object : WebViewClient() {
+
+            override fun onReceivedError(
+              view: WebView?,
+              request: WebResourceRequest?,
+              error: WebResourceError?,
+            ) {
+              super.onReceivedError(view, request, error)
+              Log.w(
+                MAP_WEBVIEW_TAG,
+                "WebView load error: ${error?.description} (code=${error?.errorCode}) url=${request?.url}",
+              )
+            }
+
+            override fun onReceivedHttpError(
+              view: WebView?,
+              request: WebResourceRequest?,
+              errorResponse: android.webkit.WebResourceResponse?,
+            ) {
+              super.onReceivedHttpError(view, request, errorResponse)
+              if (request?.url?.toString() == "https://maps.googleapis.com/favicon.ico") return
+              Log.w(
+                MAP_WEBVIEW_TAG,
+                "WebView HTTP error: status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase} url=${request?.url}",
+              )
             }
           }
+          webChromeClient = object : WebChromeClient() {
+            override fun onGeolocationPermissionsShowPrompt(
+              origin: String?,
+              callback: GeolocationPermissions.Callback?,
+            ) {
+              callback?.invoke(origin, true, false)
+            }
 
-          override fun onReceivedError(
-            view: WebView?,
-            request: WebResourceRequest?,
-            error: WebResourceError?,
-          ) {
-            super.onReceivedError(view, request, error)
-            Log.w(
-              MAP_WEBVIEW_TAG,
-              "WebView load error: ${error?.description} (code=${error?.errorCode}) url=${request?.url}",
-            )
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+              val level = consoleMessage?.messageLevel()
+              if (level == ConsoleMessage.MessageLevel.ERROR || level == ConsoleMessage.MessageLevel.WARNING) {
+                Log.w(
+                  MAP_WEBVIEW_TAG,
+                  "JS ${consoleMessage.messageLevel()}: ${consoleMessage.message()} @ ${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}",
+                )
+              }
+              return super.onConsoleMessage(consoleMessage)
+            }
           }
+          loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
+        }.also {
+          sharedMapWebView = it
+          sharedMapApiKey = apiKey
         }
-        webChromeClient = object : WebChromeClient() {
-          override fun onGeolocationPermissionsShowPrompt(
-            origin: String?,
-            callback: GeolocationPermissions.Callback?,
-          ) {
-            callback?.invoke(origin, true, false)
-          }
-
-          override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-            Log.i(
-              MAP_WEBVIEW_TAG,
-              "JS ${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} @ ${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()}",
-            )
-            return super.onConsoleMessage(consoleMessage)
-          }
-        }
-        setLayerType(View.LAYER_TYPE_HARDWARE, null)
       }
     }
 
     DisposableEffect(webView) {
       onDispose {
         (webView.parent as? ViewGroup)?.removeView(webView)
-        webView.stopLoading()
-        webView.destroy()
       }
-    }
-
-    LaunchedEffect(mapHtml) {
-      webView.loadDataWithBaseURL("https://maps.googleapis.com/", mapHtml, "text/html", "utf-8", null)
     }
 
     LaunchedEffect(searchTrigger) {
@@ -135,6 +136,15 @@ actual fun PlatformGoogleMap(
       }
     }
 
+    LaunchedEffect(Unit) {
+      webView.postDelayed({
+        webView.evaluateJavascript("window.refreshMapSize && window.refreshMapSize();", null)
+      }, 250)
+      webView.postDelayed({
+        webView.evaluateJavascript("window.refreshMapSize && window.refreshMapSize();", null)
+      }, 1000)
+    }
+
     AndroidView(
         modifier = modifier,
       factory = {
@@ -142,11 +152,26 @@ actual fun PlatformGoogleMap(
         webView
       },
         update = {
-            it.isClickable = allowMapInteraction
-            it.isLongClickable = allowMapInteraction
-            it.isFocusable = allowMapInteraction
-            it.isFocusableInTouchMode = allowMapInteraction
-            it.isEnabled = allowMapInteraction
+        it.isEnabled = true
+        it.isClickable = true
+        it.isLongClickable = true
+        it.isFocusable = true
+        it.isFocusableInTouchMode = true
+        if (allowMapInteraction) {
+          it.setOnTouchListener(null)
+        } else {
+          it.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+              MotionEvent.ACTION_DOWN,
+              MotionEvent.ACTION_MOVE,
+              MotionEvent.ACTION_UP,
+              MotionEvent.ACTION_POINTER_DOWN,
+              MotionEvent.ACTION_POINTER_UP,
+              MotionEvent.ACTION_CANCEL -> true
+              else -> false
+            }
+          }
+        }
         },
     )
 }
@@ -218,42 +243,43 @@ private fun buildGoogleMapHtml(apiKey: String): String {
     <head>
       <meta name="viewport" content="initial-scale=1.0, width=device-width" />
       <style>
-        html, body, #map { height: 100%; margin: 0; padding: 0; background: #d7e3d7; }
-        #status {
+        html, body {
+          width: 100%;
+          height: 100%;
+          margin: 0;
+          padding: 0;
+          background: #d7e3d7;
+          overflow: hidden;
+        }
+        #map {
           position: absolute;
-          left: 12px;
-          right: 12px;
-          top: 12px;
-          z-index: 1000;
-          display: none;
-          padding: 10px;
-          border-radius: 8px;
-          font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          color: #3a2e00;
-          background: #fff2c2;
-          border: 1px solid #e9d98c;
+          left: 0;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          height: 100%;
+          min-height: 100%;
+          background: #d7e3d7;
         }
       </style>
       <script>
-        let map;
-        let geocoder;
-        let mapReady = false;
-        let pendingQuery = null;
+        var map = null;
+        var geocoder = null;
+        var mapReady = false;
+        var pendingQuery = null;
 
-        function showStatus(message) {
-          const el = document.getElementById('status');
-          if (!el) return;
-          el.style.display = 'block';
-          el.textContent = message;
-        }
+        window.gm_authFailure = function() {
+          try { console.warn('Google Maps auth failure (API key restriction/billing).'); } catch (e) {}
+        };
 
         window.onerror = function(message, source, line, col) {
-          showStatus('Map script error: ' + message + ' @ ' + line + ':' + col);
+          try { console.warn('Map script error: ' + message + ' @ ' + line + ':' + col); } catch (e) {}
         };
 
         function saveMapView() {
           if (!map) return;
-          const c = map.getCenter();
+          var c = map.getCenter();
           if (!c) return;
           window.__farmMapView = {
             lat: c.lat(),
@@ -282,77 +308,144 @@ private fun buildGoogleMapHtml(apiKey: String): String {
             }
 
             if (status === 'ZERO_RESULTS' || status === 'REQUEST_DENIED' || status === 'INVALID_REQUEST') {
-              const encoded = encodeURIComponent(query);
+              var encoded = encodeURIComponent(query);
               fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encoded)
-                .then(r => r.json())
-                .then(items => {
+                .then(function(r) { return r.json(); })
+                .then(function(items) {
                   if (items && items.length > 0) {
-                    const lat = parseFloat(items[0].lat);
-                    const lng = parseFloat(items[0].lon);
+                    var lat = parseFloat(items[0].lat);
+                    var lng = parseFloat(items[0].lon);
                     map.setCenter({ lat: lat, lng: lng });
                     map.setZoom(16);
                     saveMapView();
                   }
                 })
-                .catch(() => {});
+                .catch(function() {});
             }
           });
         }
 
+        function refreshMapSize() {
+          if (!map || !(window.google && window.google.maps)) return;
+          var center = map.getCenter();
+          google.maps.event.trigger(map, 'resize');
+          if (center) {
+            map.setCenter(center);
+          }
+        }
+
+        function ensureMapContainerSize() {
+          try {
+            var htmlEl = document.documentElement;
+            var bodyEl = document.body;
+            var mapEl = document.getElementById('map');
+            if (!htmlEl || !bodyEl || !mapEl) return;
+
+            var viewportHeight = window.innerHeight || htmlEl.clientHeight || bodyEl.clientHeight || 0;
+            if (viewportHeight <= 0) viewportHeight = 320;
+
+            htmlEl.style.height = viewportHeight + 'px';
+            bodyEl.style.height = viewportHeight + 'px';
+            mapEl.style.height = viewportHeight + 'px';
+            mapEl.style.width = '100%';
+          } catch (e) {}
+        }
+
         function init() {
           try {
+            ensureMapContainerSize();
+            if (!(window.google && window.google.maps)) {
+              return;
+            }
+
             geocoder = new google.maps.Geocoder();
-            map = new google.maps.Map(document.getElementById('map'), {
+            var mapOptions = {
               center: { lat: 6.1184, lng: 100.3685 },
               zoom: 14,
               mapTypeControl: false,
               streetViewControl: false,
               fullscreenControl: false
-            });
+            };
+
+            if (google.maps.RenderingType && google.maps.RenderingType.RASTER) {
+              mapOptions.renderingType = google.maps.RenderingType.RASTER;
+            }
+
+            map = new google.maps.Map(document.getElementById('map'), mapOptions);
 
             map.addListener('idle', function() {
               saveMapView();
             });
 
+            map.addListener('tilesloaded', function() {
+              // no-op; tiles are visible
+            });
+
             mapReady = true;
+            window.__farmMap = map;
             restoreMapView();
             if (pendingQuery) {
               geocodeAddress(pendingQuery);
             }
+            setTimeout(ensureMapContainerSize, 50);
+            setTimeout(ensureMapContainerSize, 250);
+            setTimeout(ensureMapContainerSize, 1000);
+            setTimeout(refreshMapSize, 100);
+            setTimeout(refreshMapSize, 400);
+            setTimeout(refreshMapSize, 1200);
           } catch (e) {
-            showStatus('Map init failed: ' + (e && e.message ? e.message : e));
+            try { console.warn('Map init failed: ' + (e && e.message ? e.message : e)); } catch (ignore) {}
           }
         }
 
         window.initFarmMap = init;
+        window.refreshMapSize = refreshMapSize;
 
         window.updateLocation = function(query) {
           pendingQuery = query;
           if (mapReady) {
             geocodeAddress(pendingQuery);
           }
-        }
+        };
 
         window.useCurrentLocation = function() {
-          if (!map || !navigator.geolocation) return;
+          if (!map) return;
+          if (!navigator.geolocation) return;
           navigator.geolocation.getCurrentPosition(function(position) {
-            const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+            var loc = { lat: position.coords.latitude, lng: position.coords.longitude };
             map.setCenter(loc);
             map.setZoom(17);
             saveMapView();
-          });
-        }
+          }, function(error) {});
+        };
 
-        setTimeout(function() {
-          if (!mapReady) {
-            showStatus('Map did not initialize. Check FarmMapWebView logs for API restriction errors.');
+        window.onload = function() {
+          ensureMapContainerSize();
+          setTimeout(function() {
+            init();
+          }, 0);
+        };
+
+        window.addEventListener('resize', function() {
+          ensureMapContainerSize();
+          refreshMapSize();
+        });
+
+        var __farmMapSizingChecks = 0;
+        var __farmMapSizingTimer = setInterval(function() {
+          ensureMapContainerSize();
+          if (mapReady) {
+            refreshMapSize();
           }
-        }, 6000);
+          __farmMapSizingChecks++;
+          if (__farmMapSizingChecks >= 12) {
+            clearInterval(__farmMapSizingTimer);
+          }
+        }, 500);
       </script>
       <script async defer src="https://maps.googleapis.com/maps/api/js?key=$apiKey&loading=async&callback=initFarmMap"></script>
     </head>
     <body>
-      <div id="status"></div>
       <div id="map"></div>
     </body>
     </html>
