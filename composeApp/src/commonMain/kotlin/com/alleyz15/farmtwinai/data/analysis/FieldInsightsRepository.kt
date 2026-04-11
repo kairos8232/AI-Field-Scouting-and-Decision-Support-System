@@ -7,5 +7,7 @@ interface FieldInsightsRepository {
     suspend fun analyzePolygon(
         points: List<FarmPoint>,
         targetCrops: List<String> = emptyList(),
+        totalFarmAreaHectares: Double? = null,
+        lotAreaHectares: Double? = null,
     ): FieldInsightReport
 }

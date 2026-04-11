@@ -95,10 +95,10 @@ fun FarmTwinNavHost(
         )
         AppDestination.LotSectionSetup -> LotSectionSetupScreen(
             boundaryPoints = appState.farmBoundaryPoints,
-            totalAreaHa = appState.snapshot.farm.fieldSize,
+            totalAreaHa = appState.lotTotalAreaInput,
             lots = appState.lotSections.map { it.points },
             lotCropTypes = appState.lotSections.mapIndexed { index, lot -> index to lot.cropPlan }.toMap(),
-            onTotalAreaChange = { },
+            onTotalAreaChange = appState::updateLotTotalAreaInput,
             onLotsChange = { updatedLots ->
                 val existing = appState.lotSections
                 val updatedSections = updatedLots.mapIndexed { index, points ->
@@ -157,7 +157,7 @@ fun FarmTwinNavHost(
             onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onOpenHistory = { navigator.navigate(AppDestination.History) },
-            isTabBarVisible = appState.isAuthenticated,
+            isTabBarVisible = true,
             onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
             onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )
@@ -203,7 +203,7 @@ fun FarmTwinNavHost(
                 appState.signOut()
                 navigator.resetTo(AppDestination.Welcome)
             },
-            isTabBarVisible = appState.isAuthenticated,
+            isTabBarVisible = true,
             onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
             onSelectMeTab = { navigator.replace(AppDestination.Me) },
         )

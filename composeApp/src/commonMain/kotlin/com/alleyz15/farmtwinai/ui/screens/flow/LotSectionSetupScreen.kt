@@ -3,6 +3,7 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,7 +57,9 @@ import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
+import kotlin.math.abs
 import kotlin.math.pow
+import kotlin.math.round
 import kotlin.math.sqrt
 
 @Composable
@@ -136,6 +139,22 @@ fun LotSectionSetupScreen(
                         Canvas(
                             modifier = Modifier
                                 .fillMaxSize()
+                                .pointerInput(lots, selectedLotIndex) {
+                                    detectTapGestures { tap ->
+                                        val point = keepPointInsideBoundary(toFarmPointDraw(tap, size), boundaryPoints)
+
+                                        if (selectedLotIndex in lots.indices) {
+                                            val updatedLots = lots.toMutableList()
+                                            val current = updatedLots[selectedLotIndex].toMutableList()
+                                            current.add(point)
+                                            updatedLots[selectedLotIndex] = current
+                                            onLotsChange(updatedLots)
+                                        } else {
+                                            onLotsChange(listOf(listOf(point)))
+                                            selectedLotIndex = 0
+                                        }
+                                    }
+                                }
                                 .pointerInput(lots) {
                                     detectDragGestures(
                                         onDragStart = { start ->
@@ -216,13 +235,36 @@ fun LotSectionSetupScreen(
                         TextButton(
                             onClick = {
                                 if (selectedLotIndex in lots.indices) {
-                                    val newLots = lots.toMutableList().apply { removeAt(selectedLotIndex) }
-                                    onLotsChange(newLots)
-                                    selectedLotIndex = if (newLots.isNotEmpty()) 0 else -1
+                                    val updatedLots = lots.toMutableList()
+                                    val current = updatedLots[selectedLotIndex].toMutableList()
+                                    if (current.isNotEmpty()) {
+                                        current.removeLast()
+                                        if (current.isEmpty()) {
+                                            updatedLots.removeAt(selectedLotIndex)
+                                            selectedLotIndex = if (updatedLots.isNotEmpty()) 0 else -1
+                                        } else {
+                                            updatedLots[selectedLotIndex] = current
+                                        }
+                                        onLotsChange(updatedLots)
+                                    }
                                 }
                             }
                         ) {
-                            Text("Clear Lot", color = Sand100)
+                            Text("Undo", color = Sand100)
+                        }
+
+                        TextButton(
+                            onClick = {
+                                if (lots.isEmpty()) {
+                                    onLotsChange(listOf(boundaryPoints))
+                                    selectedLotIndex = 0
+                                } else {
+                                    onLotsChange(emptyList())
+                                    selectedLotIndex = -1
+                                }
+                            }
+                        ) {
+                            Text(if (lots.isEmpty()) "Full Lot" else "Clear Lot", color = Sand100)
                         }
                     }
                 }
@@ -252,27 +294,71 @@ fun LotSectionSetupScreen(
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
-                
-                val fieldColors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Sand100,
-                    unfocusedTextColor = Sand100,
-                    focusedLabelColor = Mint200,
-                    unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
-                    focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
-                    unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
-                    cursorColor = Leaf400,
-                    focusedBorderColor = Leaf400,
-                    unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
-                )
 
-                OutlinedTextField(
-                    value = totalAreaHa,
-                    onValueChange = onTotalAreaChange,
-                    label = { Text("Total farm area (hectare)") },
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    singleLine = true,
-                    colors = fieldColors
-                )
+                val totalFarmAreaHaValue = parseAreaInputToHectaresDraw(totalAreaHa)
+                val boundaryArea = polygonAreaDraw(boundaryPoints)
+                val selectedLotArea = if (selectedLotIndex in lots.indices) {
+                    polygonAreaDraw(lots[selectedLotIndex])
+                } else {
+                    null
+                }
+                val selectedLotAreaHa = if (
+                    totalFarmAreaHaValue != null &&
+                    boundaryArea > 0.0 &&
+                    selectedLotArea != null
+                ) {
+                    totalFarmAreaHaValue * (selectedLotArea / boundaryArea)
+                } else {
+                    null
+                }
+                val selectedLotPercentage = if (boundaryArea > 0.0 && selectedLotArea != null) {
+                    (selectedLotArea / boundaryArea) * 100.0
+                } else {
+                    null
+                }
+                
+                // Selected lot area display card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = maxContentWidth),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color.White.copy(alpha = 0.08f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text(
+                            text = "Selected Lot Area",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Sand100.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = when {
+                                selectedLotAreaHa != null -> "${formatFixedDraw(selectedLotAreaHa, 3)} ha"
+                                totalFarmAreaHaValue == null -> "Set total farm area in previous step"
+                                else -> "Draw/select a lot"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Mint200
+                        )
+                        if (selectedLotPercentage != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "${formatFixedDraw(selectedLotPercentage, 1)}% of farm",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Sand100.copy(alpha = 0.7f),
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
 
                 if (lots.isNotEmpty() && selectedLotIndex in lots.indices) {
                     Spacer(modifier = Modifier.height(24.dp))
@@ -284,6 +370,18 @@ fun LotSectionSetupScreen(
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Sand100,
+                        unfocusedTextColor = Sand100,
+                        focusedLabelColor = Mint200,
+                        unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
+                        focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
+                        unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
+                        cursorColor = Leaf400,
+                        focusedBorderColor = Leaf400,
+                        unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                    )
 
                     val cropVal = lotCropTypes[selectedLotIndex] ?: ""
                     OutlinedTextField(
@@ -352,6 +450,14 @@ private fun toOffsetDraw(point: FarmPoint, size: androidx.compose.ui.geometry.Si
     return Offset(point.x * size.width, point.y * size.height)
 }
 
+private fun toFarmPointDraw(offset: Offset, size: IntSize): FarmPoint {
+    if (size.width <= 0 || size.height <= 0) return FarmPoint(0.5f, 0.5f)
+    return FarmPoint(
+        x = (offset.x / size.width).coerceIn(0f, 1f),
+        y = (offset.y / size.height).coerceIn(0f, 1f),
+    )
+}
+
 private fun nearestVertexDraw(points: List<FarmPoint>, tap: Offset, size: IntSize): Int {
     if (points.isEmpty()) return -1
     var best = -1
@@ -380,7 +486,7 @@ private fun generateMockLots(boundary: List<FarmPoint>, template: String): List<
     val cx = (minX + maxX) / 2f
     val cy = (minY + maxY) / 2f
 
-    return when (template) {
+    val rawLots = when (template) {
         "Vertical 2" -> listOf(
             listOf(FarmPoint(minX, minY), FarmPoint(cx, minY), FarmPoint(cx, maxY), FarmPoint(minX, maxY)),
             listOf(FarmPoint(cx, minY), FarmPoint(maxX, minY), FarmPoint(maxX, maxY), FarmPoint(cx, maxY))
@@ -406,6 +512,99 @@ private fun generateMockLots(boundary: List<FarmPoint>, template: String): List<
         )
         else -> listOf(boundary)
     }
+
+    return rawLots.map { lot ->
+        val constrained = lot.map { point -> keepPointInsideBoundary(point, boundary) }
+        if (constrained.distinctBy { "${it.x}-${it.y}" }.size >= 3) constrained else boundary
+    }
+}
+
+private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
+    if (boundaryPoints.size < 3 || isPointInsidePolygon(candidate, boundaryPoints)) return candidate
+
+    val center = polygonCentroid(boundaryPoints)
+    var t = 1.0f
+    while (t > 0.0f) {
+        val trial = FarmPoint(
+            x = center.x + (candidate.x - center.x) * t,
+            y = center.y + (candidate.y - center.y) * t,
+        )
+        if (isPointInsidePolygon(trial, boundaryPoints)) return trial
+        t -= 0.05f
+    }
+
+    return center
+}
+
+private fun isPointInsidePolygon(point: FarmPoint, polygon: List<FarmPoint>): Boolean {
+    if (polygon.size < 3) return true
+
+    var inside = false
+    var j = polygon.lastIndex
+    for (i in polygon.indices) {
+        val pi = polygon[i]
+        val pj = polygon[j]
+        val intersects = ((pi.y > point.y) != (pj.y > point.y)) &&
+            (point.x < (pj.x - pi.x) * (point.y - pi.y) / ((pj.y - pi.y).takeIf { it != 0f } ?: 0.000001f) + pi.x)
+        if (intersects) inside = !inside
+        j = i
+    }
+    return inside
+}
+
+private fun polygonCentroid(points: List<FarmPoint>): FarmPoint {
+    if (points.isEmpty()) return FarmPoint(0.5f, 0.5f)
+    val x = points.sumOf { it.x.toDouble() } / points.size
+    val y = points.sumOf { it.y.toDouble() } / points.size
+    return FarmPoint(x.toFloat(), y.toFloat())
+}
+
+private fun polygonAreaDraw(points: List<FarmPoint>): Double {
+    if (points.size < 3) return 0.0
+    var area = 0.0
+    for (i in points.indices) {
+        val j = (i + 1) % points.size
+        area += points[i].x.toDouble() * points[j].y.toDouble()
+        area -= points[j].x.toDouble() * points[i].y.toDouble()
+    }
+    return abs(area) / 2.0
+}
+
+private fun parseAreaInputToHectaresDraw(raw: String): Double? {
+    val text = raw.trim()
+    if (text.isEmpty()) return null
+
+    val normalized = text.replace(',', '.')
+    val value = Regex("""[0-9]+(?:\.[0-9]+)?""").find(normalized)?.value?.toDoubleOrNull() ?: return null
+    val lower = normalized.lowercase()
+
+    return when {
+        lower.contains("acre") || lower.contains("ac") -> value * 0.40468564224
+        else -> value
+    }
+}
+
+private fun formatFixedDraw(value: Double, decimals: Int): String {
+    val scale = pow10Draw(decimals)
+    val absolute = abs(value)
+    val roundedScaled = round(absolute * scale).toLong()
+    val integerPart = roundedScaled / scale.toLong()
+    val fractionalPart = roundedScaled % scale.toLong()
+
+    val number = if (decimals > 0) {
+        val fraction = fractionalPart.toString().padStart(decimals, '0')
+        "$integerPart.$fraction"
+    } else {
+        integerPart.toString()
+    }
+
+    return if (value < 0) "-$number" else number
+}
+
+private fun pow10Draw(decimals: Int): Double {
+    var result = 1.0
+    repeat(decimals.coerceAtLeast(0)) { result *= 10.0 }
+    return result
 }
 
 private val BackIconDraw2: ImageVector

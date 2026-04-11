@@ -84,6 +84,9 @@ class FarmTwinAppState(
     )
         private set
 
+    var lotTotalAreaInput by mutableStateOf(snapshot.farm.fieldSize)
+        private set
+
     var polygonInsightsReport by mutableStateOf<FieldInsightReport?>(null)
         private set
 
@@ -188,6 +191,11 @@ class FarmTwinAppState(
         clearLotRecommendationState()
     }
 
+    fun updateLotTotalAreaInput(value: String) {
+        lotTotalAreaInput = value
+        clearLotRecommendationState()
+    }
+
     fun prepareNewFarmDraft() {
         val defaultBoundary = defaultFarmBoundary()
         farmBoundaryPoints = defaultBoundary
@@ -196,6 +204,7 @@ class FarmTwinAppState(
         farmSetupSearchTrigger = 0
         farmSetupUseCurrentLocationTrigger = 0
         isFarmMapFrozen = false
+        lotTotalAreaInput = snapshot.farm.fieldSize
         lotSections = listOf(
             LotSectionDraft(
                 id = "lot-1",
@@ -227,6 +236,8 @@ class FarmTwinAppState(
 
         scope.launch {
             runCatching {
+                val totalFarmAreaHa = parseAreaInputToHectares(lotTotalAreaInput)
+                val boundaryArea = polygonArea(farmBoundaryPoints)
                 val analyzed = lotSections.map { lot ->
                     if (lot.points.size < 3) {
                         AnalyzedLot(
@@ -236,9 +247,17 @@ class FarmTwinAppState(
                             dataSource = "Unavailable",
                         )
                     } else {
+                        val lotAreaHa = if (totalFarmAreaHa != null && boundaryArea > 0.0f) {
+                            val ratio = (polygonArea(lot.points) / boundaryArea).coerceIn(0.0f, 1.0f)
+                            totalFarmAreaHa * ratio
+                        } else {
+                            null
+                        }
                         val report = fieldInsightsRepository.analyzePolygon(
                             points = lot.points,
                             targetCrops = listOf(lot.cropPlan),
+                            totalFarmAreaHectares = totalFarmAreaHa,
+                            lotAreaHectares = lotAreaHa,
                         )
                         val updatedLot = lot.copy(
                             soilType = inferSoilType(report.summary.soilMoistureMean, report.summary.ndviMean),
@@ -259,13 +278,23 @@ class FarmTwinAppState(
 
                 lotSections = analyzed.map { it.lot }
                 lotRecommendationDataSourceByLotId = analyzed.associate { it.lot.id to it.dataSource }
-                analyzed.maxByOrNull { it.score }
-            }.onSuccess { best ->
-                if (best == null || best.score < 0) {
+                analyzed
+            }.onSuccess { analyzed ->
+                val validLots = analyzed.filter { it.score >= 0 }
+                if (validLots.isEmpty()) {
                     lotRecommendationError = "Unable to determine best lot. Ensure each lot has a valid boundary."
                 } else {
-                    lotRecommendationBestLotId = best.lot.id
-                    lotRecommendationReason = "${best.lot.name} is recommended. ${best.reason}"
+                    val ranked = validLots.sortedByDescending { it.score }
+                    val best = ranked.first()
+                    val ties = ranked.filter { abs(it.score - best.score) <= 0.15 }
+
+                    if (ties.size > 1) {
+                        lotRecommendationBestLotId = null
+                        lotRecommendationReason = "Multiple lots are similarly suitable for ${best.lot.cropPlan.ifBlank { "the selected crop" }}. ${ties.joinToString { it.lot.name }} are near-equal, so choose based on operations/logistics."
+                    } else {
+                        lotRecommendationBestLotId = best.lot.id
+                        lotRecommendationReason = "${best.lot.name} is recommended. ${best.reason}"
+                    }
                 }
             }.onFailure { error ->
                 lotRecommendationError = error.message ?: "Failed to analyze lots right now."
@@ -296,7 +325,10 @@ class FarmTwinAppState(
         polygonInsightsError = null
         scope.launch {
             runCatching {
-                fieldInsightsRepository.analyzePolygon(farmBoundaryPoints)
+                fieldInsightsRepository.analyzePolygon(
+                    points = farmBoundaryPoints,
+                    totalFarmAreaHectares = parseAreaInputToHectares(lotTotalAreaInput),
+                )
             }.onSuccess { report ->
                 polygonInsightsReport = report
             }.onFailure { error ->
@@ -376,6 +408,32 @@ class FarmTwinAppState(
         val x = points.sumOf { it.x.toDouble() } / points.size
         val y = points.sumOf { it.y.toDouble() } / points.size
         return FarmPoint(x.toFloat(), y.toFloat())
+    }
+
+    private fun polygonArea(points: List<FarmPoint>): Float {
+        if (points.size < 3) return 0f
+        var sum = 0f
+        for (i in points.indices) {
+            val p1 = points[i]
+            val p2 = points[(i + 1) % points.size]
+            sum += p1.x * p2.y - p2.x * p1.y
+        }
+        return kotlin.math.abs(sum) * 0.5f
+    }
+
+    private fun parseAreaInputToHectares(raw: String): Double? {
+        val normalized = raw.trim().lowercase()
+        if (normalized.isEmpty()) return null
+
+        val value = Regex("""([0-9]+(?:\\.[0-9]+)?)""")
+            .find(normalized)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toDoubleOrNull()
+            ?: return null
+
+        val isAcre = normalized.contains("acre") || normalized.contains("ac")
+        return if (isAcre) value * 0.40468564224 else value
     }
 
     private fun clearLotRecommendationState() {

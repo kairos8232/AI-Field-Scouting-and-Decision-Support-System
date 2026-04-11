@@ -32,6 +32,8 @@ class HttpFieldInsightsRepository(
     override suspend fun analyzePolygon(
         points: List<FarmPoint>,
         targetCrops: List<String>,
+        totalFarmAreaHectares: Double?,
+        lotAreaHectares: Double?,
     ): FieldInsightReport {
         require(points.size >= 3) { "Polygon must contain at least 3 points." }
         val cleanedTargetCrops = targetCrops.map { it.trim() }.filter { it.isNotEmpty() }
@@ -60,6 +62,12 @@ class HttpFieldInsightsRepository(
                     add(JsonPrimitive(crop))
                 }
             })
+            if (totalFarmAreaHectares != null) {
+                put("totalFarmAreaHectares", totalFarmAreaHectares)
+            }
+            if (lotAreaHectares != null) {
+                put("lotAreaHectares", lotAreaHectares)
+            }
         }
 
         val configuredBase = baseUrl.trimEnd('/')

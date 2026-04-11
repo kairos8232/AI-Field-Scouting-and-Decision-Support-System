@@ -62,13 +62,18 @@ app.post("/api/field-insights", async (req, res) => {
       return res.status(400).json({ error: "Polygon must have at least 3 points." });
     }
     const targetCrops = normalizeTargetCrops(req.body?.targetCrops);
+    const totalFarmAreaHectares = normalizeOptionalNumber(req.body?.totalFarmAreaHectares);
+    const lotAreaHectares = normalizeOptionalNumber(req.body?.lotAreaHectares);
 
     const centroid = req.body?.centroid
       ? toLatLngPoint(req.body.centroid)
       : computeCentroid(polygon);
 
     const earthSummary = await getEarthSummary({ polygon, centroid });
-    const recommendations = await getCropRecommendations(earthSummary, targetCrops);
+    const recommendations = await getCropRecommendations(earthSummary, targetCrops, {
+      totalFarmAreaHectares,
+      lotAreaHectares,
+    });
 
     res.json({
       summary: earthSummary,
@@ -100,6 +105,11 @@ function normalizeTargetCrops(input) {
     .map((item) => String(item ?? "").trim())
     .filter((item) => item.length > 0)
     .slice(0, 8);
+}
+
+function normalizeOptionalNumber(input) {
+  const num = Number(input);
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 function toLatLngPoint(raw) {
@@ -407,7 +417,7 @@ function eeEvaluate(obj) {
   });
 }
 
-async function getCropRecommendations(summary, targetCrops = []) {
+async function getCropRecommendations(summary, targetCrops = [], areaContext = {}) {
   if (!ai) {
     return fallbackRecommendations(summary, targetCrops);
   }
@@ -424,6 +434,11 @@ async function getCropRecommendations(summary, targetCrops = []) {
     "Suitability must be one of: High, Moderate, Low.",
     "Environment summary:",
     JSON.stringify(summary),
+    "Area context (hectares):",
+    JSON.stringify({
+      totalFarmAreaHectares: areaContext.totalFarmAreaHectares ?? null,
+      lotAreaHectares: areaContext.lotAreaHectares ?? null,
+    }),
   ].join("\n");
 
   try {
