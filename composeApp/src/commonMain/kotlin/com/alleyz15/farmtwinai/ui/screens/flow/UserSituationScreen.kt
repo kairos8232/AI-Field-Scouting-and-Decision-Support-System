@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -41,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -50,8 +53,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.AppMode
+import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
-import com.alleyz15.farmtwinai.ui.components.OnboardingBackground
 import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
@@ -94,7 +97,7 @@ fun UserSituationScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        OnboardingBackground(overlayAlpha = 0.50f)
+        AuroraBackground()
 
         AnimatedVisibility(
             visible = showContent,
@@ -122,12 +125,14 @@ fun UserSituationScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .systemBarsPadding()
                         .padding(horizontal = 24.dp, vertical = 18.dp),
                 ) {
-                    Box(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .widthIn(max = maxContentWidth),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         IconButton(
                             onClick = { pendingBack = true },
@@ -142,30 +147,28 @@ fun UserSituationScreen(
                                 tint = Sand100,
                             )
                         }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = "Your Situation",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Sand100,
+                            modifier = Modifier.alpha(headerAlpha),
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(
-                        text = "Your Situation",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Sand100,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .widthIn(max = maxContentWidth)
-                            .alpha(headerAlpha),
-                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
                     Text(
                         text = "Choose how you want to start. You will continue directly into farm setup.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = Sand100.copy(alpha = 0.78f),
-                        textAlign = TextAlign.Center,
+                        textAlign = TextAlign.Start,
                         modifier = Modifier
                             .fillMaxWidth()
                             .widthIn(max = maxContentWidth)
-                            .padding(top = 10.dp)
                             .alpha(headerAlpha),
                     )
 
@@ -206,12 +209,10 @@ fun UserSituationScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .widthIn(max = maxContentWidth)
-                                .height(320.dp),
                         ) {
                             Row(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .matchParentSize(),
+                                    .fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                             ) {
                                 SelectableSituationCard(
@@ -262,11 +263,6 @@ private fun SelectableSituationCard(
 ) {
     val isSelected = selectedMode == mode
     val isOtherSelected = selectedMode != null && !isSelected
-    val cardHeight by animateDpAsState(
-        targetValue = if (isSelected) 332.dp else 320.dp,
-        animationSpec = tween(durationMillis = 240),
-        label = "situationCardHeight",
-    )
     val offsetY by animateDpAsState(
         targetValue = if (isSelected) (-4).dp else 0.dp,
         animationSpec = tween(durationMillis = 240),
@@ -282,14 +278,13 @@ private fun SelectableSituationCard(
         label = "situationCardAlpha",
     )
     val scale by animateFloatAsState(
-        targetValue = if (isSelected) 1.12f else 1f,
+        targetValue = if (isSelected) 1.05f else 1f,
         animationSpec = tween(durationMillis = 260),
         label = "situationCardScale",
     )
 
     Card(
         modifier = modifier
-            .height(cardHeight)
             .offset(y = offsetY)
             .alpha(alpha)
             .graphicsLayer {
@@ -297,23 +292,24 @@ private fun SelectableSituationCard(
                 scaleY = scale
             }
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
             containerColor = CardDark.copy(alpha = 0.86f),
         ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(
+        Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.Start,
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(18.dp))
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
                     .background(accent.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -321,26 +317,55 @@ private fun SelectableSituationCard(
                     imageVector = icon,
                     contentDescription = null,
                     tint = accent,
-                    modifier = Modifier.size(30.dp),
+                    modifier = Modifier.size(28.dp),
                 )
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Sand100,
                 )
                 Text(
                     text = subtitle,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = Sand100.copy(alpha = 0.78f),
                 )
             }
+            
+            Icon(
+                imageVector = ChevronRightIcon,
+                contentDescription = null,
+                tint = Sand100.copy(alpha = 0.3f),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
+
+private val ChevronRightIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "ChevronRight",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(10f, 6f)
+            lineTo(8.59f, 7.41f)
+            lineTo(13.17f, 12f)
+            lineToRelative(-4.58f, 4.59f)
+            lineTo(10f, 18f)
+            lineToRelative(6f, -6f)
+            close()
+        }
+    }.build()
 
 private val ArrowBackIcon: ImageVector
     get() = ImageVector.Builder(

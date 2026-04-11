@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
+import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
@@ -87,7 +88,9 @@ fun AuthScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(CardDark)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        AuroraBackground()
+        
         Image(
             painter = painterResource(Res.drawable.ic_farm_bg),
             contentDescription = "Farm Background",
@@ -98,13 +101,14 @@ fun AuthScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.6f)
+                .fillMaxHeight(0.65f)
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            CardDark.copy(alpha = 0.8f),
-                            CardDark
+                            Color(0xFF0C1911).copy(alpha = 0.5f),
+                            Color(0xFF0C1911).copy(alpha = 0.9f),
+                            Color(0xFF0C1911)
                         )
                     )
                 )
@@ -127,8 +131,6 @@ fun AuthScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(max = maxContentWidth)
-                        .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
-                        .background(CardDark)
                 ) {
                     Column(
                         modifier = Modifier
