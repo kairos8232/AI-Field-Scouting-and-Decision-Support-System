@@ -19,6 +19,7 @@ fun LotRecommendationScreen(
     recommendationReason: String?,
     errorMessage: String?,
     dataSourceByLotId: Map<String, String>,
+    recommendedCropByLotId: Map<String, String>,
     onBack: () -> Unit,
     onAnalyze: () -> Unit,
     onFollowAndContinue: () -> Unit,
@@ -32,7 +33,7 @@ fun LotRecommendationScreen(
         ScreenColumn {
             SectionHeader(
                 title = "Earth Engine + Gemini analysis",
-                body = "This step fills soil/water for each lot and recommends the best lot for the entered crop plans.",
+                body = "This step fills soil/water for each lot and recommends the best crop-to-lot assignment for your selected crops.",
             )
 
             androidx.compose.material3.OutlinedButton(
@@ -59,13 +60,27 @@ fun LotRecommendationScreen(
             }
 
             lots.forEach { lot ->
-                val selected = lot.id == bestLotId
+                val suggestedCrop = recommendedCropByLotId[lot.id]
+                val cropSwapSuggested = suggestedCrop != null && suggestedCrop.trim().lowercase() != lot.cropPlan.trim().lowercase()
+                val selected = lot.id == bestLotId || cropSwapSuggested
                 OptionCard(
-                    title = if (selected) "${lot.name} - Recommended" else lot.name,
+                    title = if (cropSwapSuggested) "${lot.name} - Swap Suggested" else lot.name,
                     description = "Crop: ${lot.cropPlan.ifBlank { "-" }} | Soil: ${lot.soilType.ifBlank { "-" }} | Water: ${lot.waterAvailability.ifBlank { "-" }}",
                     selected = selected,
                     onClick = {},
                 )
+
+                if (suggestedCrop != null) {
+                    Text(
+                        text = if (cropSwapSuggested) {
+                            "AI suggested crop: $suggestedCrop"
+                        } else {
+                            "AI suggested crop: Keep ${lot.cropPlan}"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
 
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer,

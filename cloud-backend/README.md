@@ -127,3 +127,10 @@ To enable Earth Engine link:
   - earthEngineReason: ok
 
 After link is verified, replace buildGeometrySummary in server.js with real dataset sampling while keeping response shape unchanged.
+
+
+gcloud run deploy farmtwin-field-insights \
+  --source ./cloud-backend \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated

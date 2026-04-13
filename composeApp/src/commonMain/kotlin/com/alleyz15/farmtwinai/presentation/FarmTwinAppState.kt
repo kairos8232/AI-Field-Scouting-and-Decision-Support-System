@@ -111,6 +111,9 @@ class FarmTwinAppState(
     var lotRecommendationDataSourceByLotId by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
+    var lotRecommendationSuggestedCropByLotId by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
@@ -228,11 +231,18 @@ class FarmTwinAppState(
             return
         }
 
+        val requestedCrops = lotSections.map { it.cropPlan.trim() }.filter { it.isNotEmpty() }
+        if (requestedCrops.isEmpty()) {
+            lotRecommendationError = "Please assign crops to lots before analysis."
+            return
+        }
+
         isAnalyzingLots = true
         lotRecommendationError = null
         lotRecommendationBestLotId = null
         lotRecommendationReason = null
         lotRecommendationDataSourceByLotId = emptyMap()
+        lotRecommendationSuggestedCropByLotId = emptyMap()
 
         scope.launch {
             runCatching {
@@ -255,7 +265,7 @@ class FarmTwinAppState(
                         }
                         val report = fieldInsightsRepository.analyzePolygon(
                             points = lot.points,
-                            targetCrops = listOf(lot.cropPlan),
+                            targetCrops = requestedCrops,
                             totalFarmAreaHectares = totalFarmAreaHa,
                             lotAreaHectares = lotAreaHa,
                         )
@@ -272,6 +282,7 @@ class FarmTwinAppState(
                             score = score,
                             reason = reason,
                             dataSource = "$earthSource | $aiSource",
+                            report = report,
                         )
                     }
                 }
@@ -280,20 +291,27 @@ class FarmTwinAppState(
                 lotRecommendationDataSourceByLotId = analyzed.associate { it.lot.id to it.dataSource }
                 analyzed
             }.onSuccess { analyzed ->
-                val validLots = analyzed.filter { it.score >= 0 }
-                if (validLots.isEmpty()) {
-                    lotRecommendationError = "Unable to determine best lot. Ensure each lot has a valid boundary."
+                val validLots = analyzed.filter { it.score >= 0 && it.report != null }
+                if (validLots.size != analyzed.size) {
+                    lotRecommendationError = "Unable to analyze all lots. Ensure each lot has a valid boundary."
                 } else {
-                    val ranked = validLots.sortedByDescending { it.score }
-                    val best = ranked.first()
-                    val ties = ranked.filter { abs(it.score - best.score) <= 0.15 }
+                    val assignment = recommendCropAssignment(validLots, requestedCrops)
+                    lotRecommendationSuggestedCropByLotId = assignment.cropByLotId
+                    lotRecommendationBestLotId = null
 
-                    if (ties.size > 1) {
-                        lotRecommendationBestLotId = null
-                        lotRecommendationReason = "Multiple lots are similarly suitable for ${best.lot.cropPlan.ifBlank { "the selected crop" }}. ${ties.joinToString { it.lot.name }} are near-equal, so choose based on operations/logistics."
+                    val changedLots = validLots.filter { analyzedLot ->
+                        val suggested = assignment.cropByLotId[analyzedLot.lot.id].orEmpty()
+                        analyzedLot.lot.cropPlan.trim().lowercase() != suggested.trim().lowercase()
+                    }
+
+                    if (changedLots.isEmpty()) {
+                        lotRecommendationReason = "Current crop-to-lot setup is already optimal based on Earth Engine + Gemini scoring."
                     } else {
-                        lotRecommendationBestLotId = best.lot.id
-                        lotRecommendationReason = "${best.lot.name} is recommended. ${best.reason}"
+                        val swapsSummary = changedLots.joinToString(separator = " | ") { analyzedLot ->
+                            val suggested = assignment.cropByLotId[analyzedLot.lot.id].orEmpty()
+                            "${analyzedLot.lot.name}: ${analyzedLot.lot.cropPlan} -> $suggested"
+                        }
+                        lotRecommendationReason = "Recommended crop reassignment: $swapsSummary"
                     }
                 }
             }.onFailure { error ->
@@ -306,16 +324,17 @@ class FarmTwinAppState(
 
     fun finalizeLotRecommendation(followRecommendation: Boolean) {
         if (followRecommendation) {
-            val bestId = lotRecommendationBestLotId
-            val bestIndex = lotSections.indexOfFirst { it.id == bestId }
-            if (bestIndex > 0) {
-                val best = lotSections[bestIndex]
-                lotSections = buildList {
-                    add(best)
-                    lotSections.forEachIndexed { index, lot -> if (index != bestIndex) add(lot) }
+            val suggestedByLotId = lotRecommendationSuggestedCropByLotId
+            if (suggestedByLotId.isNotEmpty()) {
+                lotSections = lotSections.map { lot ->
+                    suggestedByLotId[lot.id]?.let { suggested ->
+                        lot.copy(cropPlan = suggested)
+                    } ?: lot
                 }
             }
         }
+
+        clearLotRecommendationState()
     }
 
     fun submitPolygonForInsights() {
@@ -442,6 +461,53 @@ class FarmTwinAppState(
         lotRecommendationReason = null
         lotRecommendationError = null
         lotRecommendationDataSourceByLotId = emptyMap()
+        lotRecommendationSuggestedCropByLotId = emptyMap()
+    }
+
+    private fun recommendCropAssignment(
+        analyzedLots: List<AnalyzedLot>,
+        requestedCrops: List<String>,
+    ): CropAssignmentResult {
+        val lots = analyzedLots.sortedBy { it.lot.id }
+        var bestScore = Double.NEGATIVE_INFINITY
+        var bestAssignment: IntArray? = null
+        val used = BooleanArray(requestedCrops.size)
+        val currentAssignment = IntArray(lots.size) { -1 }
+
+        fun dfs(lotIndex: Int, scoreSoFar: Double) {
+            if (lotIndex == lots.size) {
+                if (scoreSoFar > bestScore) {
+                    bestScore = scoreSoFar
+                    bestAssignment = currentAssignment.copyOf()
+                }
+                return
+            }
+
+            for (cropIndex in requestedCrops.indices) {
+                if (used[cropIndex]) continue
+                used[cropIndex] = true
+                currentAssignment[lotIndex] = cropIndex
+                val crop = requestedCrops[cropIndex]
+                val score = scoreLotForCrop(crop, lots[lotIndex].report!!)
+                dfs(lotIndex + 1, scoreSoFar + score)
+                used[cropIndex] = false
+                currentAssignment[lotIndex] = -1
+            }
+        }
+
+        dfs(0, 0.0)
+
+        val assignment = bestAssignment ?: IntArray(lots.size) { index -> index.coerceAtMost(requestedCrops.lastIndex) }
+        val cropByLotId = lots.mapIndexed { index, analyzedLot ->
+            val cropIndex = assignment[index]
+            val crop = requestedCrops.getOrElse(cropIndex) { analyzedLot.lot.cropPlan }
+            analyzedLot.lot.id to crop
+        }.toMap()
+
+        return CropAssignmentResult(
+            cropByLotId = cropByLotId,
+            totalScore = bestScore,
+        )
     }
 
     private fun inferSoilType(soilMoisture: Double, ndvi: Double): String {
@@ -490,4 +556,10 @@ private data class AnalyzedLot(
     val score: Double,
     val reason: String,
     val dataSource: String,
+    val report: FieldInsightReport? = null,
+)
+
+private data class CropAssignmentResult(
+    val cropByLotId: Map<String, String>,
+    val totalScore: Double,
 )

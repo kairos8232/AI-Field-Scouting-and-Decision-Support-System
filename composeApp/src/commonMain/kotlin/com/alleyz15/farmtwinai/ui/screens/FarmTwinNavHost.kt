@@ -130,6 +130,7 @@ fun FarmTwinNavHost(
             recommendationReason = appState.lotRecommendationReason,
             errorMessage = appState.lotRecommendationError,
             dataSourceByLotId = appState.lotRecommendationDataSourceByLotId,
+            recommendedCropByLotId = appState.lotRecommendationSuggestedCropByLotId,
             onBack = { navigator.pop() },
             onAnalyze = appState::analyzeLotsForRecommendation,
             onFollowAndContinue = {

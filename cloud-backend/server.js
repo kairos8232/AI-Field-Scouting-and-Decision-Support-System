@@ -425,11 +425,15 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
   const cropHint = targetCrops.length
     ? `Prioritize and explicitly evaluate these target crops first: ${targetCrops.join(", ")}.`
     : "No explicit target crops were provided; suggest generally suitable crops.";
+  const recommendationCountHint = targetCrops.length > 0
+    ? `Return at least ${targetCrops.length} items so each target crop is covered.`
+    : "Return exactly 3 items.";
 
   const prompt = [
     "You are an agronomy assistant for tropical smallholder farms.",
     cropHint,
-    "Given this environment summary, recommend 3 crops.",
+    "Given this environment summary, provide crop suitability recommendations.",
+    recommendationCountHint,
     "Return strict JSON array only with keys: cropName, suitability, rationale.",
     "Suitability must be one of: High, Moderate, Low.",
     "Environment summary:",
@@ -453,11 +457,13 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
       return fallbackRecommendations(summary, targetCrops);
     }
 
-    return parsed.slice(0, 3).map((item) => ({
+    const normalized = parsed.map((item) => ({
       cropName: String(item.cropName || "Unknown"),
       suitability: normalizeSuitability(item.suitability),
       rationale: String(item.rationale || "No rationale returned."),
     }));
+
+    return ensureTargetCropCoverage(summary, targetCrops, normalized).slice(0, Math.max(3, targetCrops.length));
   } catch (_error) {
     return fallbackRecommendations(summary, targetCrops);
   }
@@ -470,7 +476,6 @@ function fallbackRecommendations(summary, targetCrops = []) {
   const requested = targetCrops
     .map((crop) => crop.trim())
     .filter((crop) => crop.length > 0)
-    .slice(0, 3)
     .map((crop) => ({
       cropName: crop,
       suitability: warm && !wet ? "High" : wet ? "Moderate" : "High",
@@ -498,6 +503,28 @@ function fallbackRecommendations(summary, targetCrops = []) {
       rationale: "Resilient fallback crop for variable rainfall windows.",
     },
   ];
+}
+
+function ensureTargetCropCoverage(summary, targetCrops, recommendations) {
+  const normalizedTargets = targetCrops
+    .map((crop) => crop.trim())
+    .filter((crop) => crop.length > 0);
+
+  if (normalizedTargets.length === 0) return recommendations;
+
+  const existing = new Set(recommendations.map((item) => String(item.cropName || "").trim().toLowerCase()));
+  const wet = summary.soilMoistureMean > 0.55;
+  const warm = summary.averageTempC > 27;
+
+  const missing = normalizedTargets
+    .filter((crop) => !existing.has(crop.toLowerCase()))
+    .map((crop) => ({
+      cropName: crop,
+      suitability: warm && !wet ? "High" : wet ? "Moderate" : "High",
+      rationale: "Requested crop added to ensure coverage when Gemini did not return this crop explicitly.",
+    }));
+
+  return [...recommendations, ...missing];
 }
 
 function safeParseJsonArray(text) {
