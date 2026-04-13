@@ -108,10 +108,15 @@ fun FarmTwinNavHost(
             onContinue = { navigator.navigate(AppDestination.LotSectionSetup) },
         )
         AppDestination.LotSectionSetup -> LotSectionSetupScreen(
+            farmName = appState.farmSetupFarmName,
+            locationQuery = appState.farmSetupMapQuery,
+            searchTrigger = appState.farmSetupSearchTrigger,
+            useCurrentLocationTrigger = appState.farmSetupUseCurrentLocationTrigger,
             boundaryPoints = appState.farmBoundaryPoints,
             totalAreaHa = appState.lotTotalAreaInput,
             lots = appState.lotSections.map { it.points },
             lotCropTypes = appState.lotSections.mapIndexed { index, lot -> index to lot.cropPlan }.toMap(),
+            onFarmNameChange = appState::updateFarmSetupFarmName,
             onTotalAreaChange = appState::updateLotTotalAreaInput,
             onLotsChange = { updatedLots ->
                 val existing = appState.lotSections
@@ -121,7 +126,7 @@ fun FarmTwinNavHost(
                         id = previous?.id ?: "lot-${index + 1}",
                         name = previous?.name ?: "Lot ${index + 1}",
                         points = points,
-                        cropPlan = previous?.cropPlan ?: appState.snapshot.farm.cropName,
+                        cropPlan = previous?.cropPlan ?: "",
                         soilType = previous?.soilType ?: "",
                         waterAvailability = previous?.waterAvailability ?: "",
                     )

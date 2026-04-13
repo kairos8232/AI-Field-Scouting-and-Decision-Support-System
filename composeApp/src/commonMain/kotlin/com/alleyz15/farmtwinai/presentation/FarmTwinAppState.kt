@@ -50,6 +50,9 @@ class FarmTwinAppState(
     var farmSetupAddress by mutableStateOf("Pendang, Kedah")
         private set
 
+    var farmSetupFarmName by mutableStateOf("")
+        private set
+
     var farmSetupMapQuery by mutableStateOf("Pendang, Kedah")
         private set
 
@@ -78,7 +81,7 @@ class FarmTwinAppState(
                 id = "lot-1",
                 name = "Lot 1",
                 points = farmBoundaryPoints,
-                cropPlan = "Tomato",
+                cropPlan = "",
                 soilType = "",
                 waterAvailability = "",
             )
@@ -162,29 +165,35 @@ class FarmTwinAppState(
         polygonInsightsReport = null
         polygonInsightsError = null
         clearLotRecommendationState()
-        if (lotSections.isEmpty()) {
-            lotSections = listOf(
+        // Step 2 defines the farm boundary; initialize Step 3 from that exact shape.
+        lotSections = if (points.size >= 3) {
+            listOf(
                 LotSectionDraft(
                     id = "lot-1",
                     name = "Lot 1",
                     points = points,
-                    cropPlan = "Tomato",
+                    cropPlan = "",
                     soilType = "",
                     waterAvailability = "",
                 )
             )
         } else {
-            lotSections = lotSections.map { lot ->
-                val adjustedPoints = lot.points.map { point ->
-                    keepPointInsideBoundary(point, points)
-                }
-                lot.copy(points = if (adjustedPoints.size >= 3) adjustedPoints else points)
-            }
+            emptyList()
         }
     }
 
     fun updateFarmSetupAddress(value: String) {
         farmSetupAddress = value
+    }
+
+    fun updateFarmSetupFarmName(value: String) {
+        farmSetupFarmName = value
+        val trimmed = value.trim()
+        if (trimmed.isNotEmpty()) {
+            snapshot = snapshot.copy(
+                farm = snapshot.farm.copy(farmName = trimmed),
+            )
+        }
     }
 
     fun searchFarmSetupAddress() {
@@ -216,6 +225,7 @@ class FarmTwinAppState(
     fun prepareNewFarmDraft() {
         val defaultBoundary = defaultFarmBoundary()
         farmBoundaryPoints = defaultBoundary
+        farmSetupFarmName = ""
         farmSetupAddress = "Pendang, Kedah"
         farmSetupMapQuery = farmSetupAddress
         farmSetupSearchTrigger = 0
@@ -227,7 +237,7 @@ class FarmTwinAppState(
                 id = "lot-1",
                 name = "Lot 1",
                 points = defaultBoundary,
-                cropPlan = snapshot.farm.cropName,
+                cropPlan = "",
                 soilType = "",
                 waterAvailability = "",
             )

@@ -2,6 +2,7 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -49,11 +50,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
+import com.alleyz15.farmtwinai.ui.components.PlatformGoogleMap
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
@@ -64,10 +67,15 @@ import kotlin.math.sqrt
 
 @Composable
 fun LotSectionSetupScreen(
+    farmName: String,
+    locationQuery: String,
+    searchTrigger: Int,
+    useCurrentLocationTrigger: Int,
     boundaryPoints: List<FarmPoint>,
     totalAreaHa: String,
     lots: List<List<FarmPoint>>,
     lotCropTypes: Map<Int, String>,
+    onFarmNameChange: (String) -> Unit,
     onTotalAreaChange: (String) -> Unit,
     onLotsChange: (List<List<FarmPoint>>) -> Unit,
     onLotCropTypeChange: (Int, String) -> Unit,
@@ -76,6 +84,29 @@ fun LotSectionSetupScreen(
 ) {
     var selectedLotIndex by remember { mutableIntStateOf(if (lots.isNotEmpty()) 0 else -1) }
     var draggingVertexIndex by remember { mutableIntStateOf(-1) }
+    var templateMode by remember { mutableStateOf("Vertical") }
+    var templateCountText by remember { mutableStateOf("2") }
+    var lotWarningMessage by remember { mutableStateOf<String?>(null) }
+    var formValidationMessage by remember { mutableStateOf<String?>(null) }
+
+    fun applyTemplate(mode: String, rawCountText: String) {
+        val requested = rawCountText.toIntOrNull() ?: 2
+        val validated = when (mode) {
+            "Grid" -> {
+                val atLeastTwo = requested.coerceAtLeast(2)
+                if (atLeastTwo % 2 == 0) atLeastTwo else atLeastTwo + 1
+            }
+            else -> requested.coerceAtLeast(1)
+        }
+        val normalized = validated.toString()
+        if (templateCountText != normalized) {
+            templateCountText = normalized
+        }
+        val generated = generateMockLots(boundaryPoints, mode, validated)
+        onLotsChange(generated)
+        selectedLotIndex = if (generated.isNotEmpty()) 0 else -1
+        lotWarningMessage = null
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
@@ -123,6 +154,43 @@ fun LotSectionSetupScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                val fieldColors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Sand100,
+                    unfocusedTextColor = Sand100,
+                    focusedLabelColor = Mint200,
+                    unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
+                    focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
+                    unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
+                    cursorColor = Leaf400,
+                    focusedBorderColor = Leaf400,
+                    unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                )
+
+                OutlinedTextField(
+                    value = farmName,
+                    onValueChange = {
+                        onFarmNameChange(it)
+                        formValidationMessage = null
+                    },
+                    label = { Text("Farm Name") },
+                    placeholder = { Text("e.g. Seri Padi Plot A") },
+                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    singleLine = true,
+                    colors = fieldColors,
+                )
+
+                if (formValidationMessage != null && farmName.trim().isEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Farm Name is required.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFE8998E),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 // Map & Controls Row
                 Box(
                     modifier = Modifier
@@ -136,6 +204,14 @@ fun LotSectionSetupScreen(
                     if (boundaryPoints.isEmpty()) {
                         Text("No boundary defined", color = Sand100)
                     } else {
+                        PlatformGoogleMap(
+                            modifier = Modifier.fillMaxSize(),
+                            locationQuery = locationQuery,
+                            searchTrigger = searchTrigger,
+                            allowMapInteraction = false,
+                            useCurrentLocationTrigger = useCurrentLocationTrigger,
+                        )
+
                         Canvas(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -146,12 +222,27 @@ fun LotSectionSetupScreen(
                                         if (selectedLotIndex in lots.indices) {
                                             val updatedLots = lots.toMutableList()
                                             val current = updatedLots[selectedLotIndex].toMutableList()
-                                            current.add(point)
-                                            updatedLots[selectedLotIndex] = current
+                                            if (current.size >= 3) {
+                                                // If current lot is already a closed shape, start a new lot on next tap.
+                                                updatedLots.add(listOf(point))
+                                                selectedLotIndex = updatedLots.lastIndex
+                                                lotWarningMessage = null
+                                            } else {
+                                                val candidate = current.toMutableList().apply { add(point) }
+                                                val hasOverlap = candidate.size >= 3 &&
+                                                    isLotOverlapping(selectedLotIndex, candidate, updatedLots)
+                                                if (hasOverlap) {
+                                                    lotWarningMessage = "Lots cannot overlap. Move points or start another area."
+                                                    return@detectTapGestures
+                                                }
+                                                updatedLots[selectedLotIndex] = candidate
+                                                lotWarningMessage = null
+                                            }
                                             onLotsChange(updatedLots)
                                         } else {
                                             onLotsChange(listOf(listOf(point)))
                                             selectedLotIndex = 0
+                                            lotWarningMessage = null
                                         }
                                     }
                                 }
@@ -172,9 +263,18 @@ fun LotSectionSetupScreen(
                                                 val p = currentLotPoints[draggingVertexIndex]
                                                 val nx = (p.x + dragAmount.x / size.width).coerceIn(0f, 1f)
                                                 val ny = (p.y + dragAmount.y / size.height).coerceIn(0f, 1f)
-                                                currentLotPoints[draggingVertexIndex] = FarmPoint(nx, ny)
-                                                currentLots[selectedLotIndex] = currentLotPoints
-                                                onLotsChange(currentLots)
+                                                val candidate = currentLotPoints.toMutableList().apply {
+                                                    this[draggingVertexIndex] = FarmPoint(nx, ny)
+                                                }
+                                                val hasOverlap = candidate.size >= 3 &&
+                                                    isLotOverlapping(selectedLotIndex, candidate, currentLots)
+                                                if (!hasOverlap) {
+                                                    currentLots[selectedLotIndex] = candidate
+                                                    onLotsChange(currentLots)
+                                                    lotWarningMessage = null
+                                                } else {
+                                                    lotWarningMessage = "Lots cannot overlap."
+                                                }
                                             }
                                         }
                                     )
@@ -190,27 +290,41 @@ fun LotSectionSetupScreen(
                                 close()
                             }
                             drawPath(boundaryPath, color = Leaf400.copy(alpha = 0.2f))
-                            drawPath(boundaryPath, color = Leaf400, style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+                            drawPath(boundaryPath, color = Color.White.copy(alpha = 0.8f), style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
 
                             lots.forEachIndexed { index, lotPoints ->
-                                if (lotPoints.size >= 3) {
-                                    val lotPath = Path().apply {
-                                        val first = toOffsetDraw(lotPoints.first(), size)
-                                        moveTo(first.x, first.y)
-                                        for (i in 1 until lotPoints.size) {
-                                            val p = toOffsetDraw(lotPoints[i], size)
-                                            lineTo(p.x, p.y)
-                                        }
-                                        close()
-                                    }
+                                if (lotPoints.isNotEmpty()) {
                                     val isSelected = index == selectedLotIndex
-                                    drawPath(lotPath, color = if (isSelected) Mint200.copy(alpha = 0.5f) else Mint200.copy(alpha = 0.2f))
-                                    drawPath(lotPath, color = if (isSelected) Mint200 else Mint200.copy(alpha = 0.5f), style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
 
-                                    if (isSelected) {
-                                        lotPoints.forEach { pt ->
-                                            drawCircle(Sand100, radius = 10f, center = toOffsetDraw(pt, size))
+                                    if (lotPoints.size >= 2) {
+                                        val lotPath = Path().apply {
+                                            val first = toOffsetDraw(lotPoints.first(), size)
+                                            moveTo(first.x, first.y)
+                                            for (i in 1 until lotPoints.size) {
+                                                val p = toOffsetDraw(lotPoints[i], size)
+                                                lineTo(p.x, p.y)
+                                            }
+                                            if (lotPoints.size >= 3) {
+                                                close()
+                                            }
                                         }
+
+                                        if (lotPoints.size >= 3) {
+                                            drawPath(lotPath, color = if (isSelected) Mint200.copy(alpha = 0.42f) else Color(0xFF74D8D0).copy(alpha = 0.24f))
+                                        }
+
+                                        drawPath(
+                                            lotPath,
+                                            color = if (isSelected) Color.White else Color(0xFFE0FFFB).copy(alpha = 0.9f),
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(if (isSelected) 4f else 2.5f)
+                                        )
+                                    }
+
+                                    lotPoints.forEach { pt ->
+                                        val c = toOffsetDraw(pt, size)
+                                        val isHot = isSelected
+                                        drawCircle(Color.Black.copy(alpha = if (isHot) 0.35f else 0.22f), radius = if (isHot) 11.5f else 9.5f, center = c)
+                                        drawCircle(if (isHot) Sand100 else Color(0xFFDDF8F0), radius = if (isHot) 8.5f else 7f, center = c)
                                     }
                                 }
                             }
@@ -246,6 +360,7 @@ fun LotSectionSetupScreen(
                                             updatedLots[selectedLotIndex] = current
                                         }
                                         onLotsChange(updatedLots)
+                                        lotWarningMessage = null
                                     }
                                 }
                             }
@@ -255,42 +370,103 @@ fun LotSectionSetupScreen(
 
                         TextButton(
                             onClick = {
-                                if (lots.isEmpty()) {
-                                    onLotsChange(listOf(boundaryPoints))
-                                    selectedLotIndex = 0
+                                val parsed = templateCountText.toIntOrNull() ?: lots.size.coerceAtLeast(1)
+                                val target = (parsed.coerceAtLeast(lots.size) + 1).toString()
+                                applyTemplate(templateMode, target)
+                            }
+                        ) {
+                            Text("New Lot", color = Sand100)
+                        }
+
+                        TextButton(
+                            onClick = {
+                                if (selectedLotIndex in lots.indices) {
+                                    val updatedLots = lots.toMutableList()
+                                    updatedLots.removeAt(selectedLotIndex)
+                                    onLotsChange(updatedLots)
+                                    selectedLotIndex = updatedLots.lastIndex.coerceAtLeast(-1)
+                                    lotWarningMessage = null
                                 } else {
                                     onLotsChange(emptyList())
                                     selectedLotIndex = -1
+                                    lotWarningMessage = null
                                 }
                             }
                         ) {
-                            Text(if (lots.isEmpty()) "Full Lot" else "Clear Lot", color = Sand100)
+                            Text("Clear Lot", color = Sand100)
                         }
                     }
                 }
 
+                if (lotWarningMessage != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = lotWarningMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFE8998E),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Templates List
-                val templates = listOf("Vertical 2", "Horizontal 2", "Vertical 3", "Grid 4")
-                LazyRow(
+                // Templates: mode + count
+                Row(
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    items(templates) { template ->
+                    listOf("Vertical", "Horizontal", "Grid").forEach { mode ->
+                        val selected = templateMode == mode
                         Button(
                             onClick = {
-                                val generated = generateMockLots(boundaryPoints, template)
-                                onLotsChange(generated)
-                                selectedLotIndex = 0
+                                templateMode = mode
+                                applyTemplate(mode, templateCountText)
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selected) Mint200.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f),
+                                contentColor = if (selected) Mint200 else Sand100,
+                            ),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(36.dp)
+                            modifier = Modifier.height(36.dp),
                         ) {
-                            Text(template, style = MaterialTheme.typography.labelLarge)
+                            Text(mode, style = MaterialTheme.typography.labelLarge)
                         }
                     }
+
+                    OutlinedTextField(
+                        value = templateCountText,
+                        onValueChange = { value ->
+                            val filtered = value.filter { it.isDigit() }.take(2)
+                            templateCountText = filtered
+                            if (filtered.isNotEmpty()) {
+                                applyTemplate(templateMode, filtered)
+                            }
+                        },
+                        singleLine = true,
+                        modifier = Modifier.width(64.dp).height(56.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Sand100,
+                            unfocusedTextColor = Sand100,
+                            focusedBorderColor = Leaf400,
+                            unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                            focusedLabelColor = Mint200,
+                            unfocusedLabelColor = Sand100.copy(alpha = 0.7f),
+                            cursorColor = Leaf400,
+                        ),
+                    )
+                }
+
+                if (templateMode == "Grid") {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Grid count accepts even numbers only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Sand100.copy(alpha = 0.62f),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -371,28 +547,30 @@ fun LotSectionSetupScreen(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    val fieldColors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Sand100,
-                        unfocusedTextColor = Sand100,
-                        focusedLabelColor = Mint200,
-                        unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
-                        focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
-                        unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
-                        cursorColor = Leaf400,
-                        focusedBorderColor = Leaf400,
-                        unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
-                    )
-
                     val cropVal = lotCropTypes[selectedLotIndex] ?: ""
                     OutlinedTextField(
                         value = cropVal,
-                        onValueChange = { onLotCropTypeChange(selectedLotIndex, it) },
+                        onValueChange = {
+                            onLotCropTypeChange(selectedLotIndex, it)
+                            formValidationMessage = null
+                        },
                         label = { Text("Crop Type") },
                         placeholder = { Text("e.g. Tomato, Corn") },
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                         singleLine = true,
                         colors = fieldColors
                     )
+
+                    if (formValidationMessage != null && cropVal.trim().isEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Crop Type is required for this lot.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFFE8998E),
+                            modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Soil/Water data will be auto-filled by AI in next step.",
@@ -432,8 +610,37 @@ fun LotSectionSetupScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
+                if (formValidationMessage != null) {
+                    Text(
+                        text = formValidationMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFFE8998E),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 Button(
-                    onClick = onContinue,
+                    onClick = {
+                        val missingFarmName = farmName.trim().isEmpty()
+                        val lotIndicesMissingCrop = lots.indices.filter { idx ->
+                            lotCropTypes[idx].orEmpty().trim().isEmpty()
+                        }
+
+                        formValidationMessage = when {
+                            missingFarmName -> "Farm Name is required."
+                            lots.isEmpty() -> "Please create at least one lot before continuing."
+                            lotIndicesMissingCrop.isNotEmpty() -> {
+                                val labels = lotIndicesMissingCrop.joinToString(", ") { "Lot ${it + 1}" }
+                                "Crop Type is required for: $labels"
+                            }
+                            else -> null
+                        }
+
+                        if (formValidationMessage == null) {
+                            onContinue()
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth).height(56.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
                 ) {
@@ -474,7 +681,7 @@ private fun nearestVertexDraw(points: List<FarmPoint>, tap: Offset, size: IntSiz
     return best
 }
 
-private fun generateMockLots(boundary: List<FarmPoint>, template: String): List<List<FarmPoint>> {
+private fun generateMockLots(boundary: List<FarmPoint>, mode: String, count: Int): List<List<FarmPoint>> {
     if (boundary.size < 3) return emptyList()
     var minX = 1f; var minY = 1f; var maxX = 0f; var maxY = 0f
     for (p in boundary) {
@@ -483,33 +690,47 @@ private fun generateMockLots(boundary: List<FarmPoint>, template: String): List<
         if (p.y < minY) minY = p.y
         if (p.y > maxY) maxY = p.y
     }
-    val cx = (minX + maxX) / 2f
-    val cy = (minY + maxY) / 2f
-
-    val rawLots = when (template) {
-        "Vertical 2" -> listOf(
-            listOf(FarmPoint(minX, minY), FarmPoint(cx, minY), FarmPoint(cx, maxY), FarmPoint(minX, maxY)),
-            listOf(FarmPoint(cx, minY), FarmPoint(maxX, minY), FarmPoint(maxX, maxY), FarmPoint(cx, maxY))
-        )
-        "Horizontal 2" -> listOf(
-            listOf(FarmPoint(minX, minY), FarmPoint(maxX, minY), FarmPoint(maxX, cy), FarmPoint(minX, cy)),
-            listOf(FarmPoint(minX, cy), FarmPoint(maxX, cy), FarmPoint(maxX, maxY), FarmPoint(minX, maxY))
-        )
-        "Vertical 3" -> {
-            val s1 = minX + (maxX - minX) * 0.33f
-            val s2 = minX + (maxX - minX) * 0.66f
-            listOf(
-                listOf(FarmPoint(minX, minY), FarmPoint(s1, minY), FarmPoint(s1, maxY), FarmPoint(minX, maxY)),
-                listOf(FarmPoint(s1, minY), FarmPoint(s2, minY), FarmPoint(s2, maxY), FarmPoint(s1, maxY)),
-                listOf(FarmPoint(s2, minY), FarmPoint(maxX, minY), FarmPoint(maxX, maxY), FarmPoint(s2, maxY))
-            )
+    val safeCount = count.coerceAtLeast(1)
+    val rawLots = when (mode) {
+        "Vertical" -> {
+            (0 until safeCount).map { index ->
+                val startT = index.toFloat() / safeCount.toFloat()
+                val endT = (index + 1).toFloat() / safeCount.toFloat()
+                val x1 = minX + (maxX - minX) * startT
+                val x2 = minX + (maxX - minX) * endT
+                listOf(FarmPoint(x1, minY), FarmPoint(x2, minY), FarmPoint(x2, maxY), FarmPoint(x1, maxY))
+            }
         }
-        "Grid 4" -> listOf(
-            listOf(FarmPoint(minX, minY), FarmPoint(cx, minY), FarmPoint(cx, cy), FarmPoint(minX, cy)),
-            listOf(FarmPoint(cx, minY), FarmPoint(maxX, minY), FarmPoint(maxX, cy), FarmPoint(cx, cy)),
-            listOf(FarmPoint(minX, cy), FarmPoint(cx, cy), FarmPoint(cx, maxY), FarmPoint(minX, maxY)),
-            listOf(FarmPoint(cx, cy), FarmPoint(maxX, cy), FarmPoint(maxX, maxY), FarmPoint(cx, maxY))
-        )
+        "Horizontal" -> {
+            (0 until safeCount).map { index ->
+                val startT = index.toFloat() / safeCount.toFloat()
+                val endT = (index + 1).toFloat() / safeCount.toFloat()
+                val y1 = minY + (maxY - minY) * startT
+                val y2 = minY + (maxY - minY) * endT
+                listOf(FarmPoint(minX, y1), FarmPoint(maxX, y1), FarmPoint(maxX, y2), FarmPoint(minX, y2))
+            }
+        }
+        "Grid" -> {
+            val evenCount = if (safeCount % 2 == 0) safeCount else safeCount + 1
+            val cols = (evenCount / 2).coerceAtLeast(1)
+            val rows = 2
+            val result = mutableListOf<List<FarmPoint>>()
+            for (row in 0 until rows) {
+                for (col in 0 until cols) {
+                    val x1 = minX + (maxX - minX) * (col.toFloat() / cols.toFloat())
+                    val x2 = minX + (maxX - minX) * ((col + 1).toFloat() / cols.toFloat())
+                    val y1 = minY + (maxY - minY) * (row.toFloat() / rows.toFloat())
+                    val y2 = minY + (maxY - minY) * ((row + 1).toFloat() / rows.toFloat())
+                    result += listOf(
+                        FarmPoint(x1, y1),
+                        FarmPoint(x2, y1),
+                        FarmPoint(x2, y2),
+                        FarmPoint(x1, y2),
+                    )
+                }
+            }
+            result
+        }
         else -> listOf(boundary)
     }
 
@@ -550,6 +771,72 @@ private fun isPointInsidePolygon(point: FarmPoint, polygon: List<FarmPoint>): Bo
         j = i
     }
     return inside
+}
+
+private fun isLotOverlapping(
+    editingIndex: Int,
+    candidate: List<FarmPoint>,
+    lots: List<List<FarmPoint>>,
+): Boolean {
+    if (candidate.size < 3) return false
+
+    return lots.anyIndexed { index, other ->
+        if (index == editingIndex) return@anyIndexed false
+        if (other.size < 3) return@anyIndexed false
+        polygonsOverlap(candidate, other)
+    }
+}
+
+private inline fun <T> List<T>.anyIndexed(predicate: (index: Int, value: T) -> Boolean): Boolean {
+    for (index in indices) {
+        if (predicate(index, this[index])) return true
+    }
+    return false
+}
+
+private fun polygonsOverlap(a: List<FarmPoint>, b: List<FarmPoint>): Boolean {
+    for (i in a.indices) {
+        val a1 = a[i]
+        val a2 = a[(i + 1) % a.size]
+        for (j in b.indices) {
+            val b1 = b[j]
+            val b2 = b[(j + 1) % b.size]
+            if (segmentsIntersect(a1, a2, b1, b2)) return true
+        }
+    }
+
+    // One polygon fully inside the other without edge intersection.
+    if (isPointInsidePolygon(a.first(), b)) return true
+    if (isPointInsidePolygon(b.first(), a)) return true
+    return false
+}
+
+private fun segmentsIntersect(p1: FarmPoint, p2: FarmPoint, q1: FarmPoint, q2: FarmPoint): Boolean {
+    val d1 = direction(q1, q2, p1)
+    val d2 = direction(q1, q2, p2)
+    val d3 = direction(p1, p2, q1)
+    val d4 = direction(p1, p2, q2)
+
+    if (((d1 > 0f && d2 < 0f) || (d1 < 0f && d2 > 0f)) && ((d3 > 0f && d4 < 0f) || (d3 < 0f && d4 > 0f))) {
+        return true
+    }
+    if (d1 == 0f && onSegment(q1, q2, p1)) return true
+    if (d2 == 0f && onSegment(q1, q2, p2)) return true
+    if (d3 == 0f && onSegment(p1, p2, q1)) return true
+    if (d4 == 0f && onSegment(p1, p2, q2)) return true
+    return false
+}
+
+private fun direction(a: FarmPoint, b: FarmPoint, c: FarmPoint): Float {
+    return (c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)
+}
+
+private fun onSegment(a: FarmPoint, b: FarmPoint, p: FarmPoint): Boolean {
+    val minX = minOf(a.x, b.x)
+    val maxX = maxOf(a.x, b.x)
+    val minY = minOf(a.y, b.y)
+    val maxY = maxOf(a.y, b.y)
+    return p.x in minX..maxX && p.y in minY..maxY
 }
 
 private fun polygonCentroid(points: List<FarmPoint>): FarmPoint {
