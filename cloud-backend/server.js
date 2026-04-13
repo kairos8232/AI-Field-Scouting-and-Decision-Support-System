@@ -96,6 +96,7 @@ app.post("/api/field-insights", async (req, res) => {
     };
 
     void persistInsightRecord({
+      userId: normalizeUserId(req.body?.userId),
       requestBody: req.body,
       normalized: {
         polygon,
@@ -111,6 +112,132 @@ app.post("/api/field-insights", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       error: "Unable to produce field insights.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/farm-config", async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) {
+      return res.status(503).json({
+        error: "Firestore is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    const farmName = String(req.body?.farmName || "").trim();
+    const address = String(req.body?.address || "").trim();
+    const mapQuery = String(req.body?.mapQuery || "").trim();
+    const totalAreaInput = String(req.body?.totalAreaInput || "").trim();
+    const mode = String(req.body?.mode || "").trim();
+    const boundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
+    const lots = normalizeLots(req.body?.lots);
+
+    if (!farmName) {
+      return res.status(400).json({ error: "farmName is required." });
+    }
+
+    if (lots.length === 0) {
+      return res.status(400).json({ error: "At least one lot is required." });
+    }
+
+    const payload = {
+      userId,
+      farmName,
+      address,
+      mapQuery,
+      totalAreaInput,
+      mode,
+      boundaryPoints,
+      lots,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.collection("farmConfigs").doc(userId).set(payload, { merge: true });
+
+    return res.status(200).json({ ok: true, userId });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to save farm configuration.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/api/farm-config", async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) {
+      return res.status(503).json({
+        error: "Firestore is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const userId = normalizeUserId(req.query?.userId);
+    if (!userId) {
+      return res.status(400).json({
+        error: "userId query param is required.",
+        detail: "Use /api/farm-config?userId=YOUR_UID or /api/farm-config/latest?userId=YOUR_UID",
+      });
+    }
+
+    const doc = await db.collection("farmConfigs").doc(userId).get();
+    if (!doc.exists) {
+      return res.json({ item: null });
+    }
+
+    return res.json({
+      item: {
+        id: doc.id,
+        ...doc.data(),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to read farm configuration.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/api/farm-config/latest", async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) {
+      return res.status(503).json({
+        error: "Firestore is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const userId = normalizeUserId(req.query?.userId);
+    if (!userId) {
+      return res.status(400).json({ error: "userId query param is required." });
+    }
+
+    const doc = await db.collection("farmConfigs").doc(userId).get();
+    if (!doc.exists) {
+      return res.json({ item: null });
+    }
+
+    return res.json({
+      item: {
+        id: doc.id,
+        ...doc.data(),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to read farm configuration.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -412,13 +539,14 @@ async function signInWithPassword(email, password) {
   };
 }
 
-async function persistInsightRecord({ requestBody, normalized, response }) {
+async function persistInsightRecord({ userId = null, requestBody, normalized, response }) {
   const db = getFirestoreDb();
   if (!db) return;
 
   try {
     await db.collection(FIREBASE_COLLECTION).add({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId,
       request: {
         raw: requestBody ?? {},
         normalized,
@@ -428,6 +556,47 @@ async function persistInsightRecord({ requestBody, normalized, response }) {
   } catch (error) {
     console.error("Failed to persist field insight record:", error);
   }
+}
+
+function normalizeUserId(input) {
+  const value = String(input || "").trim();
+  return value || null;
+}
+
+function normalizeNormalizedPoints(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const x = Number(raw?.x);
+      const y = Number(raw?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return {
+        x: clamp(x, 0, 1),
+        y: clamp(y, 0, 1),
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeLots(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw, index) => {
+      const points = normalizeNormalizedPoints(raw?.points);
+      if (points.length < 3) return null;
+
+      return {
+        id: String(raw?.id || `lot-${index + 1}`).trim() || `lot-${index + 1}`,
+        name: String(raw?.name || `Lot ${index + 1}`).trim() || `Lot ${index + 1}`,
+        points,
+        cropPlan: String(raw?.cropPlan || "").trim(),
+        soilType: String(raw?.soilType || "").trim(),
+        waterAvailability: String(raw?.waterAvailability || "").trim(),
+      };
+    })
+    .filter(Boolean);
 }
 
 function toLatLngPoint(raw) {

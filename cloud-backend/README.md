@@ -233,9 +233,20 @@ To enable Earth Engine link:
 
 After link is verified, replace buildGeometrySummary in server.js with real dataset sampling while keeping response shape unchanged.
 
-
+mac:
 gcloud run deploy farmtwin-field-insights \
   --source ./cloud-backend \
   --region asia-southeast1 \
   --platform managed \
+  --allow-unauthenticated
+
+Windows: 
+(New-Object Net.WebClient).DownloadFile("https://dl.google.com/dl/cloudsdk/channels/rapid/GoogleCloudSDKInstaller.exe", "$env:Temp\GoogleCloudSDKInstaller.exe")
+
+& $env:Temp\GoogleCloudSDKInstaller.exe
+
+gcloud run deploy farmtwin-field-insights `
+  --source .\cloud-backend `
+  --region asia-southeast1 `
+  --platform managed `
   --allow-unauthenticated

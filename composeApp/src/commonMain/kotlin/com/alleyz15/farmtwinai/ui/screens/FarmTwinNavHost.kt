@@ -1,6 +1,7 @@
 package com.alleyz15.farmtwinai.ui.screens
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import com.alleyz15.farmtwinai.navigation.AppDestination
 import com.alleyz15.farmtwinai.navigation.AppNavigator
@@ -52,8 +53,13 @@ fun FarmTwinNavHost(
                 }
             },
             onAuthenticated = { user ->
-                appState.authenticateUser(user)
-                navigator.navigate(AppDestination.UserSituation)
+                appState.authenticateAndHydrate(user) { hasSavedFarmConfig ->
+                    if (hasSavedFarmConfig) {
+                        navigator.resetTo(AppDestination.Dashboard)
+                    } else {
+                        navigator.navigate(AppDestination.UserSituation)
+                    }
+                }
             },
         )
         AppDestination.UserSituation -> UserSituationScreen(
@@ -153,12 +159,18 @@ fun FarmTwinNavHost(
             onBack = { navigator.pop() },
             onAnalyze = appState::analyzeLotsForRecommendation,
             onFollowAndContinue = {
-                appState.finalizeLotRecommendation(followRecommendation = true)
-                navigator.resetTo(AppDestination.Dashboard)
+                appState.completeLotRecommendationAndPersist(followRecommendation = true) {
+                    if (it) {
+                        navigator.resetTo(AppDestination.Dashboard)
+                    }
+                }
             },
             onSkipAndContinue = {
-                appState.finalizeLotRecommendation(followRecommendation = false)
-                navigator.resetTo(AppDestination.Dashboard)
+                appState.completeLotRecommendationAndPersist(followRecommendation = false) {
+                    if (it) {
+                        navigator.resetTo(AppDestination.Dashboard)
+                    }
+                }
             },
         )
         AppDestination.DocumentSetup -> DocumentSetupScreen(
@@ -170,17 +182,25 @@ fun FarmTwinNavHost(
             onBack = { navigator.pop() },
             onContinue = { navigator.resetTo(AppDestination.Dashboard) },
         )
-        AppDestination.Dashboard -> DashboardScreen(
-            snapshot = appState.snapshot,
-            selectedMode = appState.selectedMode,
-            lotSections = appState.lotSections,
-            onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
-            onOpenChat = { navigator.navigate(AppDestination.AiChat) },
-            onOpenHistory = { navigator.navigate(AppDestination.History) },
-            isTabBarVisible = true,
-            onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
-            onSelectMeTab = { navigator.replace(AppDestination.Me) },
-        )
+        AppDestination.Dashboard -> {
+            LaunchedEffect(appState.authenticatedUser?.userId) {
+                if (appState.isAuthenticated) {
+                    appState.loadFarmConfigFromCloud()
+                }
+            }
+
+            DashboardScreen(
+                snapshot = appState.snapshot,
+                selectedMode = appState.selectedMode,
+                lotSections = appState.lotSections,
+                onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
+                onOpenChat = { navigator.navigate(AppDestination.AiChat) },
+                onOpenHistory = { navigator.navigate(AppDestination.History) },
+                isTabBarVisible = true,
+                onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
+                onSelectMeTab = { navigator.replace(AppDestination.Me) },
+            )
+        }
         is AppDestination.ZoneDetail -> ZoneDetailScreen(
             zone = appState.snapshot.zones.first { it.id == current.zoneId },
             onBack = { navigator.pop() },

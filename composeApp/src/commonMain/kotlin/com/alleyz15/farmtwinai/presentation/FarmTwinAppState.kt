@@ -6,6 +6,9 @@ import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
 import com.alleyz15.farmtwinai.data.auth.AuthRepository
+import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
+import com.alleyz15.farmtwinai.data.farm.FarmConfigRemote
+import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
@@ -26,6 +29,7 @@ class FarmTwinAppState(
     repository: MockFarmTwinRepository,
     private val fieldInsightsRepository: FieldInsightsRepository,
     private val authRepository: AuthRepository,
+    private val farmConfigRepository: FarmConfigRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -119,6 +123,12 @@ class FarmTwinAppState(
     var lotRecommendationSuggestedCropByLotId by mutableStateOf<Map<String, String>>(emptyMap())
         private set
 
+    var isFarmConfigSyncing by mutableStateOf(false)
+        private set
+
+    var farmConfigSyncError by mutableStateOf<String?>(null)
+        private set
+
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
@@ -126,8 +136,34 @@ class FarmTwinAppState(
         authenticatedUser = user
     }
 
+    fun authenticateAndHydrate(
+        user: AuthUser,
+        onReady: (hasSavedFarmConfig: Boolean) -> Unit,
+    ) {
+        authenticatedUser = user
+        isFarmConfigSyncing = true
+        farmConfigSyncError = null
+
+        scope.launch {
+            val remote = runCatching {
+                farmConfigRepository.fetchLatestFarmConfig(user.userId)
+            }.onFailure { error ->
+                farmConfigSyncError = error.message ?: "Unable to load farm setup from cloud."
+            }.getOrNull()
+
+            if (remote != null) {
+                applyRemoteFarmConfig(remote)
+            }
+
+            isFarmConfigSyncing = false
+            onReady(remote != null)
+        }
+    }
+
     fun signOut() {
         authenticatedUser = null
+        isFarmConfigSyncing = false
+        farmConfigSyncError = null
     }
 
     suspend fun signIn(email: String, password: String): AuthUser {
@@ -361,6 +397,66 @@ class FarmTwinAppState(
         clearLotRecommendationState()
     }
 
+    fun completeLotRecommendationAndPersist(
+        followRecommendation: Boolean,
+        onComplete: (Boolean) -> Unit,
+    ) {
+        finalizeLotRecommendation(followRecommendation = followRecommendation)
+
+        val userId = authenticatedUser?.userId
+        if (userId.isNullOrBlank()) {
+            onComplete(true)
+            return
+        }
+
+        val draft = buildFarmConfigDraft(userId)
+        isFarmConfigSyncing = true
+        farmConfigSyncError = null
+        lotRecommendationError = null
+
+        scope.launch {
+            val success = runCatching {
+                farmConfigRepository.upsertFarmConfig(draft)
+                val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
+                if (latest != null) {
+                    applyRemoteFarmConfig(latest)
+                }
+            }.fold(
+                onSuccess = { true },
+                onFailure = {
+                    farmConfigSyncError = it.message ?: "Unable to sync farm setup to cloud."
+                    lotRecommendationError = farmConfigSyncError
+                    false
+                },
+            )
+
+            isFarmConfigSyncing = false
+            onComplete(success)
+        }
+    }
+
+    fun loadFarmConfigFromCloud(force: Boolean = false) {
+        val userId = authenticatedUser?.userId ?: return
+        if (!force && isFarmConfigSyncing) return
+
+        isFarmConfigSyncing = true
+        farmConfigSyncError = null
+
+        scope.launch {
+            runCatching {
+                farmConfigRepository.fetchLatestFarmConfig(userId)
+            }.onSuccess { remote ->
+                if (remote != null) {
+                    applyRemoteFarmConfig(remote)
+                }
+            }.onFailure { error ->
+                farmConfigSyncError = error.message ?: "Unable to load farm setup from cloud."
+            }
+
+            isFarmConfigSyncing = false
+        }
+    }
+
     fun submitPolygonForInsights() {
         if (farmBoundaryPoints.size < 3 || isSubmittingPolygon) return
 
@@ -477,6 +573,58 @@ class FarmTwinAppState(
 
         val isAcre = normalized.contains("acre") || normalized.contains("ac")
         return if (isAcre) value * 0.40468564224 else value
+    }
+
+    private fun buildFarmConfigDraft(userId: String): FarmConfigDraft {
+        return FarmConfigDraft(
+            userId = userId,
+            farmName = farmSetupFarmName.trim(),
+            address = farmSetupAddress.trim(),
+            mapQuery = farmSetupMapQuery.trim(),
+            totalAreaInput = lotTotalAreaInput.trim(),
+            mode = selectedMode,
+            boundaryPoints = farmBoundaryPoints,
+            lots = lotSections,
+        )
+    }
+
+    private fun applyRemoteFarmConfig(remote: FarmConfigRemote) {
+        if (remote.farmName.isNotBlank()) {
+            farmSetupFarmName = remote.farmName
+        }
+
+        if (remote.address.isNotBlank()) {
+            farmSetupAddress = remote.address
+        }
+
+        if (remote.mapQuery.isNotBlank()) {
+            farmSetupMapQuery = remote.mapQuery
+        }
+
+        if (remote.totalAreaInput.isNotBlank()) {
+            lotTotalAreaInput = remote.totalAreaInput
+        }
+
+        selectedMode = remote.mode
+
+        if (remote.boundaryPoints.size >= 3) {
+            farmBoundaryPoints = remote.boundaryPoints
+        }
+
+        if (remote.lots.isNotEmpty()) {
+            lotSections = remote.lots
+        }
+
+        val primaryCrop = remote.lots.firstOrNull()?.cropPlan?.trim().orEmpty()
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                farmName = remote.farmName.ifBlank { snapshot.farm.farmName },
+                cropName = if (primaryCrop.isNotBlank()) primaryCrop else snapshot.farm.cropName,
+                location = remote.address.ifBlank { snapshot.farm.location },
+                fieldSize = remote.totalAreaInput.ifBlank { snapshot.farm.fieldSize },
+                mode = remote.mode,
+            ),
+        )
     }
 
     private fun clearLotRecommendationState() {

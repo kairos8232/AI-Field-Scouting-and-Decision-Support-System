@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.alleyz15.farmtwinai.data.analysis.HttpFieldInsightsRepository
 import com.alleyz15.farmtwinai.data.auth.HttpAuthRepository
+import com.alleyz15.farmtwinai.data.farm.HttpFarmConfigRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.navigation.rememberAppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
@@ -18,7 +19,15 @@ fun FarmTwinApp() {
     val repository = remember { MockFarmTwinRepository() }
     val fieldInsightsRepository = remember { HttpFieldInsightsRepository() }
     val authRepository = remember { HttpAuthRepository() }
-    val appState = remember { FarmTwinAppState(repository, fieldInsightsRepository, authRepository) }
+    val farmConfigRepository = remember { HttpFarmConfigRepository() }
+    val appState = remember {
+        FarmTwinAppState(
+            repository = repository,
+            fieldInsightsRepository = fieldInsightsRepository,
+            authRepository = authRepository,
+            farmConfigRepository = farmConfigRepository,
+        )
+    }
     val navigator = rememberAppNavigator()
 
     FarmTwinTheme {
