@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
+import com.alleyz15.farmtwinai.data.auth.AuthRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 class FarmTwinAppState(
     repository: MockFarmTwinRepository,
     private val fieldInsightsRepository: FieldInsightsRepository,
+    private val authRepository: AuthRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -123,6 +125,18 @@ class FarmTwinAppState(
 
     fun signOut() {
         authenticatedUser = null
+    }
+
+    suspend fun signIn(email: String, password: String): AuthUser {
+        return authRepository.signIn(email = email, password = password)
+    }
+
+    suspend fun signUp(email: String, password: String, displayName: String): AuthUser {
+        return authRepository.signUp(
+            email = email,
+            password = password,
+            displayName = displayName,
+        )
     }
 
     fun setMode(mode: AppMode) {

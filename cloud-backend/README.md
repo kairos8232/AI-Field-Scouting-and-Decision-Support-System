@@ -4,6 +4,7 @@ Node.js backend for polygon analysis prototype:
 - Receives polygon from mobile app
 - Produces Earth-style environment summary (mock mode by default)
 - Produces crop recommendations with Gemini (when API key is set)
+- Optionally stores each analysis result in Firebase Firestore
 
 ## 1) Local Run
 
@@ -17,6 +18,10 @@ Node.js backend for polygon analysis prototype:
    EARTH_ENGINE_MODE=mock
   EARTH_ENGINE_PROJECT_ID=your-gcp-project-id
   EARTH_ENGINE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+  FIREBASE_PROJECT_ID=your-gcp-project-id
+  FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+  FIREBASE_COLLECTION=fieldInsights
+  FIREBASE_WEB_API_KEY=your-firebase-web-api-key
 
 3. Install and run:
 
@@ -30,6 +35,47 @@ Node.js backend for polygon analysis prototype:
      -d '{"polygon":[{"x":0.2,"y":0.2},{"x":0.8,"y":0.2},{"x":0.8,"y":0.8},{"x":0.2,"y":0.8}]}'
 
 ## 2) Deploy To Cloud Run
+
+### One Source of Truth (Recommended)
+
+If you do not want to maintain both `.env` and YAML manually, keep only root `.env` updated, then generate Cloud Run YAML right before deploy:
+
+```bash
+bash cloud-backend/scripts/generate-cloudrun-env.sh
+```
+
+Then deploy:
+
+```bash
+gcloud run deploy farmtwin-field-insights \
+  --source ./cloud-backend \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --env-vars-file cloud-backend/env.cloudrun.yaml
+```
+
+This way `.env` is your only file to edit, and `env.cloudrun.yaml` is generated automatically.
+
+If the generator reports `*_SERVICE_ACCOUNT_JSON looks incomplete`, it means your `.env` contains partial JSON (often from multiline paste).
+
+If you want to keep JSON directly inside `.env`, normalize it to single-line JSON first:
+
+```bash
+node cloud-backend/scripts/normalize-env-json.mjs .env
+```
+
+Then regenerate YAML and deploy:
+
+```bash
+bash cloud-backend/scripts/generate-cloudrun-env.sh
+gcloud run deploy farmtwin-field-insights \
+  --source ./cloud-backend \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --env-vars-file cloud-backend/env.cloudrun.yaml
+```
 
 From repository root:
 
@@ -70,6 +116,21 @@ If you also need to update environment variables in the same deploy, add:
 --set-env-vars GEMINI_API_KEY=YOUR_KEY,EARTH_ENGINE_MODE=live,EARTH_ENGINE_PROJECT_ID=YOUR_PROJECT_ID,EARTH_ENGINE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 ```
 
+### Deploy With Firebase Firestore Enabled
+
+From repository root:
+
+```bash
+gcloud run deploy farmtwin-field-insights \
+  --source ./cloud-backend \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=YOUR_KEY,EARTH_ENGINE_MODE=live,EARTH_ENGINE_PROJECT_ID=YOUR_PROJECT_ID,EARTH_ENGINE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}',FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}',FIREBASE_COLLECTION=fieldInsights,FIREBASE_WEB_API_KEY=YOUR_FIREBASE_WEB_API_KEY
+```
+
+Tip: For production on Cloud Run, you can avoid `FIREBASE_SERVICE_ACCOUNT_JSON` by attaching a service account with Firestore access and setting only `FIREBASE_PROJECT_ID`.
+
 ## 3) Request/Response Contract
 
 Request:
@@ -106,7 +167,51 @@ Response:
   "provider": "gemini-live"
 }
 
-## 4) Earth Engine Upgrade Path
+## 4) Firebase Storage Endpoints
+
+When Firebase is configured, each `POST /api/field-insights` call is stored in Firestore.
+
+Read recent records:
+
+```bash
+curl "https://YOUR_CLOUD_RUN_URL/api/field-insights/history?limit=20"
+```
+
+Response shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "abc123",
+      "createdAt": {"_seconds": 1710000000, "_nanoseconds": 0},
+      "request": {...},
+      "response": {...}
+    }
+  ],
+  "count": 1
+}
+```
+
+## 5) Authentication Endpoints
+
+Sign up (creates Firebase Auth user and upserts user profile in Firestore `users`):
+
+```bash
+curl -X POST "https://YOUR_CLOUD_RUN_URL/api/auth/signup" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"farmer@example.com","password":"strongpass123","displayName":"Farmer Ali"}'
+```
+
+Sign in (validates credentials via Firebase Auth):
+
+```bash
+curl -X POST "https://YOUR_CLOUD_RUN_URL/api/auth/signin" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"farmer@example.com","password":"strongpass123"}'
+```
+
+## 6) Earth Engine Upgrade Path
 
 Current implementation returns geometry fallback summary by default. Live-mode linking now validates Earth Engine auth and API access.
 

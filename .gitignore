@@ -23,6 +23,7 @@ node_modules/
 .env.local
 .env.*.local
 !.env.example
+cloud-backend/env.cloudrun.yaml
 
 # Local iOS secrets
 iosApp/Configuration/Secrets.xcconfig

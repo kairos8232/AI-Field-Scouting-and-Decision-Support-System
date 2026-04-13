@@ -1,6 +1,7 @@
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import admin from "firebase-admin";
 import { GoogleGenAI } from "@google/genai";
 import { GoogleAuth } from "google-auth-library";
 import { createRequire } from "node:module";
@@ -12,9 +13,10 @@ const ee = require("@google/earthengine");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, "..");
 
 // Root .env is the single source of truth for all app/backend settings.
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+dotenv.config({ path: path.resolve(ROOT_DIR, ".env") });
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -29,6 +31,10 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "mock";
 const EARTH_ENGINE_PROJECT_ID = process.env.EARTH_ENGINE_PROJECT_ID || "";
 const EARTH_ENGINE_SERVICE_ACCOUNT_JSON = process.env.EARTH_ENGINE_SERVICE_ACCOUNT_JSON || "";
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
+const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
+const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
 
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
@@ -42,9 +48,15 @@ let earthEngineStatusCache = {
   reason: "not_checked",
 };
 let earthEngineInitPromise = null;
+let firestoreStatusCache = {
+  initialized: false,
+  reason: "not_checked",
+};
+let firestoreDb = null;
 
 app.get("/health", async (_req, res) => {
   const eeStatus = await resolveEarthEngineStatus();
+  const firebaseStatus = resolveFirestoreStatus();
   res.json({
     ok: true,
     service: "field-insights",
@@ -52,6 +64,8 @@ app.get("/health", async (_req, res) => {
     earthEngineMode: EARTH_ENGINE_MODE,
     earthEngineLinked: eeStatus.linked,
     earthEngineReason: eeStatus.reason,
+    firestoreEnabled: firebaseStatus.enabled,
+    firestoreReason: firebaseStatus.reason,
   });
 });
 
@@ -75,14 +89,198 @@ app.post("/api/field-insights", async (req, res) => {
       lotAreaHectares,
     });
 
-    res.json({
+    const payload = {
       summary: earthSummary,
       recommendations,
       provider: ai ? "gemini-live" : "gemini-mock",
+    };
+
+    void persistInsightRecord({
+      requestBody: req.body,
+      normalized: {
+        polygon,
+        centroid,
+        targetCrops,
+        totalFarmAreaHectares,
+        lotAreaHectares,
+      },
+      response: payload,
+    });
+
+    return res.json(payload);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to produce field insights.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/api/field-insights/history", async (req, res) => {
+  try {
+    const db = getFirestoreDb();
+    if (!db) {
+      return res.status(503).json({
+        error: "Firestore is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const requestedLimit = Number(req.query?.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100)
+      : 20;
+
+    const snapshot = await db
+      .collection(FIREBASE_COLLECTION)
+      .orderBy("createdAt", "desc")
+      .limit(limit)
+      .get();
+
+    const items = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    return res.json({ items, count: items.length });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to read field insights history.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/auth/signup", async (req, res) => {
+  try {
+    if (!FIREBASE_WEB_API_KEY) {
+      return res.status(503).json({
+        error: "Firebase web API key is not configured.",
+        detail: "Set FIREBASE_WEB_API_KEY and redeploy.",
+      });
+    }
+
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({
+        error: "Firebase Auth is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "").trim();
+    const displayName = String(req.body?.displayName || "").trim();
+
+    if (!email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required." });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters." });
+    }
+    if (!displayName) {
+      return res.status(400).json({ error: "displayName is required." });
+    }
+
+    const createdUser = await firebaseAuth.createUser({
+      email,
+      password,
+      displayName,
+    });
+
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection("users").doc(createdUser.uid).set(
+        {
+          email,
+          displayName,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          provider: "password",
+        },
+        { merge: true }
+      );
+    }
+
+    const signInData = await signInWithPassword(email, password);
+    return res.status(201).json({
+      userId: createdUser.uid,
+      email: createdUser.email || email,
+      displayName: createdUser.displayName || displayName,
+      idToken: signInData?.idToken || null,
+      refreshToken: signInData?.refreshToken || null,
     });
   } catch (error) {
-    res.status(500).json({
-      error: "Unable to produce field insights.",
+    if (error?.code === "auth/email-already-exists") {
+      return res.status(409).json({ error: "This email is already registered." });
+    }
+    return res.status(500).json({
+      error: "Unable to sign up user.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/auth/signin", async (req, res) => {
+  try {
+    if (!FIREBASE_WEB_API_KEY) {
+      return res.status(503).json({
+        error: "Firebase web API key is not configured.",
+        detail: "Set FIREBASE_WEB_API_KEY and redeploy.",
+      });
+    }
+
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({
+        error: "Firebase Auth is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "").trim();
+
+    if (!email.includes("@")) {
+      return res.status(400).json({ error: "Valid email is required." });
+    }
+    if (!password) {
+      return res.status(400).json({ error: "Password is required." });
+    }
+
+    const signInData = await signInWithPassword(email, password);
+    if (!signInData?.localId) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    const userRecord = await firebaseAuth.getUser(signInData.localId);
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection("users").doc(userRecord.uid).set(
+        {
+          email: userRecord.email || email,
+          displayName: userRecord.displayName || null,
+          lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          provider: "password",
+        },
+        { merge: true }
+      );
+    }
+
+    return res.json({
+      userId: userRecord.uid,
+      email: userRecord.email || email,
+      displayName: userRecord.displayName || null,
+      idToken: signInData.idToken || null,
+      refreshToken: signInData.refreshToken || null,
+    });
+  } catch (error) {
+    if (isFirebaseInvalidCredentials(error)) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+    return res.status(500).json({
+      error: "Unable to sign in user.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -110,6 +308,126 @@ function normalizeTargetCrops(input) {
 function normalizeOptionalNumber(input) {
   const num = Number(input);
   return Number.isFinite(num) && num > 0 ? num : null;
+}
+
+function resolveFirestoreStatus() {
+  const db = getFirestoreDb();
+  return {
+    enabled: Boolean(db),
+    reason: firestoreStatusCache.reason,
+  };
+}
+
+function getFirestoreDb() {
+  if (firestoreDb) return firestoreDb;
+
+  try {
+    if (admin.apps.length > 0) {
+      firestoreDb = admin.firestore();
+      firestoreStatusCache = { initialized: true, reason: "ok_existing_app" };
+      return firestoreDb;
+    }
+
+    const credentialsJson = FIREBASE_SERVICE_ACCOUNT_JSON;
+
+    if (!FIREBASE_PROJECT_ID && !credentialsJson.trim()) {
+      firestoreStatusCache = { initialized: false, reason: "missing_project_id_or_credentials" };
+      return null;
+    }
+
+    const appOptions = {
+      ...(FIREBASE_PROJECT_ID ? { projectId: FIREBASE_PROJECT_ID } : {}),
+    };
+
+    if (credentialsJson.trim()) {
+      const serviceAccount = JSON.parse(credentialsJson);
+      appOptions.credential = admin.credential.cert(serviceAccount);
+      if (!appOptions.projectId && serviceAccount.project_id) {
+        appOptions.projectId = serviceAccount.project_id;
+      }
+    } else {
+      appOptions.credential = admin.credential.applicationDefault();
+    }
+
+    admin.initializeApp(appOptions);
+    firestoreDb = admin.firestore();
+    firestoreStatusCache = { initialized: true, reason: "ok" };
+    return firestoreDb;
+  } catch (error) {
+    firestoreStatusCache = {
+      initialized: false,
+      reason: error instanceof Error ? `init_error_${error.message}` : "init_error_unknown",
+    };
+    return null;
+  }
+}
+
+function getFirebaseAuth() {
+  getFirestoreDb();
+  if (admin.apps.length === 0) {
+    return null;
+  }
+
+  try {
+    return admin.auth();
+  } catch (_error) {
+    return null;
+  }
+}
+
+function isFirebaseInvalidCredentials(error) {
+  const message = String(error instanceof Error ? error.message : error || "").toUpperCase();
+  return message.includes("INVALID_LOGIN_CREDENTIALS") || message.includes("INVALID_PASSWORD");
+}
+
+async function signInWithPassword(email, password) {
+  if (!FIREBASE_WEB_API_KEY) {
+    return null;
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_WEB_API_KEY}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true,
+      }),
+    }
+  );
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`firebase_signin_failed:${payload?.error?.message || response.status}`);
+  }
+
+  return {
+    localId: String(payload.localId || ""),
+    idToken: payload.idToken || null,
+    refreshToken: payload.refreshToken || null,
+  };
+}
+
+async function persistInsightRecord({ requestBody, normalized, response }) {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  try {
+    await db.collection(FIREBASE_COLLECTION).add({
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      request: {
+        raw: requestBody ?? {},
+        normalized,
+      },
+      response,
+    });
+  } catch (error) {
+    console.error("Failed to persist field insight record:", error);
+  }
 }
 
 function toLatLngPoint(raw) {
@@ -195,7 +513,6 @@ async function getEarthSummary({ polygon, centroid }) {
 }
 
 function buildGeometrySummary({ polygon, centroid }) {
-
   const area = polygonArea(polygon);
   const areaScale = Math.min(1.0, area * 20);
 
@@ -240,8 +557,10 @@ async function resolveEarthEngineStatus() {
 
 async function validateEarthEngineAccess() {
   try {
-    const credentials = EARTH_ENGINE_SERVICE_ACCOUNT_JSON.trim()
-      ? JSON.parse(EARTH_ENGINE_SERVICE_ACCOUNT_JSON)
+    const credentialsJson = EARTH_ENGINE_SERVICE_ACCOUNT_JSON;
+
+    const credentials = credentialsJson.trim()
+      ? JSON.parse(credentialsJson)
       : undefined;
 
     const projectId = EARTH_ENGINE_PROJECT_ID || credentials?.project_id;
@@ -263,10 +582,10 @@ async function validateEarthEngineAccess() {
     const response = await fetch(
       "https://earthengine.googleapis.com/v1alpha/projects/earthengine-public/assets/LANDSAT",
       {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       }
     );
 
@@ -288,11 +607,13 @@ async function getInitializedEarthEngine() {
 
   earthEngineInitPromise = new Promise((resolve, reject) => {
     try {
-      if (!EARTH_ENGINE_SERVICE_ACCOUNT_JSON.trim()) {
+      const credentialsJson = EARTH_ENGINE_SERVICE_ACCOUNT_JSON;
+
+      if (!credentialsJson.trim()) {
         return reject(new Error("missing_service_account_json"));
       }
 
-      const credentials = JSON.parse(EARTH_ENGINE_SERVICE_ACCOUNT_JSON);
+      const credentials = JSON.parse(credentialsJson);
       ee.data.authenticateViaPrivateKey(
         {
           client_email: credentials.client_email,

@@ -34,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,9 +54,11 @@ import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
+import com.alleyz15.farmtwinai.auth.AuthUser
 import farmtwinai.composeapp.generated.resources.Res
 import farmtwinai.composeapp.generated.resources.ic_farm_bg
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -66,9 +69,12 @@ fun AuthScreen(
     isLogin: Boolean,
     onBack: () -> Unit,
     onSwitchMode: () -> Unit,
-    onContinue: () -> Unit,
+    onSubmit: suspend (isLogin: Boolean, email: String, password: String, displayName: String?) -> AuthUser,
+    onAuthenticated: (AuthUser) -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     var authMessage by remember { mutableStateOf<String?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
@@ -234,6 +240,9 @@ fun AuthScreen(
 
                         Button(
                             onClick = {
+                                if (isSubmitting) {
+                                    return@Button
+                                }
                                 authMessage = null
                                 val trimmedEmail = email.trim()
                                 val trimmedPassword = password.trim()
@@ -253,12 +262,34 @@ fun AuthScreen(
                                     !isLogin && trimmedConfirmPassword != trimmedPassword -> {
                                         authMessage = "Passwords do not match."
                                     }
-                                    else -> onContinue()
+                                    else -> {
+                                        scope.launch {
+                                            isSubmitting = true
+                                            runCatching {
+                                                onSubmit(
+                                                    isLogin,
+                                                    trimmedEmail,
+                                                    trimmedPassword,
+                                                    if (isLogin) null else trimmedDisplayName,
+                                                )
+                                            }.onSuccess { user ->
+                                                authMessage = null
+                                                onAuthenticated(user)
+                                            }.onFailure { error ->
+                                                authMessage = error.message ?: "Unable to authenticate. Please try again."
+                                            }
+                                            isSubmitting = false
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(56.dp).padding(top = 8.dp),
+                            enabled = !isSubmitting,
                         ) {
-                            Text(if (isLogin) "Login" else "Create Account", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                text = if (isSubmitting) "Please wait..." else if (isLogin) "Login" else "Create Account",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
                         }
 
                         if (authMessage != null) {
@@ -275,6 +306,7 @@ fun AuthScreen(
                                 onSwitchMode()
                             },
                             modifier = Modifier.fillMaxWidth().height(56.dp),
+                            enabled = !isSubmitting,
                         ) {
                             Text(if (isLogin) "Sign Up instead" else "Login instead", style = MaterialTheme.typography.titleMedium)
                         }
