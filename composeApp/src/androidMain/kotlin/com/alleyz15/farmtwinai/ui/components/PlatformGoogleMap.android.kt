@@ -1,6 +1,12 @@
 package com.alleyz15.farmtwinai.ui.components
 
 import android.annotation.SuppressLint
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.util.Log
 import android.webkit.GeolocationPermissions
 import android.webkit.ConsoleMessage
@@ -12,6 +18,8 @@ import android.webkit.WebViewClient
 import android.view.MotionEvent
 import android.view.ViewGroup
 import com.alleyz15.farmtwinai.BuildConfig
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -132,7 +140,15 @@ actual fun PlatformGoogleMap(
 
     LaunchedEffect(useCurrentLocationTrigger) {
       if (useCurrentLocationTrigger > 0) {
-        webView.evaluateJavascript("window.useCurrentLocation();", null)
+        if (ensureLocationPermission(context)) {
+          val nativeLocation = readBestLastKnownLocation(context)
+          if (nativeLocation != null) {
+            val script = "window.centerToLocation(${nativeLocation.latitude}, ${nativeLocation.longitude});"
+            webView.evaluateJavascript(script, null)
+          } else {
+            webView.evaluateJavascript("window.useCurrentLocation();", null)
+          }
+        }
       }
     }
 
@@ -360,8 +376,8 @@ private fun buildGoogleMapHtml(apiKey: String): String {
 
             geocoder = new google.maps.Geocoder();
             var mapOptions = {
-              center: { lat: 6.1184, lng: 100.3685 },
-              zoom: 14,
+              center: { lat: 0, lng: 0 },
+              zoom: 2,
               mapTypeControl: false,
               streetViewControl: false,
               fullscreenControl: false
@@ -384,6 +400,16 @@ private fun buildGoogleMapHtml(apiKey: String): String {
             mapReady = true;
             window.__farmMap = map;
             restoreMapView();
+
+            if (!window.__farmMapView && !pendingQuery && navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition(function(position) {
+                var loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+                map.setCenter(loc);
+                map.setZoom(14);
+                saveMapView();
+              }, function() {});
+            }
+
             if (pendingQuery) {
               geocodeAddress(pendingQuery);
             }
@@ -419,6 +445,16 @@ private fun buildGoogleMapHtml(apiKey: String): String {
           }, function(error) {});
         };
 
+        window.centerToLocation = function(lat, lng) {
+          if (!map) return;
+          var parsedLat = parseFloat(lat);
+          var parsedLng = parseFloat(lng);
+          if (!isFinite(parsedLat) || !isFinite(parsedLng)) return;
+          map.setCenter({ lat: parsedLat, lng: parsedLng });
+          map.setZoom(17);
+          saveMapView();
+        };
+
         window.onload = function() {
           ensureMapContainerSize();
           setTimeout(function() {
@@ -450,4 +486,36 @@ private fun buildGoogleMapHtml(apiKey: String): String {
     </body>
     </html>
     """.trimIndent()
+}
+
+private fun ensureLocationPermission(context: Context): Boolean {
+  val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+  val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+  if (fineGranted || coarseGranted) return true
+
+  val activity = context as? Activity ?: return false
+  ActivityCompat.requestPermissions(
+    activity,
+    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+    1001,
+  )
+  return false
+}
+
+@SuppressLint("MissingPermission")
+private fun readBestLastKnownLocation(context: Context): Location? {
+  val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+  val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+  if (!fineGranted && !coarseGranted) return null
+
+  val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+  val providers = listOf(
+    LocationManager.GPS_PROVIDER,
+    LocationManager.NETWORK_PROVIDER,
+    LocationManager.PASSIVE_PROVIDER,
+  )
+
+  return providers
+    .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
+    .maxByOrNull { it.time }
 }

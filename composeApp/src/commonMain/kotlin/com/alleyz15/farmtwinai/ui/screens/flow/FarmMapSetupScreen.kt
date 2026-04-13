@@ -45,7 +45,7 @@ fun FarmMapSetupScreen(
     val points = remember(boundaryPoints) { mutableStateListOf<FarmPoint>().apply { addAll(boundaryPoints) } }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedVertex by remember { mutableIntStateOf(-1) }
-    var address by remember { mutableStateOf("Pendang, Kedah") }
+    var address by remember { mutableStateOf("") }
     var mapQuery by remember { mutableStateOf(address) }
     var searchTrigger by remember { mutableIntStateOf(0) }
     var mapFrozenForSelection by remember { mutableStateOf(false) }

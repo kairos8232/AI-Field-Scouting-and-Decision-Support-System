@@ -52,6 +52,9 @@ fun FarmTwinNavHost(
                     )
                 }
             },
+            onGoogleAuth = {
+                throw IllegalStateException("Google Sign-In backend flow is not integrated yet.")
+            },
             onAuthenticated = { user ->
                 appState.authenticateAndHydrate(user) { hasSavedFarmConfig ->
                     if (hasSavedFarmConfig) {

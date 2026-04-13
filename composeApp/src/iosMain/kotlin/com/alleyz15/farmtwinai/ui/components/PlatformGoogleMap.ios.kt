@@ -141,8 +141,8 @@ private fun buildGoogleMapHtml(apiKey: String): String =
         function init() {
           geocoder = new google.maps.Geocoder();
           map = new google.maps.Map(document.getElementById('map'), {
-            center: { lat: 6.1184, lng: 100.3685 },
-            zoom: 14,
+            center: { lat: 0, lng: 0 },
+            zoom: 2,
             mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false
@@ -154,6 +154,16 @@ private fun buildGoogleMapHtml(apiKey: String): String =
 
           mapReady = true;
           restoreMapView();
+
+          if (!window.__farmMapView && !pendingQuery && navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(function(position) {
+              const loc = { lat: position.coords.latitude, lng: position.coords.longitude };
+              map.setCenter(loc);
+              map.setZoom(14);
+              saveMapView();
+            }, function() {});
+          }
+
           if (pendingQuery) {
             geocodeAddress(pendingQuery);
           }

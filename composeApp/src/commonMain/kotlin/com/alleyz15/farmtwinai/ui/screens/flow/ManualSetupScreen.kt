@@ -21,7 +21,7 @@ fun ManualSetupScreen(
             LabeledInput("Farm name", initialValue = "Seri Padi Plot A")
             LabeledInput("Crop type", initialValue = "Tomato")
             LabeledInput("Planting date", initialValue = "2026-03-20")
-            LabeledInput("Location", initialValue = "Pendang, Kedah")
+            LabeledInput("Location", initialValue = "")
             LabeledInput("Field size", initialValue = "1.8 acres")
             LabeledInput("Irrigation source", initialValue = "Drip irrigation / I don't know")
             LabeledInput("Sunlight condition", initialValue = "Full sun / partly shaded")

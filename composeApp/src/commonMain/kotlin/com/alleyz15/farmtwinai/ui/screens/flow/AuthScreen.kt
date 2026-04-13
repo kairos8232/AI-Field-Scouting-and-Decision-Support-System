@@ -70,6 +70,7 @@ fun AuthScreen(
     onBack: () -> Unit,
     onSwitchMode: () -> Unit,
     onSubmit: suspend (isLogin: Boolean, email: String, password: String, displayName: String?) -> AuthUser,
+    onGoogleAuth: (suspend () -> AuthUser)? = null,
     onAuthenticated: (AuthUser) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -288,6 +289,41 @@ fun AuthScreen(
                         ) {
                             Text(
                                 text = if (isSubmitting) "Please wait..." else if (isLogin) "Login" else "Create Account",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (isSubmitting) {
+                                    return@OutlinedButton
+                                }
+
+                                val googleHandler = onGoogleAuth
+                                if (googleHandler == null) {
+                                    authMessage = "Google Sign-In is not configured yet."
+                                    return@OutlinedButton
+                                }
+
+                                authMessage = null
+                                scope.launch {
+                                    isSubmitting = true
+                                    runCatching {
+                                        googleHandler()
+                                    }.onSuccess { user ->
+                                        authMessage = null
+                                        onAuthenticated(user)
+                                    }.onFailure { error ->
+                                        authMessage = error.message ?: "Google Sign-In failed. Please try again."
+                                    }
+                                    isSubmitting = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            enabled = !isSubmitting,
+                        ) {
+                            Text(
+                                if (isLogin) "Continue with Google" else "Sign up with Google",
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         }

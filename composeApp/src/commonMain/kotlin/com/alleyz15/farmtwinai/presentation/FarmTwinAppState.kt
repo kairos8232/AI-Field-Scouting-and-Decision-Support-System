@@ -51,13 +51,13 @@ class FarmTwinAppState(
     var selectedTimelineDay by mutableStateOf(snapshot.timeline.last())
         private set
 
-    var farmSetupAddress by mutableStateOf("Pendang, Kedah")
+    var farmSetupAddress by mutableStateOf("")
         private set
 
     var farmSetupFarmName by mutableStateOf("")
         private set
 
-    var farmSetupMapQuery by mutableStateOf("Pendang, Kedah")
+    var farmSetupMapQuery by mutableStateOf("")
         private set
 
     var farmSetupSearchTrigger by mutableStateOf(0)
@@ -262,7 +262,7 @@ class FarmTwinAppState(
         val defaultBoundary = defaultFarmBoundary()
         farmBoundaryPoints = defaultBoundary
         farmSetupFarmName = ""
-        farmSetupAddress = "Pendang, Kedah"
+        farmSetupAddress = ""
         farmSetupMapQuery = farmSetupAddress
         farmSetupSearchTrigger = 0
         farmSetupUseCurrentLocationTrigger = 0
