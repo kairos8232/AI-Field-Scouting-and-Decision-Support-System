@@ -34,7 +34,6 @@ import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
-import com.alleyz15.farmtwinai.ui.components.InfoCard
 import com.alleyz15.farmtwinai.ui.components.MetricRow
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
 import com.alleyz15.farmtwinai.ui.components.SectionHeader
@@ -108,32 +107,26 @@ fun DashboardScreen(
                 selectedLot?.let { lot ->
                     val cropSummary = getLotSummary(lot)
 
-                    InfoCard(
-                        title = if (hasMultipleLots) "${lot.name} details" else "Whole lot details",
-                        value = "Crop: ${lot.cropPlan}",
-                        supporting = "Soil: ${lot.soilType} • Water: ${lot.waterAvailability} • Points: ${lot.points.size}\nTap to view digital twin timeline.",
-                        modifier = Modifier.clickable(onClick = onOpenTimeline),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+                            .clickable(onClick = onOpenTimeline)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Text(
+                            text = "Crop ${lot.cropPlan} • Soil ${lot.soilType} • Water ${lot.waterAvailability}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+
                     MetricRow(
                         leftTitle = "Current day",
                         leftValue = "Day ${cropSummary.currentDay}",
                         rightTitle = "Health score",
                         rightValue = "${cropSummary.currentFarmHealthScore}/100",
-                    )
-                    MetricRow(
-                        leftTitle = "Expected growth",
-                        leftValue = cropSummary.expectedGrowthRange,
-                        rightTitle = "Stage",
-                        rightValue = cropSummary.expectedStage,
-                    )
-                    InfoCard(
-                        title = "Lot recommendation",
-                        value = cropSummary.latestRecommendation,
-                        supporting = if (hasMultipleLots) {
-                            "Focused on ${lot.name}. Urgent zones: ${cropSummary.urgentZones}"
-                        } else {
-                            "Single-crop farm overview. Urgent zones: ${cropSummary.urgentZones}"
-                        },
                     )
                 }
             }

@@ -223,6 +223,7 @@ fun FarmTwinNavHost(
         AppDestination.Timeline -> TimelineScreen(
             days = appState.snapshot.timeline,
             selectedDay = appState.selectedTimelineDay,
+            healthScore = appState.snapshot.cropSummary.currentFarmHealthScore,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
         )

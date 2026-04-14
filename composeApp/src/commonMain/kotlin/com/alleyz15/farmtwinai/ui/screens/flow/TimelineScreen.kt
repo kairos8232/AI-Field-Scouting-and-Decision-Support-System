@@ -20,6 +20,7 @@ import com.alleyz15.farmtwinai.ui.theme.style
 fun TimelineScreen(
     days: List<TimelineDay>,
     selectedDay: TimelineDay,
+    healthScore: Int,
     onBack: () -> Unit,
     onSelectDay: (Int) -> Unit,
 ) {
@@ -42,6 +43,7 @@ fun TimelineScreen(
                 }
             }
             StatusBadge(selectedDay.status.style())
+            InfoCard("Health score", "$healthScore/100")
             InfoCard("Expected growth range", selectedDay.expectedGrowthRange)
             InfoCard("Expected crop stage", selectedDay.expectedStage)
             InfoCard("Notes", selectedDay.notes)
