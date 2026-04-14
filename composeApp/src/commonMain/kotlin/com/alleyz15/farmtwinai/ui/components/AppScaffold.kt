@@ -100,7 +100,7 @@ fun AppScaffold(
 @Composable
 fun ScreenColumn(
     modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
 ) {
     Column(
         modifier = modifier

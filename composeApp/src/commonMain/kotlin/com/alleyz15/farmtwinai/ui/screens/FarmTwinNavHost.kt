@@ -125,43 +125,52 @@ fun FarmTwinNavHost(
             totalAreaHa = appState.lotTotalAreaInput,
             lots = appState.lotSections.map { it.points },
             lotCropTypes = appState.lotSections.mapIndexed { index, lot -> index to lot.cropPlan }.toMap(),
+            lotPlantingDates = appState.lotSections.mapIndexed { index, lot -> index to (lot.plantingDate ?: "") }.toMap(),
+            selectedMode = appState.selectedMode,
             onFarmNameChange = appState::updateFarmSetupFarmName,
             onTotalAreaChange = appState::updateLotTotalAreaInput,
-            onLotsChange = { updatedLots ->
-                val existing = appState.lotSections
-                val updatedSections = updatedLots.mapIndexed { index, points ->
-                    val previous = existing.getOrNull(index)
+            onLotsChange = { pts ->
+                appState.updateLotSections(pts.mapIndexed { idx, p ->
+                    val existing = appState.lotSections.getOrNull(idx)
                     com.alleyz15.farmtwinai.domain.model.LotSectionDraft(
-                        id = previous?.id ?: "lot-${index + 1}",
-                        name = previous?.name ?: "Lot ${index + 1}",
-                        points = points,
-                        cropPlan = previous?.cropPlan ?: "",
-                        soilType = previous?.soilType ?: "",
-                        waterAvailability = previous?.waterAvailability ?: "",
+                        id = existing?.id ?: "lot-${idx + 1}",
+                        name = existing?.name ?: "Lot ${idx + 1}",
+                        points = p,
+                        cropPlan = existing?.cropPlan ?: "",
+                        soilType = existing?.soilType ?: "",
+                        waterAvailability = existing?.waterAvailability ?: "",
+                        plantingDate = existing?.plantingDate,
                     )
-                }
-                appState.updateLotSections(updatedSections)
+                })
             },
-            onLotCropTypeChange = { index, crop ->
-                val updated = appState.lotSections.mapIndexed { i, lot ->
-                    if (i == index) lot.copy(cropPlan = crop) else lot
+            onLotCropTypeChange = { idx, plan ->
+                val existing = appState.lotSections.getOrNull(idx)
+                if (existing != null) {
+                    val updated = appState.lotSections.toMutableList()
+                    updated[idx] = existing.copy(cropPlan = plan)
+                    appState.updateLotSections(updated)
                 }
-                appState.updateLotSections(updated)
             },
+            onLotPlantingDateChange = appState::updateLotPlantingDate,
             onBack = { navigator.pop() },
             onContinue = { navigator.navigate(AppDestination.LotRecommendation) },
         )
-        AppDestination.LotRecommendation -> LotRecommendationScreen(
-            lots = appState.lotSections,
-            isAnalyzing = appState.isAnalyzingLots,
-            bestLotId = appState.lotRecommendationBestLotId,
-            recommendationReason = appState.lotRecommendationReason,
-            errorMessage = appState.lotRecommendationError,
-            dataSourceByLotId = appState.lotRecommendationDataSourceByLotId,
-            recommendedCropByLotId = appState.lotRecommendationSuggestedCropByLotId,
-            onBack = { navigator.pop() },
-            onAnalyze = appState::analyzeLotsForRecommendation,
-            onFollowAndContinue = {
+        AppDestination.LotRecommendation -> {
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                appState.fetchEnvironmentalDataForLots()
+            }
+            LotRecommendationScreen(
+                lots = appState.lotSections,
+                isFetchingEnvData = appState.isFetchingEnvData,
+                isAnalyzing = appState.isAnalyzingLots,
+                bestLotId = appState.lotRecommendationBestLotId,
+                recommendationReason = appState.lotRecommendationReason,
+                errorMessage = appState.lotRecommendationError,
+                dataSourceByLotId = appState.lotRecommendationDataSourceByLotId,
+                recommendedCropByLotId = appState.lotRecommendationSuggestedCropByLotId,
+                onBack = { navigator.pop() },
+                onAnalyze = appState::analyzeLotsForRecommendation,
+                onFollowAndContinue = {
                 appState.completeLotRecommendationAndPersist(followRecommendation = true) {
                     if (it) {
                         navigator.resetTo(AppDestination.Dashboard)
@@ -174,8 +183,9 @@ fun FarmTwinNavHost(
                         navigator.resetTo(AppDestination.Dashboard)
                     }
                 }
-            },
+            }
         )
+        }
         AppDestination.DocumentSetup -> DocumentSetupScreen(
             summary = appState.snapshot.documentSummary,
             onBack = { navigator.pop() },
@@ -202,6 +212,7 @@ fun FarmTwinNavHost(
                 isTabBarVisible = true,
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
+                getLotSummary = appState::getOrGenerateCropSummaryForLot,
             )
         }
         is AppDestination.ZoneDetail -> ZoneDetailScreen(

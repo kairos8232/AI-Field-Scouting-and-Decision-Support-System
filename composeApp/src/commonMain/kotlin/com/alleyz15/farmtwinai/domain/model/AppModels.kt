@@ -152,4 +152,6 @@ data class LotSectionDraft(
     val cropPlan: String,
     val soilType: String,
     val waterAvailability: String,
+    val cropSummary: CropSummary? = null,
+    val plantingDate: String? = null,
 )

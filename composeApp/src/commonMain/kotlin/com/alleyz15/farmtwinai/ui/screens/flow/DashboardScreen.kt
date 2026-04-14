@@ -50,6 +50,7 @@ fun DashboardScreen(
     isTabBarVisible: Boolean = false,
     onSelectDashboardTab: (() -> Unit)? = null,
     onSelectMeTab: (() -> Unit)? = null,
+    getLotSummary: (LotSectionDraft) -> com.alleyz15.farmtwinai.domain.model.CropSummary = { snapshot.cropSummary },
 ) {
     var selectedLotId by remember(lotSections) { mutableStateOf(lotSections.firstOrNull()?.id.orEmpty()) }
     val selectedLot = lotSections.firstOrNull { it.id == selectedLotId } ?: lotSections.firstOrNull()
@@ -105,6 +106,8 @@ fun DashboardScreen(
                 }
 
                 selectedLot?.let { lot ->
+                    val cropSummary = getLotSummary(lot)
+
                     InfoCard(
                         title = if (hasMultipleLots) "${lot.name} details" else "Whole lot details",
                         value = "Crop: ${lot.cropPlan}",
@@ -113,23 +116,23 @@ fun DashboardScreen(
                     )
                     MetricRow(
                         leftTitle = "Current day",
-                        leftValue = "Day ${snapshot.cropSummary.currentDay}",
+                        leftValue = "Day ${cropSummary.currentDay}",
                         rightTitle = "Health score",
-                        rightValue = "${snapshot.cropSummary.currentFarmHealthScore}/100",
+                        rightValue = "${cropSummary.currentFarmHealthScore}/100",
                     )
                     MetricRow(
                         leftTitle = "Expected growth",
-                        leftValue = snapshot.cropSummary.expectedGrowthRange,
+                        leftValue = cropSummary.expectedGrowthRange,
                         rightTitle = "Stage",
-                        rightValue = snapshot.cropSummary.expectedStage,
+                        rightValue = cropSummary.expectedStage,
                     )
                     InfoCard(
                         title = "Lot recommendation",
-                        value = snapshot.cropSummary.latestRecommendation,
+                        value = cropSummary.latestRecommendation,
                         supporting = if (hasMultipleLots) {
-                            "Focused on ${lot.name}. Urgent zones: ${snapshot.cropSummary.urgentZones}"
+                            "Focused on ${lot.name}. Urgent zones: ${cropSummary.urgentZones}"
                         } else {
-                            "Single-crop farm overview. Urgent zones: ${snapshot.cropSummary.urgentZones}"
+                            "Single-crop farm overview. Urgent zones: ${cropSummary.urgentZones}"
                         },
                     )
                 }

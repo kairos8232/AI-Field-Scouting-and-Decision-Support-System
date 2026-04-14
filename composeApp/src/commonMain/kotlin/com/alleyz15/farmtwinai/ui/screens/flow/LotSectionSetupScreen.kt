@@ -75,10 +75,13 @@ fun LotSectionSetupScreen(
     totalAreaHa: String,
     lots: List<List<FarmPoint>>,
     lotCropTypes: Map<Int, String>,
+    lotPlantingDates: Map<Int, String>,
+    selectedMode: com.alleyz15.farmtwinai.domain.model.AppMode,
     onFarmNameChange: (String) -> Unit,
     onTotalAreaChange: (String) -> Unit,
     onLotsChange: (List<List<FarmPoint>>) -> Unit,
     onLotCropTypeChange: (Int, String) -> Unit,
+    onLotPlantingDateChange: (Int, String) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
 ) {
@@ -574,6 +577,38 @@ fun LotSectionSetupScreen(
                             color = Color(0xFFE8998E),
                             modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                         )
+                    }
+
+                    if (selectedMode == com.alleyz15.farmtwinai.domain.model.AppMode.LIVE_MONITORING) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        val dateVal = lotPlantingDates[selectedLotIndex] ?: ""
+                        androidx.compose.foundation.layout.Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth)
+                        ) {
+                            OutlinedTextField(
+                                value = dateVal,
+                                onValueChange = {
+                                    onLotPlantingDateChange(selectedLotIndex, it)
+                                },
+                                label = { Text("Planting Date") },
+                                placeholder = { Text("YYYY-MM-DD") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                                colors = fieldColors
+                            )
+                            IconButton(
+                                onClick = {
+                                    val daysAgo = (10..30).random()
+                                    val mockDate = "2026-03-${(31 - daysAgo).coerceIn(1, 31).toString().padStart(2, '0')}"
+                                    onLotPlantingDateChange(selectedLotIndex, mockDate)
+                                },
+                                modifier = Modifier.padding(top = 8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Mint200.copy(alpha=0.1f))
+                            ) {
+                                Text("✨")
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
