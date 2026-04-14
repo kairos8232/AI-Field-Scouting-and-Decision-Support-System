@@ -428,9 +428,14 @@ fun LotSectionSetupScreen(
                                 contentColor = if (selected) Mint200 else Sand100,
                             ),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(36.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+                            modifier = Modifier.height(36.dp).weight(1f),
                         ) {
-                            Text(mode, style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                text = mode,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
+                            )
                         }
                     }
 
@@ -444,7 +449,7 @@ fun LotSectionSetupScreen(
                             }
                         },
                         singleLine = true,
-                        modifier = Modifier.width(64.dp).height(56.dp),
+                        modifier = Modifier.width(80.dp).height(56.dp),
                         textStyle = MaterialTheme.typography.bodyMedium,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
