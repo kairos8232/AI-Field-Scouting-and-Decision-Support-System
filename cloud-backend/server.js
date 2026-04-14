@@ -657,6 +657,12 @@ async function getEarthSummary({ polygon, centroid }) {
     if (eeStatus.linked) {
       try {
         const sampled = await sampleEarthEngineSummary(polygon, centroid);
+        if (isSparseEarthSummary(sampled)) {
+          return {
+            ...baseSummary,
+            notes: "Earth Engine returned sparse metrics for this polygon; using geometry fallback summary.",
+          };
+        }
         return {
           ...sampled,
           notes: "Real Earth Engine datasets sampled (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature).",
@@ -698,6 +704,15 @@ function buildGeometrySummary({ polygon, centroid }) {
     rainfallMm7d: round(rainfallMm7d, 2),
     averageTempC: round(averageTempC, 2),
   };
+}
+
+function isSparseEarthSummary(summary) {
+  const moisture = Number(summary?.soilMoistureMean ?? 0);
+  const rainfall = Number(summary?.rainfallMm7d ?? 0);
+  const temp = Number(summary?.averageTempC ?? 0);
+
+  // A triple-zero style payload usually means no usable pixels/dataset gap, not real field conditions.
+  return moisture <= 0.001 && rainfall <= 0.01 && temp <= 0.5;
 }
 
 async function resolveEarthEngineStatus() {

@@ -226,6 +226,11 @@ class FarmTwinAppState(
 
     fun updateFarmSetupAddress(value: String) {
         farmSetupAddress = value
+        if (value.trim().isEmpty()) {
+            // Avoid carrying old geocode query when user clears the field.
+            farmSetupMapQuery = ""
+            farmSetupSearchTrigger = 0
+        }
     }
 
     fun updateFarmSetupFarmName(value: String) {
@@ -251,6 +256,25 @@ class FarmTwinAppState(
     }
 
     fun continueToBoundaryDrawing() {
+        val latestQuery = farmSetupAddress.trim()
+        if (latestQuery.isNotEmpty()) {
+            val locationChanged = latestQuery != farmSetupMapQuery
+            if (locationChanged) {
+                // Resolve the typed address only when it changed.
+                // Otherwise keep user's latest manual pan/zoom from Step 1.
+                farmSetupMapQuery = latestQuery
+                farmSetupSearchTrigger += 1
+            }
+
+            // If Step 1 location changed, previously drawn Step 2/3 geometry is no longer valid.
+            if (locationChanged) {
+                updateFarmBoundary(emptyList())
+            }
+        } else {
+            // No typed location: do not replay stale query in Step 2.
+            farmSetupMapQuery = ""
+            farmSetupSearchTrigger = 0
+        }
         isFarmMapFrozen = true
     }
 
@@ -849,15 +873,25 @@ class FarmTwinAppState(
     }
 
     private fun inferSoilType(soilMoisture: Double, ndvi: Double, lat: Double, lng: Double): String {
-        val pseudoRandom = kotlin.math.abs((lat * 10000 + lng * 10000).toInt()) % 100
-        val adjustedMoisture = soilMoisture + (pseudoRandom / 100.0) * 0.35
-        val adjustedNdvi = ndvi + (pseudoRandom / 100.0) * 0.3
-        
+        val moisture = soilMoisture.coerceIn(0.0, 1.0)
+        val vegetation = ndvi.coerceIn(0.0, 1.0)
+
+        // Sparse backend outputs should not be forced into a soil class.
+        if (moisture <= 0.02 && vegetation <= 0.05) {
+            return "Unknown (Need better data)"
+        }
+
+        val geoSeed = kotlin.math.abs((lat * 1000 + lng * 1000).toInt()) % 21
+        val geoBias = (geoSeed - 10) / 100.0
+        val blendedWetness = (moisture * 0.75 + vegetation * 0.25 + geoBias).coerceIn(0.0, 1.0)
+
         return when {
-            adjustedMoisture >= 0.58 && adjustedNdvi >= 0.55 -> "Clay Loam"
-            adjustedMoisture in 0.42..0.58 -> "Loamy"
-            adjustedMoisture < 0.38 -> "Sandy Loam"
-            else -> "Silty Loam"
+            blendedWetness < 0.22 -> "Sandy"
+            blendedWetness < 0.36 -> "Sandy Loam"
+            blendedWetness < 0.50 -> "Loam"
+            blendedWetness < 0.64 -> "Silty Loam"
+            blendedWetness < 0.78 -> "Clay Loam"
+            else -> "Clay"
         }
     }
 
