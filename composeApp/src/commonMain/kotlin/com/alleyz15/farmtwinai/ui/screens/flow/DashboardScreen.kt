@@ -7,11 +7,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,24 +28,29 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.AppMode
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
-import com.alleyz15.farmtwinai.ui.components.AppScaffold
+import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
-import com.alleyz15.farmtwinai.ui.components.MetricRow
-import com.alleyz15.farmtwinai.ui.components.ScreenColumn
-import com.alleyz15.farmtwinai.ui.components.SectionHeader
+import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
+import com.alleyz15.farmtwinai.ui.theme.Leaf400
+import com.alleyz15.farmtwinai.ui.theme.Mint200
+import com.alleyz15.farmtwinai.ui.theme.Sand100
 
 @Composable
 fun DashboardScreen(
@@ -55,95 +69,181 @@ fun DashboardScreen(
     val selectedLot = lotSections.firstOrNull { it.id == selectedLotId } ?: lotSections.firstOrNull()
     val hasMultipleLots = lotSections.size > 1
 
-    AppScaffold(
-        title = "Farm Dashboard",
-        subtitle = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
-        floatingFooter = if (isTabBarVisible && onSelectDashboardTab != null && onSelectMeTab != null) {
-            {
+    Box(modifier = Modifier.fillMaxSize()) {
+        AuroraBackground()
+
+        OnboardingAdaptiveWidth { maxContentWidth, _ ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = if (isTabBarVisible) 80.dp else 18.dp),
+            ) {
+                // Header
+                Column {
+                    Text(
+                        text = "Farm Dashboard",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Sand100,
+                    )
+                    Text(
+                        text = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Sand100.copy(alpha = 0.7f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                if (lotSections.isNotEmpty()) {
+                    Text(
+                        text = "Farm lot map view",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Sand100,
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = if (hasMultipleLots) "Tap a lot below to view that lot's details." else "Single-lot setup detected. Showing full lot details.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Sand100.copy(alpha = 0.78f),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    LotMapPreview(
+                        lots = lotSections,
+                        selectedLotId = selectedLot?.id,
+                        onLotSelected = { selectedLotId = it },
+                        modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (hasMultipleLots) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            lotSections.forEach { lot ->
+                                val isSelected = selectedLot?.id == lot.id
+                                Box(
+                                    modifier = Modifier
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) Leaf400 else Color.White.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(999.dp),
+                                        )
+                                        .background(
+                                            color = if (isSelected) Leaf400.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
+                                            shape = RoundedCornerShape(999.dp),
+                                        )
+                                        .clickable { selectedLotId = lot.id }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                ) {
+                                    Text(
+                                        text = lot.name, 
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = if (isSelected) Mint200 else Sand100
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    selectedLot?.let { lot ->
+                        val cropSummary = getLotSummary(lot)
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                                .clickable(onClick = onOpenTimeline)
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                        ) {
+                            Text(
+                                text = "Crop ${lot.cropPlan} • Soil ${lot.soilType} • Water ${lot.waterAvailability}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Sand100,
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Column {
+                                    Text("Current day", style = MaterialTheme.typography.bodySmall, color = Sand100.copy(alpha = 0.7f))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("Day ${cropSummary.currentDay}", style = MaterialTheme.typography.titleMedium, color = Sand100, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                    .padding(16.dp)
+                            ) {
+                                Column {
+                                    Text("Health score", style = MaterialTheme.typography.bodySmall, color = Sand100.copy(alpha = 0.7f))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("${cropSummary.currentFarmHealthScore}/100", style = MaterialTheme.typography.titleMedium, color = Sand100, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = onOpenHistory,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("View History")
+                    }
+
+                    Button(
+                        onClick = onOpenChat,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Open AI Chat")
+                    }
+                }
+            }
+        }
+
+        if (isTabBarVisible && onSelectDashboardTab != null && onSelectMeTab != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
+                // Background behind tab bar to avoid transparent bleed
+                Box(modifier = Modifier.matchParentSize().background(Color(0xFF0d1f11))) // dark mode matching tab bar
                 HomeTabBar(
                     selectedTab = HomeTab.DASHBOARD,
                     onSelectDashboard = onSelectDashboardTab,
                     onSelectMe = onSelectMeTab,
                 )
-            }
-        } else null,
-    ) { _ ->
-        ScreenColumn {
-            if (lotSections.isNotEmpty()) {
-                SectionHeader(
-                    title = "Farm lot map view",
-                    body = if (hasMultipleLots) "Tap a lot below to view that lot's details." else "Single-lot setup detected. Showing full lot details.",
-                )
-                LotMapPreview(
-                    lots = lotSections,
-                    selectedLotId = selectedLot?.id,
-                    onLotSelected = { selectedLotId = it },
-                )
-
-                if (hasMultipleLots) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        lotSections.forEach { lot ->
-                            val isSelected = selectedLot?.id == lot.id
-                            Box(
-                                modifier = Modifier
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                                        shape = RoundedCornerShape(999.dp),
-                                    )
-                                    .background(
-                                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                        shape = RoundedCornerShape(999.dp),
-                                    )
-                                    .clickable { selectedLotId = lot.id }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                Text(text = lot.name, style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                    }
-                }
-
-                selectedLot?.let { lot ->
-                    val cropSummary = getLotSummary(lot)
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
-                            .clickable(onClick = onOpenTimeline)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                    ) {
-                        Text(
-                            text = "Crop ${lot.cropPlan} • Soil ${lot.soilType} • Water ${lot.waterAvailability}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-
-                    MetricRow(
-                        leftTitle = "Current day",
-                        leftValue = "Day ${cropSummary.currentDay}",
-                        rightTitle = "Health score",
-                        rightValue = "${cropSummary.currentFarmHealthScore}/100",
-                    )
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                androidx.compose.material3.OutlinedButton(
-                    onClick = onOpenHistory,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("View History", maxLines = 1)
-                }
-                androidx.compose.material3.OutlinedButton(
-                    onClick = onOpenChat,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Open AI Chat", maxLines = 1)
-                }
             }
         }
     }
@@ -154,16 +254,16 @@ private fun LotMapPreview(
     lots: List<LotSectionDraft>,
     selectedLotId: String?,
     onLotSelected: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val palette = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary, MaterialTheme.colorScheme.tertiary)
+    val palette = listOf(Leaf400, Mint200, Sand100)
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .height(220.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(16.dp))
             .padding(12.dp)
             .onSizeChanged { mapSize = it }
             .pointerInput(lots, mapSize) {
@@ -180,7 +280,7 @@ private fun LotMapPreview(
                 }
             },
     ) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(196.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
             lots.forEachIndexed { index, lot ->
                 if (lot.points.size < 3) return@forEachIndexed
 
@@ -197,7 +297,7 @@ private fun LotMapPreview(
                 drawPath(path = path, color = base.copy(alpha = if (isSelected) 0.38f else 0.18f))
                 drawPath(
                     path = path,
-                    color = base.copy(alpha = if (isSelected) 0.95f else 0.45f),
+                    color = base.copy(alpha = if (isSelected) 0.85f else 0.45f),
                     style = Stroke(width = if (isSelected) 4f else 2f),
                 )
 
