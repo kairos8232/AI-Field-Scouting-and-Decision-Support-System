@@ -2,35 +2,39 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,7 +43,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
@@ -49,36 +52,43 @@ import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
 
 @Composable
-fun AiChatScreen(
+fun AiConversationScreen(
     messages: List<ChatMessage>,
+    isSending: Boolean,
+    errorMessage: String?,
+    providerLabel: String?,
     onBack: () -> Unit,
-    onConfirmAction: () -> Unit,
-    onOpenConversation: (String) -> Unit,
-    authenticatedUser: AuthUser?,
+    onSend: (String) -> Unit,
 ) {
-    val draft = remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    var draft by remember { mutableStateOf("") }
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
 
         OnboardingAdaptiveWidth { maxContentWidth, _ ->
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .systemBarsPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 18.dp)
+                    .widthIn(max = maxContentWidth),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), CircleShape),
+                        modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape),
                     ) {
                         Icon(
                             imageVector = ArrowBackIcon,
@@ -88,105 +98,81 @@ fun AiChatScreen(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = "AI Consultation",
+                            text = "Gemini Chat",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = Sand100,
                         )
                         Text(
-                            text = "Mocked advisory chat",
+                            text = providerLabel ?: "Connected to backend AI assistant",
                             style = MaterialTheme.typography.bodySmall,
                             color = Sand100.copy(alpha = 0.76f),
                         )
                     }
                 }
 
-                Text(
-                    text = "Ask why actual conditions differ",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-                Text(
-                    text = "This Phase 1 screen demonstrates the consultation pattern. The chat is static for now, but the layout is ready for real model integration later.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
-                GlassInfoCard(
-                    title = "Session status",
-                    value = if (authenticatedUser != null) {
-                        "Signed in as ${authenticatedUser.email}"
-                    } else {
-                        "Not signed in"
-                    },
-                    supporting = if (authenticatedUser != null) {
-                        "Ready to send authenticated requests to Gemini backend."
-                    } else {
-                        "Use Account Access screen to enable authenticated Gemini requests."
-                    },
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
-                Text(
-                    text = "Conversation",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-                Text(
-                    text = "Messages below are currently static examples to validate UI flow.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
                 Card(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.18f)),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.2f)),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        messages.forEach { message ->
-                            ChatMessageRow(message = message)
+                    if (messages.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize().padding(18.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "Start by sending a farming question. Gemini will answer in this conversation.",
+                                color = Sand100.copy(alpha = 0.82f),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize().padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            items(messages, key = { it.id }) { message ->
+                                LiveChatMessageRow(message = message)
+                            }
                         }
                     }
                 }
 
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage,
+                        color = Color(0xFFFFB4AB),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
                 Card(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.18f)),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.2f)),
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                 ) {
                     Column(
                         modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text(
-                            text = "Your follow-up",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Sand100,
-                        )
                         OutlinedTextField(
-                            value = draft.value,
-                            onValueChange = { draft.value = it },
+                            value = draft,
+                            onValueChange = { draft = it },
                             modifier = Modifier.fillMaxWidth(),
                             placeholder = {
                                 Text(
-                                    text = "Type your question or follow-up action...",
+                                    text = "Ask Gemini about crop issues, timeline, or next actions...",
                                     color = Sand100.copy(alpha = 0.58f),
                                 )
                             },
-                            shape = RoundedCornerShape(16.dp),
-                            minLines = 3,
+                            shape = RoundedCornerShape(14.dp),
+                            minLines = 2,
+                            enabled = !isSending,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Sand100,
                                 unfocusedTextColor = Sand100,
@@ -197,81 +183,49 @@ fun AiChatScreen(
                                 cursorColor = Leaf400,
                             ),
                         )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+
                         Button(
                             onClick = {
-                                val prompt = draft.value.trim()
+                                val prompt = draft.trim()
                                 if (prompt.isNotEmpty()) {
-                                    onOpenConversation(prompt)
-                                    draft.value = ""
+                                    onSend(prompt)
+                                    draft = ""
                                 }
                             },
+                            enabled = !isSending,
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
                         ) {
-                            Text("Send")
-                        }
-                        OutlinedButton(
-                            onClick = onConfirmAction,
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                        ) {
-                            Text("Confirm Recommended Action", color = Sand100)
+                            if (isSending) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CircularProgressIndicator(
+                                        strokeWidth = 2.dp,
+                                        color = Color.White,
+                                        modifier = Modifier.height(18.dp),
+                                    )
+                                    Text("Gemini is replying...")
+                                }
+                            } else {
+                                Text("Send")
+                            }
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
             }
         }
     }
 }
 
 @Composable
-private fun GlassInfoCard(
-    title: String,
-    value: String,
-    supporting: String,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = Sand100.copy(alpha = 0.76f),
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Sand100,
-            )
-            Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Sand100.copy(alpha = 0.78f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ChatMessageRow(message: ChatMessage) {
+private fun LiveChatMessageRow(message: ChatMessage) {
     val isUser = message.sender == MessageSender.USER
     val containerColor = if (isUser) Leaf400.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f)
     val labelColor = if (isUser) Mint200 else Sand100
-    val contentColor = Sand100
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Card(
@@ -291,14 +245,14 @@ private fun ChatMessageRow(message: ChatMessage) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    text = if (isUser) "Farmer" else "FarmTwin AI",
+                    text = if (isUser) "You" else "Gemini",
                     style = MaterialTheme.typography.labelLarge,
                     color = labelColor,
                 )
                 Text(
                     text = message.content,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = contentColor,
+                    color = Sand100,
                 )
                 Text(
                     text = message.timestamp,

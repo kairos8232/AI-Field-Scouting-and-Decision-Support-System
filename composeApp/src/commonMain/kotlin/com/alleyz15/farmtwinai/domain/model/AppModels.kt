@@ -110,6 +110,18 @@ data class ChatMessage(
     val timestamp: String,
 )
 
+data class AiChatContext(
+    val farmName: String? = null,
+    val cropName: String? = null,
+    val mode: String? = null,
+    val latestRecommendation: String? = null,
+)
+
+data class AiChatReply(
+    val reply: String,
+    val provider: String,
+)
+
 enum class MessageSender {
     USER,
     ASSISTANT,

@@ -10,13 +10,16 @@ import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRemote
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
+import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.AppMode
+import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
+import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.domain.model.SetupMethod
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
@@ -155,6 +158,20 @@ class FarmTwinAppState(
     var timelinePhotoAssessmentError by mutableStateOf<String?>(null)
         private set
 
+    var aiConversationMessages by mutableStateOf<List<ChatMessage>>(emptyList())
+        private set
+
+    var isSendingAiConversationMessage by mutableStateOf(false)
+        private set
+
+    var aiConversationError by mutableStateOf<String?>(null)
+        private set
+
+    var aiConversationProvider by mutableStateOf<String?>(null)
+        private set
+
+    private var aiConversationMessageIndex = 0
+
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
@@ -278,6 +295,66 @@ class FarmTwinAppState(
                 timelinePhotoAssessmentError = error.message ?: "Unable to compare plant photo right now."
             }
             isAssessingTimelinePhoto = false
+        }
+    }
+
+    fun startAiConversation(initialPrompt: String) {
+        aiConversationMessages = emptyList()
+        aiConversationError = null
+        aiConversationProvider = null
+
+        val firstPrompt = initialPrompt.trim()
+        if (firstPrompt.isNotEmpty()) {
+            sendAiConversationMessage(firstPrompt)
+        }
+    }
+
+    fun sendAiConversationMessage(rawMessage: String) {
+        if (isSendingAiConversationMessage) return
+
+        val cleanMessage = rawMessage.trim()
+        if (cleanMessage.isEmpty()) return
+
+        val historyBeforeSend = aiConversationMessages.takeLast(12)
+
+        aiConversationMessages = aiConversationMessages +
+            ChatMessage(
+                id = nextAiConversationMessageId(),
+                sender = MessageSender.USER,
+                content = cleanMessage,
+                timestamp = "Now",
+            )
+
+        aiConversationError = null
+        isSendingAiConversationMessage = true
+
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.consultAiChat(
+                    message = cleanMessage,
+                    history = historyBeforeSend,
+                    userId = authenticatedUser?.userId,
+                    context = AiChatContext(
+                        farmName = snapshot.farm.farmName,
+                        cropName = snapshot.farm.cropName,
+                        mode = selectedMode.name,
+                        latestRecommendation = snapshot.cropSummary.latestRecommendation,
+                    ),
+                )
+            }.onSuccess { reply ->
+                aiConversationProvider = reply.provider
+                aiConversationMessages = aiConversationMessages +
+                    ChatMessage(
+                        id = nextAiConversationMessageId(),
+                        sender = MessageSender.ASSISTANT,
+                        content = reply.reply,
+                        timestamp = "Now",
+                    )
+            }.onFailure { error ->
+                aiConversationError = error.message ?: "Unable to get response from Gemini right now."
+            }
+
+            isSendingAiConversationMessage = false
         }
     }
 
@@ -767,6 +844,11 @@ class FarmTwinAppState(
         
         val yearDiff = currentYear - year
         return (yearDiff * 365) + todayDayOfYear - plantedDayOfYear
+    }
+
+    private fun nextAiConversationMessageId(): String {
+        aiConversationMessageIndex += 1
+        return "live-msg-$aiConversationMessageIndex"
     }
 
     private fun defaultFarmBoundary(): List<FarmPoint> {

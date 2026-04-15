@@ -56,6 +56,7 @@ fun TimelineScreen(
     onSelectDay: (Int) -> Unit,
     onLoadStageVisual: (Int, String) -> Unit,
     onComparePhoto: (Int, String, String, String, Boolean?) -> Unit,
+    onOpenChat: () -> Unit,
 ) {
     var similarityFeedback by remember(selectedDay.dayNumber) { mutableStateOf<Boolean?>(null) }
     var pickedPhotoBase64 by remember(selectedDay.dayNumber) { mutableStateOf<String?>(null) }
@@ -147,7 +148,10 @@ fun TimelineScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Button(
-                    onClick = { similarityFeedback = true },
+                    onClick = {
+                        similarityFeedback = true
+                        onOpenChat()
+                    },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (similarityFeedback == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),

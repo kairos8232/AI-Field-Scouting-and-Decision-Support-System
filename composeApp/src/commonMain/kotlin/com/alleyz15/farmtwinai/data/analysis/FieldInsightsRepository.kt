@@ -1,5 +1,8 @@
 package com.alleyz15.farmtwinai.data.analysis
 
+import com.alleyz15.farmtwinai.domain.model.AiChatContext
+import com.alleyz15.farmtwinai.domain.model.AiChatReply
+import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
@@ -27,4 +30,11 @@ interface FieldInsightsRepository {
         photoMimeType: String,
         userMarkedSimilar: Boolean? = null,
     ): TimelinePhotoAssessment
+
+    suspend fun consultAiChat(
+        message: String,
+        history: List<ChatMessage>,
+        userId: String? = null,
+        context: AiChatContext? = null,
+    ): AiChatReply
 }

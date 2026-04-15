@@ -320,10 +320,16 @@ fun AuthScreen(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(56.dp),
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && onGoogleAuth != null,
                         ) {
                             Text(
-                                if (isLogin) "Continue with Google" else "Sign up with Google",
+                                if (onGoogleAuth == null) {
+                                    "Google Sign-In (Coming soon)"
+                                } else if (isLogin) {
+                                    "Continue with Google"
+                                } else {
+                                    "Sign up with Google"
+                                },
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         }
