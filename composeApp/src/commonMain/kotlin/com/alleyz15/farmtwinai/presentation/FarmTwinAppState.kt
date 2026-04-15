@@ -41,6 +41,19 @@ class FarmTwinAppState(
     var authenticatedUser by mutableStateOf<AuthUser?>(null)
         private set
 
+    var fieldInsightHistory by mutableStateOf<List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>?>(null)
+        private set
+        
+    fun loadFieldInsightHistory() {
+        scope.launch {
+            try {
+                fieldInsightHistory = fieldInsightsRepository.getHistory()
+            } catch (e: Exception) {
+                fieldInsightHistory = emptyList()
+            }
+        }
+    }
+
     var snapshot by mutableStateOf(repository.loadSnapshot())
         private set
 

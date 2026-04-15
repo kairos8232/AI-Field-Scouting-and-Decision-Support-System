@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -205,7 +206,7 @@ fun AiConversationScreen(
                                     CircularProgressIndicator(
                                         strokeWidth = 2.dp,
                                         color = Color.White,
-                                        modifier = Modifier.height(18.dp),
+                                        modifier = Modifier.size(18.dp),
                                     )
                                     Text("Gemini is replying...")
                                 }

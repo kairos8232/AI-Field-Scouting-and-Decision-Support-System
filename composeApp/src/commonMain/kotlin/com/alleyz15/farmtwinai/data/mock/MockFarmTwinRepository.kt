@@ -113,19 +113,19 @@ class MockFarmTwinRepository {
                 ChatMessage(
                     id = "msg-1",
                     sender = MessageSender.USER,
-                    content = "Why is Zone 2 growing slower than the expected simulation?",
+                    content = "How does this AI Consultation work?",
                     timestamp = "10:14",
                 ),
                 ChatMessage(
                     id = "msg-2",
                     sender = MessageSender.ASSISTANT,
-                    content = "The main deviation is excess moisture after rain. Drainage recovery is slower than the ideal model.",
-                    timestamp = "10:15",
+                    content = "This is an interactive chat where you can ask me about your crop conditions. I will compare your actual field data against our ideal simulation models to give you tailored advice.",
+                    timestamp = "10:14",
                 ),
                 ChatMessage(
                     id = "msg-3",
                     sender = MessageSender.ASSISTANT,
-                    content = "Recommended next step: inspect low spots, improve runoff, then observe leaf firmness for 48 hours.",
+                    content = "For example, you can ask me why Zone 2 is growing slower, or if you should apply fertilizer today. Type a question below to get started!",
                     timestamp = "10:15",
                 ),
             ),

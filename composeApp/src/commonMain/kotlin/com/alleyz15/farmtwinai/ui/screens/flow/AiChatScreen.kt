@@ -54,6 +54,7 @@ fun AiChatScreen(
     onBack: () -> Unit,
     onConfirmAction: () -> Unit,
     onOpenConversation: (String) -> Unit,
+    onOpenHistory: () -> Unit,
     authenticatedUser: AuthUser?,
 ) {
     val draft = remember { mutableStateOf("") }
@@ -68,7 +69,7 @@ fun AiChatScreen(
                     .systemBarsPadding()
                     .verticalScroll(rememberScrollState())
                     .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
@@ -86,7 +87,10 @@ fun AiChatScreen(
                             tint = Sand100,
                         )
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Text(
                             text = "AI Consultation",
                             style = MaterialTheme.typography.titleLarge,
@@ -94,110 +98,81 @@ fun AiChatScreen(
                             color = Sand100,
                         )
                         Text(
-                            text = "Mocked advisory chat",
+                            text = if (authenticatedUser != null) {
+                                "Signed in as ${authenticatedUser.email}"
+                            } else {
+                                "Tap Account to sign in for personalized advice."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = Sand100.copy(alpha = 0.76f),
                         )
                     }
-                }
-
-                Text(
-                    text = "Ask why actual conditions differ",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-                Text(
-                    text = "This Phase 1 screen demonstrates the consultation pattern. The chat is static for now, but the layout is ready for real model integration later.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
-                GlassInfoCard(
-                    title = "Session status",
-                    value = if (authenticatedUser != null) {
-                        "Signed in as ${authenticatedUser.email}"
-                    } else {
-                        "Not signed in"
-                    },
-                    supporting = if (authenticatedUser != null) {
-                        "Ready to send authenticated requests to Gemini backend."
-                    } else {
-                        "Use Account Access screen to enable authenticated Gemini requests."
-                    },
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
-                Text(
-                    text = "Conversation",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-                Text(
-                    text = "Messages below are currently static examples to validate UI flow.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                )
-
-                Card(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.18f)),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    IconButton(
+                        onClick = onOpenHistory,
+                        modifier = Modifier
+                            .background(Color.White.copy(alpha = 0.05f), CircleShape),
                     ) {
-                        messages.forEach { message ->
-                            ChatMessageRow(message = message)
-                        }
+                        Icon(
+                            imageVector = HistoryIcon,
+                            contentDescription = "History",
+                            tint = Sand100,
+                        )
                     }
                 }
 
-                Card(
+                // Chat Messages
+                Column(
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.18f)),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    messages.forEach { message ->
+                        ChatMessageRow(message = message)
+                    }
+                }
+
+                Spacer(modifier = Modifier.weight(1f, fill = false))
+
+                // Input Area
+                Column(
+                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = draft.value,
+                        onValueChange = { draft.value = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                text = "Ask follow-up question...",
+                                color = Sand100.copy(alpha = 0.58f),
+                            )
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        minLines = 2,
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Sand100,
+                            unfocusedTextColor = Sand100,
+                            focusedBorderColor = Leaf400,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
+                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                            unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                            cursorColor = Leaf400,
+                        ),
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "Your follow-up",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Sand100,
-                        )
-                        OutlinedTextField(
-                            value = draft.value,
-                            onValueChange = { draft.value = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = {
-                                Text(
-                                    text = "Type your question or follow-up action...",
-                                    color = Sand100.copy(alpha = 0.58f),
-                                )
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            minLines = 3,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Sand100,
-                                unfocusedTextColor = Sand100,
-                                focusedBorderColor = Leaf400,
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
-                                focusedContainerColor = Color.White.copy(alpha = 0.03f),
-                                unfocusedContainerColor = Color.White.copy(alpha = 0.03f),
-                                cursorColor = Leaf400,
-                            ),
-                        )
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                        OutlinedButton(
+                            onClick = onConfirmAction,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        ) {
+                            Text("Confirm Action", color = Sand100)
+                        }
                         Button(
                             onClick = {
                                 val prompt = draft.value.trim()
@@ -206,19 +181,11 @@ fun AiChatScreen(
                                     draft.value = ""
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
                         ) {
                             Text("Send")
-                        }
-                        OutlinedButton(
-                            onClick = onConfirmAction,
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
-                        ) {
-                            Text("Confirm Recommended Action", color = Sand100)
                         }
                     }
                 }
@@ -269,30 +236,33 @@ private fun GlassInfoCard(
 @Composable
 private fun ChatMessageRow(message: ChatMessage) {
     val isUser = message.sender == MessageSender.USER
-    val containerColor = if (isUser) Leaf400.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f)
-    val labelColor = if (isUser) Mint200 else Sand100
-    val contentColor = Sand100
+    val containerColor = if (isUser) Leaf400.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.05f)
+    val labelColor = if (isUser) Color.White.copy(alpha = 0.9f) else Sand100.copy(alpha = 0.8f)
+    val contentColor = if (isUser) Color.White else Sand100
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Card(
             modifier = Modifier
-                .fillMaxWidth(0.9f)
+                .fillMaxWidth(0.85f)
                 .align(if (isUser) Alignment.CenterEnd else Alignment.CenterStart),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomStart = if (isUser) 20.dp else 8.dp,
+                bottomEnd = if (isUser) 8.dp else 20.dp
+            ),
             colors = CardDefaults.cardColors(containerColor = containerColor),
-            border = if (isUser) {
-                BorderStroke(1.dp, Leaf400.copy(alpha = 0.5f))
-            } else {
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.18f))
-            },
+            border = if (isUser) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isUser) 4.dp else 0.dp)
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = if (isUser) "Farmer" else "FarmTwin AI",
-                    style = MaterialTheme.typography.labelLarge,
+                    text = if (isUser) "You" else "FarmTwin AI",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
                     color = labelColor,
                 )
                 Text(
@@ -303,7 +273,8 @@ private fun ChatMessageRow(message: ChatMessage) {
                 Text(
                     text = message.timestamp,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Sand100.copy(alpha = 0.72f),
+                    color = contentColor.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.End)
                 )
             }
         }
@@ -328,6 +299,42 @@ private val ArrowBackIcon: ImageVector
             lineToRelative(1.41f, -1.41f)
             lineTo(7.83f, 13f)
             lineTo(20f, 13f)
+            close()
+        }
+    }.build()
+
+private val HistoryIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "History",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(13f, 3f)
+            curveToRelative(-4.97f, 0f, -9f, 4.03f, -9f, 9f)
+            lineTo(1f, 12f)
+            lineToRelative(3.89f, 3.89f)
+            lineToRelative(0.07f, 0.14f)
+            lineTo(9f, 12f)
+            lineTo(6f, 12f)
+            curveToRelative(0f, -3.87f, 3.13f, -7f, 7f, -7f)
+            curveToRelative(3.87f, 0f, 7f, 3.13f, 7f, 7f)
+            curveToRelative(0f, 3.87f, -3.13f, 7f, -7f, 7f)
+            curveToRelative(-1.93f, 0f, -3.68f, -0.79f, -4.94f, -2.06f)
+            lineToRelative(-1.42f, 1.42f)
+            curveTo(8.27f, 19.99f, 10.51f, 21f, 13f, 21f)
+            curveToRelative(4.97f, 0f, 9f, -4.03f, 9f, -9f)
+            curveToRelative(0f, -4.97f, -4.03f, -9f, -9f, -9f)
+            close()
+            moveTo(12f, 8f)
+            verticalLineToRelative(5f)
+            lineToRelative(4.28f, 2.54f)
+            lineToRelative(0.72f, -1.21f)
+            lineToRelative(-3.5f, -2.08f)
+            lineTo(13.5f, 8f)
+            lineTo(12f, 8f)
             close()
         }
     }.build()

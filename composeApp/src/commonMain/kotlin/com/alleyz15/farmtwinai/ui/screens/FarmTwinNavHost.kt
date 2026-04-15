@@ -243,6 +243,7 @@ fun FarmTwinNavHost(
                 appState.startAiConversation(initialPrompt)
                 navigator.navigate(AppDestination.AiConversation)
             },
+            onOpenHistory = { navigator.navigate(AppDestination.History) },
             authenticatedUser = appState.authenticatedUser,
         )
         AppDestination.AiConversation -> AiConversationScreen(
@@ -262,7 +263,12 @@ fun FarmTwinNavHost(
             },
         )
         AppDestination.History -> HistoryScreen(
-            snapshot = appState.snapshot,
+            historyRecords = appState.fieldInsightHistory,
+            onLoadHistory = { appState.loadFieldInsightHistory() },
+            onContinueChat = { initialPrompt ->
+                appState.startAiConversation(initialPrompt)
+                navigator.navigate(AppDestination.AiConversation)
+            },
             onBack = { navigator.pop() },
         )
         AppDestination.Me -> MePanelScreen(

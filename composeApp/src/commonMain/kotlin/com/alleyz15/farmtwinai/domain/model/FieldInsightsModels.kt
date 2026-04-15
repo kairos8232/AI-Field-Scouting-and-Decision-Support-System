@@ -44,3 +44,12 @@ data class TimelinePhotoAssessment(
     val rationale: String,
     val provider: String,
 )
+
+data class FieldInsightHistoryRecord(
+    val id: String,
+    val summaryNotes: String,
+    val recommendedCrops: String,
+    val dateString: String,
+    val hasConversation: Boolean = false,
+    val chatMessagesCount: Int = 0,
+)

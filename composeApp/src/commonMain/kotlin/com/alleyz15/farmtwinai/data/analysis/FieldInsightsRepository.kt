@@ -37,4 +37,6 @@ interface FieldInsightsRepository {
         userId: String? = null,
         context: AiChatContext? = null,
     ): AiChatReply
+
+    suspend fun getHistory(): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>
 }
