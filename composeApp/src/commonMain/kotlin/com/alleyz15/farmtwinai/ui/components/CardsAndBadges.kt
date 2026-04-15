@@ -114,7 +114,10 @@ fun MetricRow(
     rightTitle: String,
     rightValue: String,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         InfoCard(leftTitle, leftValue, modifier = Modifier.weight(1f))
         InfoCard(rightTitle, rightValue, modifier = Modifier.weight(1f))
     }

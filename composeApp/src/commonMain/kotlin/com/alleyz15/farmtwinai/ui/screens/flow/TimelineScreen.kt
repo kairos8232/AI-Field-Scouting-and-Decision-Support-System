@@ -13,19 +13,25 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.TimelineDay
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 import com.alleyz15.farmtwinai.ui.components.AppScaffold
 import com.alleyz15.farmtwinai.ui.components.InfoCard
+import com.alleyz15.farmtwinai.ui.components.MetricRow
 import com.alleyz15.farmtwinai.ui.components.ImagePickerController
 import com.alleyz15.farmtwinai.ui.components.PlatformDataUrlImage
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
@@ -75,7 +81,7 @@ fun TimelineScreen(
         ScreenColumn {
             SectionHeader(
                 title = "Expected daily journey",
-                body = "The timeline is day-by-day because the core concept is comparing actual progress to the ideal simulation over time.",
+                // Removed descriptive body to save vertical space
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -92,33 +98,49 @@ fun TimelineScreen(
             StatusBadge(selectedDay.status.style())
             if (isLoadingStageVisual) {
                 CircularProgressIndicator()
-            }
-            InfoCard(
-                title = "AI expected plant image (Day ${selectedDay.dayNumber})",
-                value = stageVisual?.title ?: "Generating expected visual...",
-                supporting = stageVisual?.let {
-                    it.description
-                } ?: stageVisualError ?: "Gemini/Vertex stage visual will appear here.",
-            )
-            OutlinedButton(
-                onClick = {
-                    onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Regenerate AI Image")
-            }
-            stageVisual?.imageDataUrl?.takeIf { it.isNotBlank() }?.let { imageDataUrl ->
-                PlatformDataUrlImage(
-                    dataUrl = imageDataUrl,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                )
+            } else {
+                stageVisual?.imageDataUrl?.takeIf { it.isNotBlank() }?.let { imageDataUrl ->
+                    PlatformDataUrlImage(
+                        dataUrl = imageDataUrl,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stageVisual?.title ?: "Generating expected visual...",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val desc = stageVisual?.description ?: stageVisualError
+                        if (!desc.isNullOrBlank()) {
+                            Text(
+                                text = desc,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
+                        }
+                    ) {
+                        Text("Regenerate")
+                    }
+                }
             }
             SectionHeader(
-                title = "Is your real plant similar to this AI image?",
-                body = "Tap Yes or No, then optionally snap/upload a photo for Gemini/Vertex comparison.",
+                title = "Like this AI image?",
+                // Removed instruction body text to save space
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -141,59 +163,56 @@ fun TimelineScreen(
                 }
             }
             if (similarityFeedback != null) {
-                InfoCard(
-                    title = "Your feedback",
-                    value = if (similarityFeedback == true) "Marked as similar" else "Marked as not similar",
-                    supporting = if (similarityFeedback == true) {
-                        "Great. Keep monitoring progression day by day."
-                    } else {
-                        "Good catch. Snap/upload a photo so AI can compare and suggest adjustments."
-                    },
+                Text(
+                    text = if (similarityFeedback == true) "✓ Marked as similar." else "✗ Marked as not similar. Upload a photo for AI assessment.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             if (imagePickerMessage != null) {
-                InfoCard(
-                    title = "Photo selection",
-                    value = imagePickerMessage!!,
+                Text(
+                    text = imagePickerMessage!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Button(
-                    onClick = {
-                        imagePickerController.launchCamera()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { imagePickerController.launchCamera() },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Text("Snap Plant Photo")
+                    Text("Snap Photo")
                 }
                 OutlinedButton(
-                    onClick = {
-                        imagePickerController.launchGallery()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { imagePickerController.launchGallery() },
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Text("Upload From Gallery")
-                }
-                OutlinedButton(
-                    onClick = {
-                        val payload = pickedPhotoBase64
-                        if (payload == null) {
-                            imagePickerMessage = "Please snap or upload a plant photo first."
-                            return@OutlinedButton
-                        }
-                        onComparePhoto(
-                            selectedDay.dayNumber,
-                            selectedDay.expectedStage,
-                            payload,
-                            pickedPhotoMimeType,
-                            similarityFeedback,
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Compare With Gemini / Vertex")
+                    Text("Gallery")
                 }
             }
+            OutlinedButton(
+                onClick = {
+                    val payload = pickedPhotoBase64
+                    if (payload == null) {
+                        imagePickerMessage = "Please snap or upload a plant photo first."
+                        return@OutlinedButton
+                    }
+                    onComparePhoto(
+                        selectedDay.dayNumber,
+                        selectedDay.expectedStage,
+                        payload,
+                        pickedPhotoMimeType,
+                        similarityFeedback,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Compare with AI")
+            }
+            
             if (isAssessingPhoto) {
                 CircularProgressIndicator()
             }
@@ -210,10 +229,16 @@ fun TimelineScreen(
                     supporting = photoAssessmentError,
                 )
             }
-            InfoCard("Health score", "$healthScore/100")
-            InfoCard("Expected growth range", selectedDay.expectedGrowthRange)
-            InfoCard("Expected crop stage", selectedDay.expectedStage)
-            InfoCard("Notes", selectedDay.notes)
+            MetricRow(
+                leftTitle = "Health", 
+                leftValue = "$healthScore/100",
+                rightTitle = "Growth", 
+                rightValue = selectedDay.expectedGrowthRange
+            )
+            InfoCard("Expected stage", selectedDay.expectedStage)
+            if (selectedDay.notes.isNotBlank()) {
+                InfoCard("Notes", selectedDay.notes)
+            }
         }
     }
 }
