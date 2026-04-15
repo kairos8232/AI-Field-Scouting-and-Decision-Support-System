@@ -8,6 +8,7 @@ import com.alleyz15.farmtwinai.navigation.AppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
 import com.alleyz15.farmtwinai.ui.screens.flow.ActionConfirmationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.AiConversationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
@@ -52,9 +53,7 @@ fun FarmTwinNavHost(
                     )
                 }
             },
-            onGoogleAuth = {
-                throw IllegalStateException("Google Sign-In backend flow is not integrated yet.")
-            },
+            onGoogleAuth = null,
             onAuthenticated = { user ->
                 appState.authenticateAndHydrate(user) { hasSavedFarmConfig ->
                     if (hasSavedFarmConfig) {
@@ -234,12 +233,25 @@ fun FarmTwinNavHost(
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
             onComparePhoto = appState::compareTimelinePhoto,
+            onOpenChat = { navigator.navigate(AppDestination.AiChat) },
         )
         AppDestination.AiChat -> AiChatScreen(
             messages = appState.snapshot.chatMessages,
             onBack = { navigator.pop() },
             onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
+            onOpenConversation = { initialPrompt ->
+                appState.startAiConversation(initialPrompt)
+                navigator.navigate(AppDestination.AiConversation)
+            },
             authenticatedUser = appState.authenticatedUser,
+        )
+        AppDestination.AiConversation -> AiConversationScreen(
+            messages = appState.aiConversationMessages,
+            isSending = appState.isSendingAiConversationMessage,
+            errorMessage = appState.aiConversationError,
+            providerLabel = appState.aiConversationProvider,
+            onBack = { navigator.pop() },
+            onSend = appState::sendAiConversationMessage,
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             latestAction = appState.snapshot.cropSummary.latestRecommendation,

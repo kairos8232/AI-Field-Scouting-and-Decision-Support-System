@@ -1,10 +1,14 @@
 package com.alleyz15.farmtwinai.data.analysis
 
+import com.alleyz15.farmtwinai.domain.model.AiChatContext
+import com.alleyz15.farmtwinai.domain.model.AiChatReply
+import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
 import com.alleyz15.farmtwinai.domain.model.CropRecommendation
 import com.alleyz15.farmtwinai.domain.model.EarthEngineSummary
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 import io.ktor.client.HttpClient
@@ -134,6 +138,74 @@ class HttpFieldInsightsRepository(
             throw IllegalStateException(message)
         }
         return parseTimelinePhotoAssessment(response.body<String>())
+    }
+
+    override suspend fun consultAiChat(
+        message: String,
+        history: List<ChatMessage>,
+        userId: String?,
+        context: AiChatContext?,
+    ): AiChatReply {
+        val cleanMessage = message.trim()
+        require(cleanMessage.isNotEmpty()) { "Message cannot be empty." }
+
+        val payload = buildJsonObject {
+            put("message", cleanMessage)
+
+            if (!userId.isNullOrBlank()) {
+                put("userId", userId)
+            }
+
+            put("history", buildJsonArray {
+                history.takeLast(12).forEach { chatMessage ->
+                    add(
+                        buildJsonObject {
+                            put(
+                                "role",
+                                if (chatMessage.sender == MessageSender.USER) "user" else "assistant",
+                            )
+                            put("content", chatMessage.content)
+                        }
+                    )
+                }
+            })
+
+            if (context != null) {
+                put(
+                    "context",
+                    buildJsonObject {
+                        context.farmName?.takeIf { it.isNotBlank() }?.let { put("farmName", it) }
+                        context.cropName?.takeIf { it.isNotBlank() }?.let { put("cropName", it) }
+                        context.mode?.takeIf { it.isNotBlank() }?.let { put("mode", it) }
+                        context.latestRecommendation?.takeIf { it.isNotBlank() }?.let {
+                            put("latestRecommendation", it)
+                        }
+                    },
+                )
+            }
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        val response = client.post("$configuredBase/chat") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+
+        if (!response.status.isSuccess()) {
+            val messageFromServer = extractServerErrorMessage(response.body<String>())
+            throw IllegalStateException(messageFromServer)
+        }
+
+        val root = json.parseToJsonElement(response.body<String>()).jsonObject
+        val replyText = root["reply"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        if (replyText.isBlank()) {
+            throw IllegalStateException("AI response was empty.")
+        }
+
+        return AiChatReply(
+            reply = replyText,
+            provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
+        )
     }
 
     private suspend fun requestInsights(base: String, body: String): FieldInsightReport {

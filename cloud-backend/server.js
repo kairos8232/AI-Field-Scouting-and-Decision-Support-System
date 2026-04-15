@@ -474,6 +474,46 @@ app.post("/api/timeline/photo-compare", async (req, res) => {
   }
 });
 
+app.post("/api/chat", async (req, res) => {
+  try {
+    const message = String(req.body?.message || "").trim();
+    if (!message) {
+      return res.status(400).json({ error: "message is required." });
+    }
+
+    const context = req.body?.context && typeof req.body.context === "object"
+      ? {
+          farmName: String(req.body.context.farmName || "").trim(),
+          cropName: String(req.body.context.cropName || "").trim(),
+          mode: String(req.body.context.mode || "").trim(),
+          latestRecommendation: String(req.body.context.latestRecommendation || "").trim(),
+        }
+      : null;
+
+    const rawHistory = Array.isArray(req.body?.history) ? req.body.history : [];
+    const history = rawHistory
+      .map((item) => ({
+        role: String(item?.role || "").trim().toLowerCase(),
+        content: String(item?.content || "").trim(),
+      }))
+      .filter((item) => (item.role === "user" || item.role === "assistant") && item.content.length > 0)
+      .slice(-12);
+
+    const reply = await generateAiChatReply({
+      message,
+      history,
+      context,
+    });
+
+    return res.json(reply);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to generate AI chat response.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Field insights service listening on ${PORT}`);
 });
@@ -1368,6 +1408,66 @@ async function assessTimelinePhoto({
   } catch (_error) {
     throw new Error("wrong connection to server");
   }
+}
+
+async function generateAiChatReply({ message, history, context }) {
+  if (!ai) {
+    throw new Error("wrong connection to server");
+  }
+
+  const contextLines = context
+    ? [
+        context.farmName ? `Farm name: ${context.farmName}` : null,
+        context.cropName ? `Primary crop: ${context.cropName}` : null,
+        context.mode ? `Current mode: ${context.mode}` : null,
+        context.latestRecommendation ? `Latest recommendation: ${context.latestRecommendation}` : null,
+      ].filter(Boolean)
+    : [];
+
+  const historyText = history.length
+    ? history.map((item) => `${item.role === "user" ? "User" : "Assistant"}: ${item.content}`).join("\n")
+    : "(No prior messages)";
+
+  const prompt = [
+    "You are FarmTwin AI, an assistant for farmers.",
+    "Give practical, concise answers and focus on agronomy decisions.",
+    "When uncertain, suggest a safe next observation or check.",
+    contextLines.length ? "Context:" : null,
+    contextLines.length ? contextLines.join("\n") : null,
+    "Conversation so far:",
+    historyText,
+    "Latest user message:",
+    message,
+  ].filter(Boolean).join("\n");
+
+  let text = "";
+  try {
+    const result = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: prompt,
+    });
+    text = String(result.text || "").trim();
+  } catch (error) {
+    const raw = String(error instanceof Error ? error.message : error || "");
+    if (raw.includes("API_KEY_IP_ADDRESS_BLOCKED")) {
+      throw new Error(
+        "Gemini API key is blocked by IP restriction. Update API key restrictions to allow this server IP or remove IP restriction."
+      );
+    }
+    if (raw.includes("403")) {
+      throw new Error("Gemini request was forbidden. Check API key restrictions and API enablement.");
+    }
+    throw new Error("Unable to get Gemini response from backend.");
+  }
+
+  if (!text) {
+    throw new Error("Gemini returned an empty response.");
+  }
+
+  return {
+    reply: text,
+    provider: "gemini-live",
+  };
 }
 
 function extractSvg(text) {
