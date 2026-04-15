@@ -18,6 +18,8 @@ import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.domain.model.SetupMethod
+import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
+import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 import com.alleyz15.farmtwinai.domain.model.ZoneInfo
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
@@ -135,6 +137,24 @@ class FarmTwinAppState(
     var lotReports by mutableStateOf<Map<String, FieldInsightReport>>(emptyMap())
         private set
 
+    var timelineStageVisual by mutableStateOf<TimelineStageVisual?>(null)
+        private set
+
+    var isLoadingTimelineStageVisual by mutableStateOf(false)
+        private set
+
+    var timelineStageVisualError by mutableStateOf<String?>(null)
+        private set
+
+    var timelinePhotoAssessment by mutableStateOf<TimelinePhotoAssessment?>(null)
+        private set
+
+    var isAssessingTimelinePhoto by mutableStateOf(false)
+        private set
+
+    var timelinePhotoAssessmentError by mutableStateOf<String?>(null)
+        private set
+
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
@@ -199,6 +219,65 @@ class FarmTwinAppState(
     fun selectTimelineDay(dayNumber: Int) {
         snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.let {
             selectedTimelineDay = it
+            timelinePhotoAssessment = null
+            timelinePhotoAssessmentError = null
+        }
+    }
+
+    fun loadTimelineStageVisual(dayNumber: Int, expectedStage: String) {
+        if (isLoadingTimelineStageVisual) return
+        isLoadingTimelineStageVisual = true
+        timelineStageVisualError = null
+
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.generateTimelineStageVisual(
+                    dayNumber = dayNumber,
+                    expectedStage = expectedStage,
+                    cropName = snapshot.farm.cropName,
+                )
+            }.onSuccess { visual ->
+                timelineStageVisual = visual
+            }.onFailure { error ->
+                timelineStageVisualError = error.message ?: "Unable to generate expected plant image."
+            }
+            isLoadingTimelineStageVisual = false
+        }
+    }
+
+    fun compareTimelinePhoto(
+        dayNumber: Int,
+        expectedStage: String,
+        photoBase64: String,
+        photoMimeType: String,
+        userMarkedSimilar: Boolean?,
+    ) {
+        if (isAssessingTimelinePhoto) return
+        val cleaned = photoBase64.substringAfter("base64,").trim()
+        if (cleaned.isBlank()) {
+            timelinePhotoAssessmentError = "Please provide a valid photo before comparison."
+            return
+        }
+
+        isAssessingTimelinePhoto = true
+        timelinePhotoAssessmentError = null
+
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.assessTimelinePhoto(
+                    dayNumber = dayNumber,
+                    expectedStage = expectedStage,
+                    cropName = snapshot.farm.cropName,
+                    photoBase64 = cleaned,
+                    photoMimeType = photoMimeType,
+                    userMarkedSimilar = userMarkedSimilar,
+                )
+            }.onSuccess { assessment ->
+                timelinePhotoAssessment = assessment
+            }.onFailure { error ->
+                timelinePhotoAssessmentError = error.message ?: "Unable to compare plant photo right now."
+            }
+            isAssessingTimelinePhoto = false
         }
     }
 

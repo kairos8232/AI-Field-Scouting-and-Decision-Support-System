@@ -4,37 +4,10 @@ Node.js backend for polygon analysis prototype:
 - Receives polygon from mobile app
 - Produces Earth-style environment summary (mock mode by default)
 - Produces crop recommendations with Gemini (when API key is set)
+- Produces timeline stage visuals with Vertex Imagen (preferred when configured), Gemini SVG fallback otherwise
 - Optionally stores each analysis result in Firebase Firestore
 
-## 1) Local Run
-
-1. Copy root env example:
-
-  cp ../.env.example ../.env
-
-2. Set values in root .env:
-
-   GEMINI_API_KEY=YOUR_KEY
-   EARTH_ENGINE_MODE=mock
-  EARTH_ENGINE_PROJECT_ID=your-gcp-project-id
-  EARTH_ENGINE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
-  FIREBASE_PROJECT_ID=your-gcp-project-id
-  FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
-  FIREBASE_COLLECTION=fieldInsights
-  FIREBASE_WEB_API_KEY=your-firebase-web-api-key
-
-3. Install and run:
-
-   npm install
-   npm run dev
-
-4. Test endpoint:
-
-   curl -X POST http://localhost:8080/api/field-insights \
-     -H "Content-Type: application/json" \
-     -d '{"polygon":[{"x":0.2,"y":0.2},{"x":0.8,"y":0.2},{"x":0.8,"y":0.8},{"x":0.2,"y":0.8}]}'
-
-## 2) Deploy To Cloud Run
+## 1) Deploy To Cloud Run
 
 ### One Source of Truth (Recommended)
 
@@ -131,7 +104,7 @@ gcloud run deploy farmtwin-field-insights \
 
 Tip: For production on Cloud Run, you can avoid `FIREBASE_SERVICE_ACCOUNT_JSON` by attaching a service account with Firestore access and setting only `FIREBASE_PROJECT_ID`.
 
-## 3) Request/Response Contract
+## 2) Request/Response Contract
 
 Request:
 
@@ -167,7 +140,7 @@ Response:
   "provider": "gemini-live"
 }
 
-## 4) Firebase Storage Endpoints
+## 3) Firebase Storage Endpoints
 
 When Firebase is configured, each `POST /api/field-insights` call is stored in Firestore.
 
@@ -193,7 +166,7 @@ Response shape:
 }
 ```
 
-## 5) Authentication Endpoints
+## 4) Authentication Endpoints
 
 Sign up (creates Firebase Auth user and upserts user profile in Firestore `users`):
 
@@ -211,7 +184,7 @@ curl -X POST "https://YOUR_CLOUD_RUN_URL/api/auth/signin" \
   -d '{"email":"farmer@example.com","password":"strongpass123"}'
 ```
 
-## 6) Earth Engine Upgrade Path
+## 5) Earth Engine Upgrade Path
 
 Current implementation returns geometry fallback summary by default. Live-mode linking now validates Earth Engine auth and API access.
 

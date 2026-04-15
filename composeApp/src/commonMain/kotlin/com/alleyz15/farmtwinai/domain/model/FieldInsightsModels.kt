@@ -21,3 +21,26 @@ data class FieldInsightReport(
     val recommendations: List<CropRecommendation>,
     val provider: String,
 )
+
+data class TimelineStageVisual(
+    val dayNumber: Int,
+    val expectedStage: String,
+    val cropName: String,
+    val title: String,
+    val description: String,
+    val imageDataUrl: String,
+    val prompt: String,
+    val provider: String,
+)
+
+data class TimelinePhotoAssessment(
+    val dayNumber: Int,
+    val expectedStage: String,
+    val cropName: String,
+    val similarityScore: Int,
+    val isSimilar: Boolean,
+    val observedStage: String,
+    val recommendation: String,
+    val rationale: String,
+    val provider: String,
+)

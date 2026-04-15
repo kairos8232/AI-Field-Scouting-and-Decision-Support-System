@@ -35,12 +35,22 @@ const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
 const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
 const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
+const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
+const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
+const VERTEX_IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL || "imagen-4.0-fast-generate-001";
+const VERTEX_IMAGE_MODEL_CANDIDATES = (process.env.VERTEX_IMAGE_MODEL_CANDIDATES || "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+const VERTEX_SERVICE_ACCOUNT_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON || "";
+const VERTEX_IMAGE_ENABLED = String(process.env.VERTEX_IMAGE_ENABLED || "true").toLowerCase() !== "false";
 
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
 
 const EARTH_ENGINE_SCOPE = "https://www.googleapis.com/auth/earthengine.readonly";
+const VERTEX_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
 
 let earthEngineStatusCache = {
   checkedAt: 0,
@@ -53,6 +63,10 @@ let firestoreStatusCache = {
   reason: "not_checked",
 };
 let firestoreDb = null;
+let vertexTokenCache = {
+  token: "",
+  expiresAt: 0,
+};
 
 app.get("/health", async (_req, res) => {
   const eeStatus = await resolveEarthEngineStatus();
@@ -408,6 +422,53 @@ app.post("/api/auth/signin", async (req, res) => {
     }
     return res.status(500).json({
       error: "Unable to sign in user.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/timeline/stage-visual", async (req, res) => {
+  try {
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const expectedStage = String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression";
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+
+    const visual = await generateTimelineStageVisual({ dayNumber, expectedStage, cropName });
+    return res.json(visual);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to generate stage visual.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/timeline/photo-compare", async (req, res) => {
+  try {
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const expectedStage = String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression";
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+    const photoMimeType = String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
+    const photoBase64 = String(req.body?.photoBase64 || "").trim();
+    const userMarkedSimilar = typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : null;
+
+    if (!photoBase64) {
+      return res.status(400).json({ error: "photoBase64 is required." });
+    }
+
+    const assessment = await assessTimelinePhoto({
+      dayNumber,
+      expectedStage,
+      cropName,
+      photoMimeType,
+      photoBase64,
+      userMarkedSimilar,
+    });
+
+    return res.json(assessment);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to assess timeline photo.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -924,7 +985,7 @@ function eeEvaluate(obj) {
 
 async function getCropRecommendations(summary, targetCrops = [], areaContext = {}) {
   if (!ai) {
-    return fallbackRecommendations(summary, targetCrops);
+    throw new Error("wrong connection to server");
   }
 
   const cropHint = targetCrops.length
@@ -959,7 +1020,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
     const text = result.text || "";
     const parsed = safeParseJsonArray(text);
     if (!parsed.length) {
-      return fallbackRecommendations(summary, targetCrops);
+      throw new Error("wrong connection to server");
     }
 
     const normalized = parsed.map((item) => ({
@@ -970,7 +1031,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
 
     return ensureTargetCropCoverage(summary, targetCrops, normalized).slice(0, Math.max(3, targetCrops.length));
   } catch (_error) {
-    return fallbackRecommendations(summary, targetCrops);
+    throw new Error("wrong connection to server");
   }
 }
 
@@ -1049,6 +1110,312 @@ function safeParseJsonArray(text) {
       return [];
     }
   }
+}
+
+function safeParseJsonObject(text) {
+  try {
+    const data = JSON.parse(text);
+    return data && typeof data === "object" && !Array.isArray(data) ? data : null;
+  } catch (_error) {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start === -1 || end === -1 || end <= start) return null;
+    try {
+      const data = JSON.parse(text.slice(start, end + 1));
+      return data && typeof data === "object" && !Array.isArray(data) ? data : null;
+    } catch (_error2) {
+      return null;
+    }
+  }
+}
+
+async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName }) {
+  const prompt = [
+    "Generate a realistic close-up crop growth image for stage monitoring.",
+    `Crop: ${cropName}`,
+    `Expected stage: ${expectedStage}`,
+    `Day number: ${dayNumber}`,
+    "Focus on realistic morphology: leaf count, leaf shape, vein structure, stem thickness, and stage-specific traits.",
+    "Image style: natural daylight farm photo, close-up framing of the plant, soft background blur.",
+    "The image must show the crop plant itself as the main subject.",
+    "Do NOT generate maps, field layout plans, charts, tables, legends, labels, text, logos, or UI screens.",
+    "Do NOT generate satellite views, top-down parcel diagrams, or infographic posters.",
+    "No people, no machinery, no watermarks.",
+  ].join("\n");
+
+  const title = `${cropName} - ${expectedStage}`;
+  const description = `AI expected morphology for Day ${dayNumber}. Compare leaf/stem/reproductive structures with your real plant photo.`;
+
+  if (VERTEX_IMAGE_ENABLED && isVertexConfigured()) {
+    try {
+      const imageDataUrl = await generateStageImageWithVertex(prompt);
+      return {
+        dayNumber,
+        expectedStage,
+        cropName,
+        title,
+        description,
+        imageDataUrl,
+        prompt,
+        provider: "vertex-imagen-live",
+      };
+    } catch (error) {
+      console.warn(
+        `[timeline-stage-visual] Vertex fallback to Gemini: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      // Fall through to Gemini SVG generation as secondary strategy.
+    }
+  }
+
+  if (!ai) {
+    throw new Error("wrong connection to server");
+  }
+
+  let svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+
+  try {
+    const svgPrompt = [
+      "Generate a clean SVG illustration for crop growth monitoring UI.",
+      `Crop: ${cropName}`,
+      `Expected stage: ${expectedStage}`,
+      `Day number: ${dayNumber}`,
+      "Output ONLY raw SVG markup, no markdown, no explanation.",
+      "Add clear morphology detail: multiple leaves, visible veins, stem texture, and stage-specific structures.",
+      "Use transparent/very light background and no text labels.",
+    ].join("\n");
+
+    const result = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: svgPrompt,
+    });
+    const text = (result.text || "").trim();
+    const maybeSvg = extractSvg(text);
+    if (!maybeSvg) {
+      throw new Error("wrong connection to server");
+    }
+    svg = maybeSvg;
+  } catch (_error) {
+    throw new Error("wrong connection to server");
+  }
+
+  const imageDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  return {
+    dayNumber,
+    expectedStage,
+    cropName,
+    title,
+    description,
+    imageDataUrl,
+    prompt,
+    provider: "gemini-live",
+  };
+}
+
+function isVertexConfigured() {
+  return VERTEX_IMAGE_ENABLED && Boolean(VERTEX_PROJECT_ID && VERTEX_LOCATION && VERTEX_IMAGE_MODEL);
+}
+
+async function getVertexAccessToken() {
+  const now = Date.now();
+  if (vertexTokenCache.token && vertexTokenCache.expiresAt - now > 60_000) {
+    return vertexTokenCache.token;
+  }
+
+  const credentials = VERTEX_SERVICE_ACCOUNT_JSON.trim()
+    ? JSON.parse(VERTEX_SERVICE_ACCOUNT_JSON)
+    : undefined;
+
+  const auth = credentials
+    ? new GoogleAuth({ credentials, scopes: [VERTEX_SCOPE] })
+    : new GoogleAuth({ scopes: [VERTEX_SCOPE] });
+  const client = await auth.getClient();
+  const tokenResponse = await client.getAccessToken();
+  const token = tokenResponse?.token || "";
+  if (!token) {
+    throw new Error("wrong connection to server");
+  }
+
+  vertexTokenCache = {
+    token,
+    expiresAt: now + 50 * 60_000,
+  };
+  return token;
+}
+
+async function generateStageImageWithVertex(prompt) {
+  const accessToken = await getVertexAccessToken();
+  const modelCandidates = [
+    ...new Set([
+      VERTEX_IMAGE_MODEL,
+      ...VERTEX_IMAGE_MODEL_CANDIDATES,
+      "imagen-3.0-generate-002",
+      "imagegeneration@006",
+    ]),
+  ];
+
+  for (const modelName of modelCandidates) {
+    const endpoint = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${modelName}:predict`;
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        instances: [
+          {
+            prompt,
+          },
+        ],
+        parameters: {
+          sampleCount: 1,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.warn(`[vertex-imagen] ${modelName} failed: ${response.status} ${detail.slice(0, 200)}`);
+      continue;
+    }
+
+    const payload = await response.json();
+    const first = Array.isArray(payload?.predictions) ? payload.predictions[0] : null;
+    const bytes =
+      first?.bytesBase64Encoded ||
+      first?.image?.bytesBase64Encoded ||
+      first?.b64Json ||
+      "";
+    const mimeType = first?.mimeType || first?.image?.mimeType || "image/png";
+
+    if (!bytes) {
+      console.warn(`[vertex-imagen] ${modelName} returned no image bytes`);
+      continue;
+    }
+
+    return `data:${mimeType};base64,${bytes}`;
+  }
+
+  throw new Error("wrong connection to server");
+}
+
+async function assessTimelinePhoto({
+  dayNumber,
+  expectedStage,
+  cropName,
+  photoMimeType,
+  photoBase64,
+  userMarkedSimilar,
+}) {
+  const fallback = fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarkedSimilar, seedText: photoBase64 });
+  if (!ai) {
+    throw new Error("wrong connection to server");
+  }
+
+  const prompt = [
+    "You are an agronomy visual inspector.",
+    `Crop: ${cropName}`,
+    `Expected stage/day: ${expectedStage} (Day ${dayNumber})`,
+    userMarkedSimilar == null ? "User similarity feedback: not provided" : `User similarity feedback: ${userMarkedSimilar ? "similar" : "not similar"}`,
+    "Analyze the uploaded crop photo and return STRICT JSON with keys:",
+    "similarityScore (0-100 integer), isSimilar (boolean), observedStage (string), recommendation (string), rationale (string)",
+    "Keep recommendation practical for farmers.",
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: photoMimeType,
+                data: photoBase64,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) {
+      throw new Error("wrong connection to server");
+    }
+
+    const similarityScore = clamp(Number(parsed.similarityScore ?? fallback.similarityScore), 0, 100);
+    const isSimilar = typeof parsed.isSimilar === "boolean"
+      ? parsed.isSimilar
+      : similarityScore >= 65;
+
+    return {
+      dayNumber,
+      expectedStage,
+      cropName,
+      similarityScore: Math.round(similarityScore),
+      isSimilar,
+      observedStage: String(parsed.observedStage || fallback.observedStage),
+      recommendation: String(parsed.recommendation || fallback.recommendation),
+      rationale: String(parsed.rationale || fallback.rationale),
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    throw new Error("wrong connection to server");
+  }
+}
+
+function extractSvg(text) {
+  const start = text.indexOf("<svg");
+  const end = text.lastIndexOf("</svg>");
+  if (start === -1 || end === -1 || end <= start) return null;
+  const svg = text.slice(start, end + 6).trim();
+  return svg.startsWith("<svg") ? svg : null;
+}
+
+function fallbackStageSvg({ cropName, expectedStage, dayNumber }) {
+  const stage = String(expectedStage || "Growth").replace(/[<>&]/g, "");
+  const crop = String(cropName || "Crop").replace(/[<>&]/g, "");
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
+  <rect width="640" height="420" fill="#f4f8f2" rx="20"/>
+  <rect x="0" y="300" width="640" height="120" fill="#d9ead3"/>
+  <path d="M320 300 C300 255, 300 210, 320 165 C340 210, 340 255, 320 300" fill="#4f9f59"/>
+  <path d="M320 235 C255 220, 230 180, 220 140 C275 150, 305 175, 320 205" fill="#72bf78"/>
+  <path d="M320 225 C385 210, 410 170, 420 130 C365 140, 335 165, 320 195" fill="#72bf78"/>
+  <circle cx="320" cy="145" r="16" fill="#ffd166"/>
+  <text x="28" y="44" font-family="Arial, sans-serif" font-size="30" fill="#1d3b24" font-weight="700">${crop} - Day ${dayNumber}</text>
+  <text x="28" y="80" font-family="Arial, sans-serif" font-size="24" fill="#345f3e">Expected stage: ${stage}</text>
+</svg>
+`.trim();
+}
+
+function fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarkedSimilar, seedText }) {
+  const seed = Math.abs(String(seedText || "").length + dayNumber * 13 + String(expectedStage).length * 7) % 101;
+  let similarityScore = 45 + (seed % 46);
+  if (userMarkedSimilar === true) similarityScore = Math.max(similarityScore, 68);
+  if (userMarkedSimilar === false) similarityScore = Math.min(similarityScore, 62);
+  const isSimilar = similarityScore >= 65;
+
+  return {
+    dayNumber,
+    expectedStage,
+    cropName,
+    similarityScore,
+    isSimilar,
+    observedStage: isSimilar ? expectedStage : "Slightly behind expected stage",
+    recommendation: isSimilar
+      ? "Maintain current irrigation and nutrient schedule; continue daily monitoring."
+      : "Re-check watering pattern and inspect leaf color/uniformity; consider light nutrient correction.",
+    rationale: isSimilar
+      ? "Visual structure appears aligned with expected morphology for this day."
+      : "Detected differences in canopy density/stage cues compared with expected progression.",
+  };
 }
 
 function normalizeSuitability(value) {

@@ -224,8 +224,16 @@ fun FarmTwinNavHost(
             days = appState.snapshot.timeline,
             selectedDay = appState.selectedTimelineDay,
             healthScore = appState.snapshot.cropSummary.currentFarmHealthScore,
+            stageVisual = appState.timelineStageVisual,
+            stageVisualError = appState.timelineStageVisualError,
+            isLoadingStageVisual = appState.isLoadingTimelineStageVisual,
+            photoAssessment = appState.timelinePhotoAssessment,
+            photoAssessmentError = appState.timelinePhotoAssessmentError,
+            isAssessingPhoto = appState.isAssessingTimelinePhoto,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
+            onLoadStageVisual = appState::loadTimelineStageVisual,
+            onComparePhoto = appState::compareTimelinePhoto,
         )
         AppDestination.AiChat -> AiChatScreen(
             messages = appState.snapshot.chatMessages,

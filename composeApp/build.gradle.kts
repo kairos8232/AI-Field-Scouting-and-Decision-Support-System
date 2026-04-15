@@ -133,7 +133,7 @@ android {
         buildConfigField(
             "String",
             "FIELD_INSIGHTS_BASE_URL",
-            asBuildConfigString(envOrDefault("FIELD_INSIGHTS_BASE_URL", "http://localhost:8080/api")),
+            asBuildConfigString(envOrDefault("FIELD_INSIGHTS_BASE_URL", "")),
         )
     }
     packaging {

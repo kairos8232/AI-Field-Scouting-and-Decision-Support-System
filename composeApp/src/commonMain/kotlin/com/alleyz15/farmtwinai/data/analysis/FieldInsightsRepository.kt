@@ -2,6 +2,8 @@ package com.alleyz15.farmtwinai.data.analysis
 
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
+import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 
 interface FieldInsightsRepository {
     suspend fun analyzePolygon(
@@ -10,4 +12,19 @@ interface FieldInsightsRepository {
         totalFarmAreaHectares: Double? = null,
         lotAreaHectares: Double? = null,
     ): FieldInsightReport
+
+    suspend fun generateTimelineStageVisual(
+        dayNumber: Int,
+        expectedStage: String,
+        cropName: String,
+    ): TimelineStageVisual
+
+    suspend fun assessTimelinePhoto(
+        dayNumber: Int,
+        expectedStage: String,
+        cropName: String,
+        photoBase64: String,
+        photoMimeType: String,
+        userMarkedSimilar: Boolean? = null,
+    ): TimelinePhotoAssessment
 }

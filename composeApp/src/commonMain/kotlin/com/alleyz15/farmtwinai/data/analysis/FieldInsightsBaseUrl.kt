@@ -3,14 +3,15 @@ package com.alleyz15.farmtwinai.data.analysis
 internal expect fun platformFieldInsightsBaseUrl(): String
 
 internal fun resolvedFieldInsightsBaseUrl(): String {
-    val defaultUrl = "http://localhost:8080/api"
     val raw = platformFieldInsightsBaseUrl()
         .trim()
         .trim('"')
         .replace("\\n", "")
         .replace("\\r", "")
         .trimEnd('/')
-    if (raw.isBlank()) return defaultUrl
+    if (raw.isBlank()) {
+        throw IllegalStateException("FIELD_INSIGHTS_BASE_URL is not configured. Set it in environment/secrets.")
+    }
 
     val withScheme = when {
         raw.startsWith("http://") || raw.startsWith("https://") -> raw
