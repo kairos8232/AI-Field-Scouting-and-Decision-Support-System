@@ -1,5 +1,6 @@
 package com.alleyz15.farmtwinai.app
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -11,6 +12,7 @@ import com.alleyz15.farmtwinai.data.farm.HttpFarmConfigRepository
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.navigation.rememberAppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
+import com.alleyz15.farmtwinai.presentation.ThemePreference
 import com.alleyz15.farmtwinai.ui.screens.FarmTwinNavHost
 import com.alleyz15.farmtwinai.ui.theme.FarmTwinTheme
 
@@ -29,8 +31,14 @@ fun FarmTwinApp() {
         )
     }
     val navigator = rememberAppNavigator()
+    val systemDarkTheme = isSystemInDarkTheme()
+    val darkTheme = when (appState.themePreference) {
+        ThemePreference.SYSTEM -> systemDarkTheme
+        ThemePreference.LIGHT -> false
+        ThemePreference.DARK -> true
+    }
 
-    FarmTwinTheme {
+    FarmTwinTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
             FarmTwinNavHost(
                 navigator = navigator,

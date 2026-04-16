@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.WaterBlue
@@ -32,10 +33,15 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun AuroraBackground() {
+    val darkTheme = isAppDarkTheme()
+    val baseColor = if (darkTheme) Color(0xFF0C1911) else Color(0xFFF3F8F3)
+    val topGlowAlpha = if (darkTheme) 0.15f else 0.28f
+    val bottomGlowAlpha = if (darkTheme) 0.12f else 0.22f
+
     Canvas(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0C1911)) // Deep dark green base
+            .background(baseColor)
     ) {
         val width = size.width
         val height = size.height
@@ -43,7 +49,7 @@ fun AuroraBackground() {
         // Top right mint glow
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Mint200.copy(alpha = 0.15f), Color.Transparent),
+                colors = listOf(Mint200.copy(alpha = topGlowAlpha), Color.Transparent),
                 center = Offset(width * 1.1f, height * -0.1f),
                 radius = width * 0.9f
             ),
@@ -54,7 +60,7 @@ fun AuroraBackground() {
         // Bottom left leaf glow
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Leaf400.copy(alpha = 0.12f), Color.Transparent),
+                colors = listOf(Leaf400.copy(alpha = bottomGlowAlpha), Color.Transparent),
                 center = Offset(width * -0.2f, height * 1.1f),
                 radius = width * 1.0f
             ),

@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -54,9 +55,7 @@ import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.components.PlatformDataUrlImage
 import com.alleyz15.farmtwinai.ui.components.StatusBadge
 import com.alleyz15.farmtwinai.ui.components.rememberImagePickerController
-import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Mint200
-import com.alleyz15.farmtwinai.ui.theme.Sand100
 import com.alleyz15.farmtwinai.ui.theme.style
 
 private val ArrowBackIcon: ImageVector
@@ -88,9 +87,12 @@ fun AuroraInfoCard(
     supporting: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    val darkTheme = isAppDarkTheme()
+    val cardAlpha = if (darkTheme) 0.4f else 0.9f
+
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.4f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = cardAlpha)),
         shape = RoundedCornerShape(20.dp),
     ) {
         Column(
@@ -98,9 +100,9 @@ fun AuroraInfoCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(title, style = MaterialTheme.typography.labelLarge, color = Mint200)
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             if (supporting != null) {
-                Text(supporting, style = MaterialTheme.typography.bodyMedium, color = Sand100.copy(alpha = 0.85f))
+                Text(supporting, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
             }
         }
     }
@@ -163,12 +165,12 @@ fun TimelineScreen(
                 ) {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape),
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
                     ) {
                         Icon(
                             imageVector = ArrowBackIcon,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                     Column(
@@ -179,12 +181,12 @@ fun TimelineScreen(
                             text = "Daily Timeline",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Planting date to crop cycle",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                         )
                     }
                 }
@@ -195,7 +197,7 @@ fun TimelineScreen(
                     text = "Expected daily journey",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 
                 Row(
@@ -207,14 +209,14 @@ fun TimelineScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(if (selected) Mint200 else Color.White.copy(alpha = 0.1f))
+                                .background(if (selected) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
                                 .clickable { onSelectDay(day.dayNumber) }
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                         ) {
                             Text(
                                 "Day ${day.dayNumber}", 
                                 style = MaterialTheme.typography.labelLarge,
-                                color = if (selected) Color.Black else Sand100
+                                color = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground
                             )
                         }
                     }
@@ -243,14 +245,14 @@ fun TimelineScreen(
                                 text = stageVisual?.title ?: "Generating expected visual...",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onBackground
                             )
                             val desc = stageVisual?.description ?: stageVisualError
                             if (!desc.isNullOrBlank()) {
                                 Text(
                                     text = desc,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Sand100.copy(alpha = 0.8f)
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f)
                                 )
                             }
                         }
@@ -268,7 +270,7 @@ fun TimelineScreen(
                     text = "Like this AI image?",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 
                 Row(
@@ -282,8 +284,8 @@ fun TimelineScreen(
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (similarityFeedback == true) Mint200 else Color.White.copy(alpha = 0.1f),
-                            contentColor = if (similarityFeedback == true) Color.Black else Sand100,
+                            containerColor = if (similarityFeedback == true) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            contentColor = if (similarityFeedback == true) Color.Black else MaterialTheme.colorScheme.onBackground,
                         ),
                     ) {
                         Text("Yes")
@@ -292,8 +294,8 @@ fun TimelineScreen(
                         onClick = { similarityFeedback = false },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.1f),
-                            contentColor = Sand100,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            contentColor = MaterialTheme.colorScheme.onBackground,
                         ),
                     ) {
                         Text("No")
@@ -310,7 +312,7 @@ fun TimelineScreen(
                     Text(
                         text = imagePickerMessage!!,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Mint200,
+                        color = if (isAppDarkTheme()) Mint200 else MaterialTheme.colorScheme.primary,
                     )
                 }
                 Row(
@@ -327,7 +329,7 @@ fun TimelineScreen(
                     Button(
                         onClick = { imagePickerController.launchGallery() },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
                     ) {
                         Text("Gallery")
                     }
@@ -348,7 +350,7 @@ fun TimelineScreen(
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
                 ) {
                     Text("Compare with AI")
                 }

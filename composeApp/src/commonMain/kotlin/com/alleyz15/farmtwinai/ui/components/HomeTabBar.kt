@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.ui.theme.Mint200
-import com.alleyz15.farmtwinai.ui.theme.Sand100
 
 enum class HomeTab {
     DASHBOARD,
@@ -67,9 +66,9 @@ private fun CustomTabItem(
     label: String,
     icon: ImageVector,
 ) {
-    val contentColor = if (selected) Color.White else Sand100.copy(alpha = 0.6f)
+    val contentColor = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
     val indicatorColor = if (selected) Mint200 else Color.Transparent
-    val defaultIconColor = if (selected) Color.Black else Sand100.copy(alpha = 0.6f)
+    val defaultIconColor = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
 
     Box(
         modifier = modifier
@@ -97,7 +96,7 @@ private fun CustomTabItem(
             }
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = contentColor,
             )
         }

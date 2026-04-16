@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,9 +42,8 @@ import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
-import com.alleyz15.farmtwinai.ui.theme.CardDark
+import com.alleyz15.farmtwinai.presentation.ThemePreference
 import com.alleyz15.farmtwinai.ui.theme.Mint200
-import com.alleyz15.farmtwinai.ui.theme.Sand100
 
 private val ArrowBackIcon: ImageVector
     get() = ImageVector.Builder(
@@ -73,11 +73,14 @@ fun AuroraOptionCard(
     description: String,
     onClick: () -> Unit,
 ) {
+    val darkTheme = isAppDarkTheme()
+    val cardAlpha = if (darkTheme) 0.4f else 0.9f
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.4f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = cardAlpha)),
         shape = RoundedCornerShape(20.dp),
     ) {
         Column(
@@ -85,7 +88,7 @@ fun AuroraOptionCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = Mint200, fontWeight = FontWeight.Bold)
-            Text(description, style = MaterialTheme.typography.bodyMedium, color = Sand100.copy(alpha = 0.85f))
+            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
         }
     }
 }
@@ -97,6 +100,8 @@ fun MePanelScreen(
     onBack: (() -> Unit)?,
     onModifyFarm: () -> Unit,
     onOpenHistory: () -> Unit,
+    selectedThemePreference: ThemePreference,
+    onThemePreferenceChange: (ThemePreference) -> Unit,
     onSignOut: () -> Unit,
     isTabBarVisible: Boolean,
     onSelectDashboardTab: () -> Unit,
@@ -123,12 +128,12 @@ fun MePanelScreen(
                     if (onBack != null) {
                         IconButton(
                             onClick = onBack,
-                            modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape),
+                            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
                         ) {
                             Icon(
                                 imageVector = ArrowBackIcon,
                                 contentDescription = "Back",
-                                tint = Sand100,
+                                tint = MaterialTheme.colorScheme.onBackground,
                             )
                         }
                     }
@@ -140,12 +145,12 @@ fun MePanelScreen(
                             text = "Profile",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = authenticatedUser?.email ?: snapshot.user.name,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                         )
                     }
                 }
@@ -153,10 +158,43 @@ fun MePanelScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
+                    text = "Appearance",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    ThemeChoiceChip(
+                        label = "System",
+                        selected = selectedThemePreference == ThemePreference.SYSTEM,
+                        onClick = { onThemePreferenceChange(ThemePreference.SYSTEM) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeChoiceChip(
+                        label = "Light",
+                        selected = selectedThemePreference == ThemePreference.LIGHT,
+                        onClick = { onThemePreferenceChange(ThemePreference.LIGHT) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeChoiceChip(
+                        label = "Dark",
+                        selected = selectedThemePreference == ThemePreference.DARK,
+                        onClick = { onThemePreferenceChange(ThemePreference.DARK) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
                     text = "My Activity & Sync",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
 
                 AuroraOptionCard(
@@ -171,7 +209,7 @@ fun MePanelScreen(
                     text = "Farm Management",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 
                 AuroraInfoCard(
@@ -192,7 +230,7 @@ fun MePanelScreen(
                     Button(
                         onClick = onSignOut,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
                     ) {
                         Text("Sign Out")
                     }
@@ -200,19 +238,49 @@ fun MePanelScreen(
             }
         }
 
-        if (isTabBarVisible && onSelectDashboardTab != null && onSelectMeTab != null) {
+        if (isTabBarVisible) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
-                Box(modifier = Modifier.matchParentSize().background(Color(0xFF0d1f11)))
+                Box(modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surface))
                 HomeTabBar(
                     selectedTab = HomeTab.ME,
                     onSelectDashboard = onSelectDashboardTab,
                     onSelectMe = onSelectMeTab,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ThemeChoiceChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Mint200,
+                contentColor = Color.Black,
+            ),
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(text = label, fontWeight = FontWeight.SemiBold)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            shape = RoundedCornerShape(12.dp),
+        ) {
+            Text(text = label, color = MaterialTheme.colorScheme.onBackground)
         }
     }
 }

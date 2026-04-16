@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,6 +58,10 @@ fun AiChatScreen(
     onOpenHistory: () -> Unit,
     authenticatedUser: AuthUser?,
 ) {
+    val darkTheme = isAppDarkTheme()
+    val inputBorder = if (darkTheme) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+    val fieldContainer = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+
     val draft = remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxWidth()) {
@@ -79,12 +84,12 @@ fun AiChatScreen(
                     IconButton(
                         onClick = onBack,
                         modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.08f), CircleShape),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
                     ) {
                         Icon(
                             imageVector = ArrowBackIcon,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                     Column(
@@ -95,7 +100,7 @@ fun AiChatScreen(
                             text = "AI Consultation",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = if (authenticatedUser != null) {
@@ -104,18 +109,18 @@ fun AiChatScreen(
                                 "Tap Account to sign in for personalized advice."
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.76f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
                         )
                     }
                     IconButton(
                         onClick = onOpenHistory,
                         modifier = Modifier
-                            .background(Color.White.copy(alpha = 0.05f), CircleShape),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.3f else 0.8f), CircleShape),
                     ) {
                         Icon(
                             imageVector = HistoryIcon,
                             contentDescription = "History",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                 }
@@ -144,19 +149,19 @@ fun AiChatScreen(
                         placeholder = {
                             Text(
                                 text = "Ask follow-up question...",
-                                color = Sand100.copy(alpha = 0.58f),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             )
                         },
                         shape = RoundedCornerShape(16.dp),
                         minLines = 2,
                         maxLines = 5,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Sand100,
-                            unfocusedTextColor = Sand100,
+                            focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                             focusedBorderColor = Leaf400,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
-                            focusedContainerColor = Color.White.copy(alpha = 0.05f),
-                            unfocusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = if (darkTheme) 0.45f else 0.62f),
+                            focusedContainerColor = fieldContainer,
+                            unfocusedContainerColor = fieldContainer,
                             cursorColor = Leaf400,
                         ),
                     )
@@ -169,9 +174,9 @@ fun AiChatScreen(
                             onClick = onConfirmAction,
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                            border = BorderStroke(1.dp, inputBorder),
                         ) {
-                            Text("Confirm Action", color = Sand100)
+                            Text("Confirm Action", color = MaterialTheme.colorScheme.onBackground)
                         }
                         Button(
                             onClick = {
@@ -206,7 +211,7 @@ private fun GlassInfoCard(
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
     ) {
         Column(
@@ -216,18 +221,18 @@ private fun GlassInfoCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.labelLarge,
-                color = Sand100.copy(alpha = 0.76f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Sand100,
+                color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
                 text = supporting,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Sand100.copy(alpha = 0.78f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
             )
         }
     }
@@ -235,10 +240,11 @@ private fun GlassInfoCard(
 
 @Composable
 private fun ChatMessageRow(message: ChatMessage) {
+    val darkTheme = isAppDarkTheme()
     val isUser = message.sender == MessageSender.USER
-    val containerColor = if (isUser) Leaf400.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.05f)
-    val labelColor = if (isUser) Color.White.copy(alpha = 0.9f) else Sand100.copy(alpha = 0.8f)
-    val contentColor = if (isUser) Color.White else Sand100
+    val containerColor = if (isUser) Leaf400.copy(alpha = if (darkTheme) 0.7f else 0.52f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.45f else 0.85f)
+    val labelColor = if (isUser) Color.White.copy(alpha = 0.95f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f)
+    val contentColor = if (isUser) Color.White else MaterialTheme.colorScheme.onBackground
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Card(
@@ -252,7 +258,7 @@ private fun ChatMessageRow(message: ChatMessage) {
                 bottomEnd = if (isUser) 8.dp else 20.dp
             ),
             colors = CardDefaults.cardColors(containerColor = containerColor),
-            border = if (isUser) null else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+            border = if (isUser) null else BorderStroke(1.dp, if (darkTheme) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)),
             elevation = CardDefaults.cardElevation(defaultElevation = if (isUser) 4.dp else 0.dp)
         ) {
             Column(
@@ -273,7 +279,7 @@ private fun ChatMessageRow(message: ChatMessage) {
                 Text(
                     text = message.timestamp,
                     style = MaterialTheme.typography.bodySmall,
-                    color = contentColor.copy(alpha = 0.6f),
+                    color = contentColor.copy(alpha = 0.72f),
                     modifier = Modifier.align(Alignment.End)
                 )
             }

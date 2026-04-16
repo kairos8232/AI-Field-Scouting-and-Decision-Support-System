@@ -96,12 +96,12 @@ fun FarmBoundaryDrawScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.08f)),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                     ) {
                         Icon(
                             imageVector = BackIconDraw,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
 
@@ -112,12 +112,12 @@ fun FarmBoundaryDrawScreen(
                             text = "Farm Setup",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Step 2 of 3 - Draw boundary",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -128,13 +128,13 @@ fun FarmBoundaryDrawScreen(
                     text = "Draw boundary",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                 )
                 Text(
                     text = "Tap to add points and drag to refine.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth).padding(top = 4.dp),
                 )
 
@@ -220,7 +220,7 @@ fun FarmBoundaryDrawScreen(
                             points.forEachIndexed { index, point ->
                                 val marker = toOffset(point, size)
                                 drawCircle(
-                                    color = if (index == selectedVertex) Color(0xFFE57373) else Sand100,
+                                    color = if (index == selectedVertex) Color(0xFFE57373) else Color(0xFFF4F1E8),
                                     radius = 12f,
                                     center = marker,
                                 )
@@ -251,7 +251,7 @@ fun FarmBoundaryDrawScreen(
                                 }
                             }
                         ) {
-                            Text("Undo", color = Sand100)
+                            Text("Undo", color = MaterialTheme.colorScheme.onBackground)
                         }
                         TextButton(
                             onClick = {
@@ -259,7 +259,7 @@ fun FarmBoundaryDrawScreen(
                                 onBoundaryChanged(emptyList())
                             }
                         ) {
-                            Text("Clear All", color = Sand100)
+                            Text("Clear All", color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
                 }

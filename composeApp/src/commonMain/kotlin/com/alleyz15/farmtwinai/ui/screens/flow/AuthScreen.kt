@@ -56,11 +56,13 @@ import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
 import com.alleyz15.farmtwinai.auth.AuthUser
 import farmtwinai.composeapp.generated.resources.Res
-import farmtwinai.composeapp.generated.resources.ic_farm_bg
+import farmtwinai.composeapp.generated.resources.ic_farm_bg_dark
+import farmtwinai.composeapp.generated.resources.ic_farm_bg_light
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.Image
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 
@@ -98,8 +100,12 @@ fun AuthScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
         
+        val darkTheme = isAppDarkTheme()
+        val bgResource = if (darkTheme) Res.drawable.ic_farm_bg_dark else Res.drawable.ic_farm_bg_light
+        val overlayTone = if (darkTheme) Color(0xFF0C1911) else MaterialTheme.colorScheme.surface
+        
         Image(
-            painter = painterResource(Res.drawable.ic_farm_bg),
+            painter = painterResource(bgResource),
             contentDescription = "Farm Background",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f)
@@ -113,9 +119,9 @@ fun AuthScreen(
                     Brush.verticalGradient(
                         colors = listOf(
                             Color.Transparent,
-                            Color(0xFF0C1911).copy(alpha = 0.5f),
-                            Color(0xFF0C1911).copy(alpha = 0.9f),
-                            Color(0xFF0C1911)
+                            overlayTone.copy(alpha = if (darkTheme) 0.5f else 0.35f),
+                            overlayTone.copy(alpha = if (darkTheme) 0.9f else 0.72f),
+                            overlayTone
                         )
                     )
                 )
@@ -146,15 +152,15 @@ fun AuthScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         val authFieldColors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Sand100,
-                            unfocusedTextColor = Sand100,
+                            focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                             focusedLabelColor = Mint200,
-                            unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
-                            focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
-                            unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.74f),
+                            focusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.52f),
+                            unfocusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
                             cursorColor = Leaf400,
                             focusedBorderColor = Leaf400,
-                            unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                            unfocusedBorderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.32f),
                         )
 
                         Box(
@@ -165,12 +171,12 @@ fun AuthScreen(
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color.White.copy(alpha = 0.08f)),
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                             ) {
                                 Icon(
                                     imageVector = ArrowBackIcon,
                                     contentDescription = "Back",
-                                    tint = Sand100,
+                                    tint = MaterialTheme.colorScheme.onBackground,
                                 )
                             }
 
@@ -178,7 +184,7 @@ fun AuthScreen(
                                 text = if (isLogin) "Login" else "Sign Up",
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = Sand100,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.align(Alignment.Center)
                             )
                         }
@@ -189,7 +195,7 @@ fun AuthScreen(
                                 "Create your account to start building your digital farm workflow."
                             },
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Sand100.copy(alpha = 0.78f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                             modifier = Modifier.padding(bottom = 8.dp)
                         )
 

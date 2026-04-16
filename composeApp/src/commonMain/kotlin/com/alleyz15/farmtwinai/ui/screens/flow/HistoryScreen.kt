@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,9 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
-import com.alleyz15.farmtwinai.ui.theme.CardDark
 import com.alleyz15.farmtwinai.ui.theme.Mint200
-import com.alleyz15.farmtwinai.ui.theme.Sand100
 
 private val ArrowBackIcon: ImageVector
     get() = ImageVector.Builder(
@@ -71,6 +70,9 @@ fun HistoryScreen(
     onContinueChat: (String) -> Unit,
     onBack: () -> Unit,
 ) {
+    val darkTheme = isAppDarkTheme()
+    val historyCardAlpha = if (darkTheme) 0.4f else 0.9f
+
     LaunchedEffect(Unit) {
         onLoadHistory()
     }
@@ -95,12 +97,12 @@ fun HistoryScreen(
                 ) {
                     IconButton(
                         onClick = onBack,
-                        modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape),
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
                     ) {
                         Icon(
                             imageVector = ArrowBackIcon,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                     Column(
@@ -111,12 +113,12 @@ fun HistoryScreen(
                             text = "History",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Your cloud-sync history",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.8f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                         )
                     }
                 }
@@ -127,7 +129,7 @@ fun HistoryScreen(
                     text = "Past Scanned Insights",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 
                 if (historyRecords == null) {
@@ -137,7 +139,7 @@ fun HistoryScreen(
                 } else if (historyRecords.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.4f)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = historyCardAlpha)),
                         shape = RoundedCornerShape(20.dp),
                     ) {
                         Column(
@@ -145,14 +147,14 @@ fun HistoryScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
                             Text("No logs found", style = MaterialTheme.typography.labelLarge, color = Mint200)
-                            Text("Snap some field insights to populate your history.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Sand100)
+                            Text("Snap some field insights to populate your history.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
                 } else {
                     historyRecords.forEach { record ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = CardDark.copy(alpha = 0.4f)),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = historyCardAlpha)),
                             shape = RoundedCornerShape(20.dp),
                         ) {
                             Column(
@@ -162,18 +164,18 @@ fun HistoryScreen(
                                 Text(
                                     text = record.dateString,
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = Mint200
+                                    color = if (darkTheme) Mint200 else MaterialTheme.colorScheme.primary
                                 )
                                 Text(
                                     text = "Recommendation: " + record.recommendedCrops,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = MaterialTheme.colorScheme.onBackground
                                 )
                                 Text(
                                     text = record.summaryNotes,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = Sand100.copy(alpha = 0.85f),
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.92f),
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
                                 )

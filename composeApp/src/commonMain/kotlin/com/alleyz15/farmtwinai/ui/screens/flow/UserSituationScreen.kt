@@ -138,13 +138,13 @@ fun UserSituationScreen(
                             onClick = { pendingBack = true },
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White.copy(alpha = 0.08f))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                                 .alpha(headerAlpha),
                         ) {
                             Icon(
                                 imageVector = ArrowBackIcon,
                                 contentDescription = "Back",
-                                tint = Sand100,
+                                tint = MaterialTheme.colorScheme.onBackground,
                             )
                         }
                         
@@ -154,7 +154,7 @@ fun UserSituationScreen(
                             text = "Your Situation",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                             modifier = Modifier.alpha(headerAlpha),
                         )
                     }
@@ -164,7 +164,7 @@ fun UserSituationScreen(
                     Text(
                         text = "Choose how you want to start. You will continue directly into farm setup.",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Sand100.copy(alpha = 0.78f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                         textAlign = TextAlign.Start,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -294,9 +294,9 @@ private fun SelectableSituationCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = CardDark.copy(alpha = 0.86f),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
         ),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Row(
@@ -329,19 +329,19 @@ private fun SelectableSituationCard(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                 )
             }
             
             Icon(
                 imageVector = ChevronRightIcon,
                 contentDescription = null,
-                tint = Sand100.copy(alpha = 0.3f),
+                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f),
                 modifier = Modifier.size(24.dp)
             )
         }

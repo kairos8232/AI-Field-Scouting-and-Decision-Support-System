@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,14 @@ fun DashboardScreen(
     onSelectMeTab: (() -> Unit)? = null,
     getLotSummary: (LotSectionDraft) -> com.alleyz15.farmtwinai.domain.model.CropSummary = { snapshot.cropSummary },
 ) {
+    val darkTheme = isAppDarkTheme()
+    val inactiveChipBorder = if (darkTheme) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+    val inactiveChipBg = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+    val summaryCardBg = if (darkTheme) Color.Black.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+    val summaryCardBorder = if (darkTheme) Color.White.copy(alpha = 0.15f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+    val statCardBgAlpha = if (darkTheme) 0.45f else 0.82f
+    val secondaryButtonBgAlpha = if (darkTheme) 0.55f else 0.9f
+
     var selectedLotId by remember(lotSections) { mutableStateOf(lotSections.firstOrNull()?.id.orEmpty()) }
     val selectedLot = lotSections.firstOrNull { it.id == selectedLotId } ?: lotSections.firstOrNull()
     val hasMultipleLots = lotSections.size > 1
@@ -86,12 +95,12 @@ fun DashboardScreen(
                         text = "Farm Dashboard",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = Sand100,
+                        color = MaterialTheme.colorScheme.onBackground,
                     )
                     Text(
                         text = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Sand100.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
                     )
                 }
 
@@ -102,14 +111,14 @@ fun DashboardScreen(
                         text = "Farm lot map view",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Sand100,
+                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = if (hasMultipleLots) "Tap a lot below to view that lot's details." else "Single-lot setup detected. Showing full lot details.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Sand100.copy(alpha = 0.78f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                     )
                     
@@ -132,11 +141,11 @@ fun DashboardScreen(
                                     modifier = Modifier
                                         .border(
                                             width = 1.dp,
-                                            color = if (isSelected) Leaf400 else Color.White.copy(alpha = 0.2f),
+                                            color = if (isSelected) Leaf400 else inactiveChipBorder,
                                             shape = RoundedCornerShape(999.dp),
                                         )
                                         .background(
-                                            color = if (isSelected) Leaf400.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f),
+                                            color = if (isSelected) Leaf400.copy(alpha = 0.2f) else inactiveChipBg,
                                             shape = RoundedCornerShape(999.dp),
                                         )
                                         .clickable { selectedLotId = lot.id }
@@ -145,7 +154,7 @@ fun DashboardScreen(
                                     Text(
                                         text = lot.name, 
                                         style = MaterialTheme.typography.labelLarge,
-                                        color = if (isSelected) Mint200 else Sand100
+                                        color = MaterialTheme.colorScheme.onBackground
                                     )
                                 }
                             }
@@ -160,15 +169,15 @@ fun DashboardScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
-                                .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
+                                .border(1.dp, summaryCardBorder, RoundedCornerShape(14.dp))
+                                .background(summaryCardBg, RoundedCornerShape(14.dp))
                                 .clickable(onClick = onOpenTimeline)
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                         ) {
                             Text(
                                 text = "Crop ${lot.cropPlan} • Soil ${lot.soilType} • Water ${lot.waterAvailability}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Sand100,
+                                color = MaterialTheme.colorScheme.onBackground,
                             )
                         }
 
@@ -178,26 +187,26 @@ fun DashboardScreen(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = statCardBgAlpha), RoundedCornerShape(14.dp))
                                     .padding(16.dp)
                             ) {
                                 Column {
-                                    Text("Current day", style = MaterialTheme.typography.bodySmall, color = Sand100.copy(alpha = 0.7f))
+                                    Text("Current day", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f))
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Day ${cropSummary.currentDay}", style = MaterialTheme.typography.titleMedium, color = Sand100, fontWeight = FontWeight.SemiBold)
+                                    Text("Day ${cropSummary.currentDay}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                             
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = statCardBgAlpha), RoundedCornerShape(14.dp))
                                     .padding(16.dp)
                             ) {
                                 Column {
-                                    Text("Health score", style = MaterialTheme.typography.bodySmall, color = Sand100.copy(alpha = 0.7f))
+                                    Text("Health score", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f))
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("${cropSummary.currentFarmHealthScore}/100", style = MaterialTheme.typography.titleMedium, color = Sand100, fontWeight = FontWeight.SemiBold)
+                                    Text("${cropSummary.currentFarmHealthScore}/100", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -213,7 +222,7 @@ fun DashboardScreen(
                     Button(
                         onClick = onOpenHistory,
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = secondaryButtonBgAlpha), contentColor = MaterialTheme.colorScheme.onBackground),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("View History")
@@ -222,10 +231,10 @@ fun DashboardScreen(
                     Button(
                         onClick = onOpenChat,
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = secondaryButtonBgAlpha), contentColor = MaterialTheme.colorScheme.onBackground),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Open AI Chat")
+                        Text("Open AI Consultation")
                     }
                 }
             }
@@ -238,7 +247,7 @@ fun DashboardScreen(
                     .fillMaxWidth()
             ) {
                 // Background behind tab bar to avoid transparent bleed
-                Box(modifier = Modifier.matchParentSize().background(Color(0xFF0d1f11))) // dark mode matching tab bar
+                Box(modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surface))
                 HomeTabBar(
                     selectedTab = HomeTab.DASHBOARD,
                     onSelectDashboard = onSelectDashboardTab,
@@ -256,7 +265,7 @@ private fun LotMapPreview(
     onLotSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val palette = listOf(Leaf400, Mint200, Sand100)
+    val palette = listOf(Leaf400, Mint200, MaterialTheme.colorScheme.onBackground)
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
 
     Box(

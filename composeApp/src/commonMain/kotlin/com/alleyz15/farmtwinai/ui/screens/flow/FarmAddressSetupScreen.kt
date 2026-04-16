@@ -76,12 +76,12 @@ fun FarmAddressSetupScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.08f)),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                     ) {
                         Icon(
                             imageVector = ArrowBackIcon,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
                     
@@ -92,12 +92,12 @@ fun FarmAddressSetupScreen(
                             text = "Farm Setup",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Step 1 of 3 - Set address",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -108,7 +108,7 @@ fun FarmAddressSetupScreen(
                     text = "Search farm area",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                 )
                 
@@ -116,15 +116,15 @@ fun FarmAddressSetupScreen(
                 
                 // Form Field Colors
                 val fieldColors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Sand100,
-                    unfocusedTextColor = Sand100,
+                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                     focusedLabelColor = Mint200,
-                    unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
-                    focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
-                    unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.74f),
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.52f),
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
                     cursorColor = Leaf400,
                     focusedBorderColor = Leaf400,
-                    unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.32f),
                 )
                 
                 OutlinedTextField(
@@ -145,7 +145,7 @@ fun FarmAddressSetupScreen(
                     Button(
                         onClick = onSearch,
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Search")
@@ -154,7 +154,7 @@ fun FarmAddressSetupScreen(
                     Button(
                         onClick = onUseCurrentLocation,
                         modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.1f), contentColor = Sand100),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("My Location")
@@ -185,7 +185,7 @@ fun FarmAddressSetupScreen(
                 Text(
                     text = "Pan and zoom to your area. Next will save this map view and continue to boundary drawing.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                 )
                 

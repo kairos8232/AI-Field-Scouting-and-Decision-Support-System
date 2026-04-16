@@ -133,9 +133,9 @@ fun LotSectionSetupScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.08f)),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                     ) {
-                        Icon(BackIconDraw2, contentDescription = "Back", tint = Sand100)
+                        Icon(BackIconDraw2, contentDescription = "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
 
                     Spacer(modifier = Modifier.width(16.dp))
@@ -145,12 +145,12 @@ fun LotSectionSetupScreen(
                             text = "Farm Setup",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Step 3 of 3 - Subdivide farm",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -158,15 +158,15 @@ fun LotSectionSetupScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 val fieldColors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Sand100,
-                    unfocusedTextColor = Sand100,
+                    focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                    unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                     focusedLabelColor = Mint200,
-                    unfocusedLabelColor = Sand100.copy(alpha = 0.74f),
-                    focusedPlaceholderColor = Sand100.copy(alpha = 0.52f),
-                    unfocusedPlaceholderColor = Sand100.copy(alpha = 0.42f),
+                    unfocusedLabelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.74f),
+                    focusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.52f),
+                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.42f),
                     cursorColor = Leaf400,
                     focusedBorderColor = Leaf400,
-                    unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.32f),
                 )
 
                 OutlinedTextField(
@@ -205,7 +205,7 @@ fun LotSectionSetupScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     if (boundaryPoints.isEmpty()) {
-                        Text("No boundary defined", color = Sand100)
+                        Text("No boundary defined", color = MaterialTheme.colorScheme.onBackground)
                     } else {
                         PlatformGoogleMap(
                             modifier = Modifier.fillMaxSize(),
@@ -327,7 +327,7 @@ fun LotSectionSetupScreen(
                                         val c = toOffsetDraw(pt, size)
                                         val isHot = isSelected
                                         drawCircle(Color.Black.copy(alpha = if (isHot) 0.35f else 0.22f), radius = if (isHot) 11.5f else 9.5f, center = c)
-                                        drawCircle(if (isHot) Sand100 else Color(0xFFDDF8F0), radius = if (isHot) 8.5f else 7f, center = c)
+                                        drawCircle(if (isHot) Color(0xFFF4F1E8) else Color(0xFFDDF8F0), radius = if (isHot) 8.5f else 7f, center = c)
                                     }
                                 }
                             }
@@ -345,7 +345,7 @@ fun LotSectionSetupScreen(
                     Text(
                         text = "${lots.size} lot(s)",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Sand100.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                     )
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -368,7 +368,7 @@ fun LotSectionSetupScreen(
                                 }
                             }
                         ) {
-                            Text("Undo", color = Sand100)
+                            Text("Undo", color = MaterialTheme.colorScheme.onBackground)
                         }
 
                         TextButton(
@@ -378,7 +378,7 @@ fun LotSectionSetupScreen(
                                 applyTemplate(templateMode, target)
                             }
                         ) {
-                            Text("New Lot", color = Sand100)
+                            Text("New Lot", color = MaterialTheme.colorScheme.onBackground)
                         }
 
                         TextButton(
@@ -396,7 +396,7 @@ fun LotSectionSetupScreen(
                                 }
                             }
                         ) {
-                            Text("Clear Lot", color = Sand100)
+                            Text("Clear Lot", color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
                 }
@@ -427,8 +427,8 @@ fun LotSectionSetupScreen(
                                 applyTemplate(mode, templateCountText)
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selected) Mint200.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f),
-                                contentColor = if (selected) Mint200 else Sand100,
+                                containerColor = if (selected) Mint200.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                contentColor = if (selected) Mint200 else MaterialTheme.colorScheme.onBackground,
                             ),
                             shape = RoundedCornerShape(12.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
@@ -456,12 +456,12 @@ fun LotSectionSetupScreen(
                         textStyle = MaterialTheme.typography.bodyMedium,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Sand100,
-                            unfocusedTextColor = Sand100,
+                            focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                             focusedBorderColor = Leaf400,
-                            unfocusedBorderColor = Sand100.copy(alpha = 0.32f),
+                            unfocusedBorderColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.32f),
                             focusedLabelColor = Mint200,
-                            unfocusedLabelColor = Sand100.copy(alpha = 0.7f),
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             cursorColor = Leaf400,
                         ),
                     )
@@ -472,7 +472,7 @@ fun LotSectionSetupScreen(
                     Text(
                         text = "Grid count accepts even numbers only.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Sand100.copy(alpha = 0.62f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.62f),
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                     )
                 }
@@ -508,7 +508,7 @@ fun LotSectionSetupScreen(
                         .widthIn(max = maxContentWidth),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color.White.copy(alpha = 0.08f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                     )
                 ) {
                     Column(
@@ -518,7 +518,7 @@ fun LotSectionSetupScreen(
                         Text(
                             text = "Selected Lot Area",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Sand100.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -536,7 +536,7 @@ fun LotSectionSetupScreen(
                             Text(
                                 text = "${formatFixedDraw(selectedLotPercentage, 1)}% of farm",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Sand100.copy(alpha = 0.7f),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             )
                         }
                     }
@@ -550,7 +550,7 @@ fun LotSectionSetupScreen(
                         text = "Lot ${selectedLotIndex + 1} details",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = Sand100,
+                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -615,7 +615,7 @@ fun LotSectionSetupScreen(
                     Text(
                         text = "Soil/Water data will be auto-filled by AI in next step.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Sand100.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth).padding(start = 4.dp),
                     )
                     
@@ -630,7 +630,7 @@ fun LotSectionSetupScreen(
                                 onClick = { selectedLotIndex = idx },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isSel) Mint200.copy(alpha = 0.15f) else Color.Transparent,
-                                    contentColor = if (isSel) Mint200 else Sand100.copy(alpha = 0.7f)
+                                    contentColor = if (isSel) Mint200 else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                                 ),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.height(36.dp)
@@ -644,7 +644,7 @@ fun LotSectionSetupScreen(
                     Text(
                         text = "Select or draw a lot to configure crop details.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Sand100.copy(alpha = 0.6f),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     )
                 }
 

@@ -277,6 +277,8 @@ fun FarmTwinNavHost(
             onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
             onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
             onOpenHistory = { navigator.navigate(AppDestination.History) },
+            selectedThemePreference = appState.themePreference,
+            onThemePreferenceChange = appState::setThemePreference,
             onSignOut = {
                 appState.signOut()
                 navigator.resetTo(AppDestination.Welcome)

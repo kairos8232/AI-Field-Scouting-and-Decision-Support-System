@@ -38,17 +38,26 @@ import com.alleyz15.farmtwinai.ui.theme.Forest900
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
 import farmtwinai.composeapp.generated.resources.Res
-import farmtwinai.composeapp.generated.resources.ic_farm_bg
+import farmtwinai.composeapp.generated.resources.ic_farm_bg_dark
+import farmtwinai.composeapp.generated.resources.ic_farm_bg_light
 import org.jetbrains.compose.resources.painterResource
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 
 @Composable
 fun WelcomeScreen(
     onLogin: () -> Unit,
     onSignUp: () -> Unit,
 ) {
-    Box(modifier = Modifier.fillMaxSize().background(CardDark)) {
+    val darkTheme = isAppDarkTheme()
+    val bgResource = if (darkTheme) Res.drawable.ic_farm_bg_dark else Res.drawable.ic_farm_bg_light
+    val rootBg = if (darkTheme) CardDark else MaterialTheme.colorScheme.background
+    val overlayTop = if (darkTheme) Color.Black.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.12f)
+    val overlayMid = if (darkTheme) MaterialTheme.colorScheme.surface.copy(alpha = 0.8f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+    val overlayBottom = if (darkTheme) CardDark else MaterialTheme.colorScheme.background
+    
+    Box(modifier = Modifier.fillMaxSize().background(rootBg)) {
         Image(
-            painter = painterResource(Res.drawable.ic_farm_bg),
+            painter = painterResource(bgResource),
             contentDescription = "Farm Background",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
@@ -60,10 +69,10 @@ fun WelcomeScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.2f),
+                            overlayTop,
                             Color.Transparent,
-                            CardDark.copy(alpha = 0.8f),
-                            CardDark
+                            overlayMid,
+                            overlayBottom
                         ),
                         startY = 0f,
                         endY = Float.POSITIVE_INFINITY
@@ -132,7 +141,7 @@ private fun AppBrandBlock() {
             androidx.compose.material3.Icon(
                 imageVector = FarmLogoIcon,
                 contentDescription = "FarmTwin logo",
-                tint = Sand100,
+                tint = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.size(36.dp),
             )
         }
@@ -142,13 +151,13 @@ private fun AppBrandBlock() {
                 text = "FarmTwin",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
-                color = Sand100,
+                color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
             )
             Text(
                 text = "Your Farm, Reimagined by AI",
                 style = MaterialTheme.typography.titleMedium,
-                color = Sand100.copy(alpha = 0.85f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
                 textAlign = TextAlign.Center,
             )
         }

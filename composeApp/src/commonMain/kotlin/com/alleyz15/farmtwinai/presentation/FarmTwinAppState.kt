@@ -30,6 +30,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+enum class ThemePreference {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
 class FarmTwinAppState(
     repository: MockFarmTwinRepository,
     private val fieldInsightsRepository: FieldInsightsRepository,
@@ -183,6 +189,9 @@ class FarmTwinAppState(
     var aiConversationProvider by mutableStateOf<String?>(null)
         private set
 
+    var themePreference by mutableStateOf(ThemePreference.SYSTEM)
+        private set
+
     private var aiConversationMessageIndex = 0
 
     val isAuthenticated: Boolean
@@ -236,6 +245,10 @@ class FarmTwinAppState(
 
     fun setMode(mode: AppMode) {
         selectedMode = mode
+    }
+
+    fun setThemePreference(preference: ThemePreference) {
+        themePreference = preference
     }
 
     fun setSetupMethod(method: SetupMethod) {
