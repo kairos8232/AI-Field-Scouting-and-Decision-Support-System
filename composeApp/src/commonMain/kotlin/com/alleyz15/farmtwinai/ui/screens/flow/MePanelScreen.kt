@@ -2,6 +2,7 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +44,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.auth.AuthUser
@@ -49,8 +56,10 @@ import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
+import com.alleyz15.farmtwinai.presentation.StoredFarm
 import com.alleyz15.farmtwinai.presentation.ThemePreference
 import com.alleyz15.farmtwinai.ui.theme.Mint200
+import kotlin.math.roundToInt
 
 private val ArrowBackIcon: ImageVector
     get() = ImageVector.Builder(
@@ -104,9 +113,15 @@ fun AuroraOptionCard(
 fun MePanelScreen(
     snapshot: FarmTwinSnapshot,
     lotSections: List<LotSectionDraft>,
+    storedFarms: List<StoredFarm>,
     authenticatedUser: AuthUser?,
     onBack: (() -> Unit)?,
+    onAddFarm: () -> Unit,
     onModifyFarm: () -> Unit,
+    onSwitchFarm: (String) -> Unit,
+    onDeleteFarm: (String) -> Unit,
+    onDeleteActiveFarm: () -> Unit,
+    canDeleteActiveFarm: Boolean,
     selectedThemePreference: ThemePreference,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onSignOut: () -> Unit,
@@ -130,6 +145,17 @@ fun MePanelScreen(
     } else {
         snapshot.farm.cropName
     }
+    val activeFarmCard = StoredFarm(
+        id = "__active__",
+        farmName = snapshot.farm.farmName,
+        address = snapshot.farm.location,
+        mapQuery = "",
+        totalAreaInput = snapshot.farm.fieldSize,
+        mode = snapshot.farm.mode,
+        boundaryPoints = emptyList(),
+        lots = lotSections,
+    )
+    val farmCards = listOf(activeFarmCard) + storedFarms
 
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
@@ -244,19 +270,128 @@ fun MePanelScreen(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
-                
-                AuroraInfoCard(
-                    title = "Active Farm",
-                    value = snapshot.farm.farmName,
-                    supporting = "Crops:\n$cropSummaryText",
-                )
+
+                farmCards.forEachIndexed { index, farm ->
+                    val isActive = index == 0
+                    var revealPx by remember(farm.id) { mutableStateOf(0f) }
+                    val density = LocalDensity.current
+                    val maxRevealPx = with(density) { 92.dp.toPx() }
+                    val canDeleteThisCard = if (isActive) canDeleteActiveFarm else true
+                    val farmCropLine = farm.lots
+                        .mapNotNull { lot ->
+                            val crop = lot.cropPlan.trim()
+                            if (crop.isEmpty()) null else "${lot.name}: $crop"
+                        }
+                    val cropSummary = if (farmCropLine.isNotEmpty()) {
+                        farmCropLine.joinToString(separator = "  •  ")
+                    } else {
+                        "No crop plan"
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(),
+                    ) {
+                        if (canDeleteThisCard && revealPx <= -2f) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .fillMaxHeight()
+                                    .width(92.dp)
+                                    .background(Color(0xFFD86A6A), RoundedCornerShape(16.dp))
+                                    .clickable {
+                                        if (isActive) onDeleteActiveFarm() else onDeleteFarm(farm.id)
+                                    }
+                                    .padding(horizontal = 20.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("Delete", color = Color.White, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .offset { IntOffset(revealPx.roundToInt(), 0) }
+                                .pointerInput(canDeleteThisCard) {
+                                    if (!canDeleteThisCard) return@pointerInput
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val next = revealPx + dragAmount
+                                            revealPx = next.coerceIn(-maxRevealPx, 0f)
+                                        },
+                                        onDragEnd = {
+                                            revealPx = if (revealPx < -maxRevealPx * 0.45f) -maxRevealPx else 0f
+                                        },
+                                    )
+                                }
+                                .clickable {
+                                    if (revealPx < -6f) {
+                                        revealPx = 0f
+                                    } else if (!isActive) {
+                                        onSwitchFarm(farm.id)
+                                    }
+                                },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+                            shape = RoundedCornerShape(16.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = farm.farmName,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                    )
+                                    if (isActive) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Mint200.copy(alpha = 0.26f), RoundedCornerShape(999.dp))
+                                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        ) {
+                                            Text(
+                                                text = "Active",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = Mint200,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = ">",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = cropSummary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
+                                    maxLines = 2,
+                                )
+
+                            }
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Button(
-                        onClick = onModifyFarm,
+                        onClick = onAddFarm,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Mint200,
@@ -269,7 +404,7 @@ fun MePanelScreen(
                         onClick = onModifyFarm,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Modify Farm", color = MaterialTheme.colorScheme.onBackground)
+                        Text("Edit Active Farm", color = MaterialTheme.colorScheme.onBackground)
                     }
                 }
 

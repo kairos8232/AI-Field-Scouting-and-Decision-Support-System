@@ -7,6 +7,7 @@ import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
 import com.alleyz15.farmtwinai.data.auth.AuthRepository
 import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
+import com.alleyz15.farmtwinai.data.farm.FarmConfigFarmEntry
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRemote
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
 import com.alleyz15.farmtwinai.data.farm.TimelinePhotoCacheEntry
@@ -19,6 +20,7 @@ import com.alleyz15.farmtwinai.domain.model.AppMode
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.FarmProfile
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.domain.model.MessageSender
@@ -43,6 +45,17 @@ data class TimelineUploadCache(
     val photoBase64: String,
     val photoMimeType: String,
     val updatedAtEpochMs: Long,
+)
+
+data class StoredFarm(
+    val id: String,
+    val farmName: String,
+    val address: String,
+    val mapQuery: String,
+    val totalAreaInput: String,
+    val mode: AppMode,
+    val boundaryPoints: List<FarmPoint>,
+    val lots: List<LotSectionDraft>,
 )
 
 class FarmTwinAppState(
@@ -205,6 +218,13 @@ class FarmTwinAppState(
 
     var timelineDynamicStatusByDay by mutableStateOf<Map<Int, TimelineStatus>>(emptyMap())
         private set
+
+    var storedFarms by mutableStateOf<List<StoredFarm>>(emptyList())
+        private set
+
+    private var isAddFarmDraftActive by mutableStateOf(false)
+    private var pendingActiveFarmBeforeAdd: StoredFarm? = null
+    private var pendingSnapshotFarmBeforeAdd: FarmProfile? = null
 
     var aiConversationMessages by mutableStateOf<List<ChatMessage>>(emptyList())
         private set
@@ -581,6 +601,113 @@ class FarmTwinAppState(
         clearLotRecommendationState()
     }
 
+    fun startAddFarmFlow() {
+        pendingActiveFarmBeforeAdd = currentFarmAsStored()
+        pendingSnapshotFarmBeforeAdd = snapshot.farm
+        isAddFarmDraftActive = true
+        prepareNewFarmDraft()
+    }
+
+    fun cancelAddFarmDraftIfNeeded(): Boolean {
+        if (!isAddFarmDraftActive) return false
+
+        val previous = pendingActiveFarmBeforeAdd
+        if (previous != null) {
+            farmSetupFarmName = previous.farmName
+            farmSetupAddress = previous.address
+            farmSetupMapQuery = previous.mapQuery
+            lotTotalAreaInput = previous.totalAreaInput
+            selectedMode = previous.mode
+            if (previous.boundaryPoints.size >= 3) {
+                farmBoundaryPoints = previous.boundaryPoints
+            }
+            if (previous.lots.isNotEmpty()) {
+                lotSections = previous.lots
+            }
+        }
+
+        pendingSnapshotFarmBeforeAdd?.let { previousFarm ->
+            snapshot = snapshot.copy(farm = previousFarm)
+        }
+
+        isAddFarmDraftActive = false
+        pendingActiveFarmBeforeAdd = null
+        pendingSnapshotFarmBeforeAdd = null
+        return true
+    }
+
+    fun switchToStoredFarm(farmId: String) {
+        val target = storedFarms.firstOrNull { it.id == farmId } ?: return
+
+        currentFarmAsStored()?.let { current ->
+            if (current.id != target.id) {
+                storeFarmIfUnique(current, exceptId = target.id)
+            }
+        }
+
+        farmSetupFarmName = target.farmName
+        farmSetupAddress = target.address
+        farmSetupMapQuery = target.mapQuery
+        lotTotalAreaInput = target.totalAreaInput
+        selectedMode = target.mode
+
+        if (target.boundaryPoints.size >= 3) {
+            farmBoundaryPoints = target.boundaryPoints
+        }
+        if (target.lots.isNotEmpty()) {
+            lotSections = target.lots
+        }
+
+        val primaryCrop = target.lots.firstOrNull()?.cropPlan?.trim().orEmpty()
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                farmName = target.farmName.ifBlank { snapshot.farm.farmName },
+                cropName = if (primaryCrop.isNotBlank()) primaryCrop else snapshot.farm.cropName,
+                location = target.address.ifBlank { snapshot.farm.location },
+                fieldSize = target.totalAreaInput.ifBlank { snapshot.farm.fieldSize },
+                mode = target.mode,
+            ),
+        )
+
+        storedFarms = storedFarms.filterNot { it.id == target.id }
+
+        timelineStageVisual = null
+        timelineStageVisualByDay = emptyMap()
+        timelineStageVisualError = null
+        timelineStageVisualErrorByDay = emptyMap()
+        timelinePhotoAssessment = null
+        timelinePhotoAssessmentByDay = emptyMap()
+        timelinePhotoAssessmentError = null
+        timelinePhotoAssessmentErrorByDay = emptyMap()
+        timelineUploadByDay = emptyMap()
+        timelineDynamicStatusByDay = emptyMap()
+
+        val userId = authenticatedUser?.userId
+        if (!userId.isNullOrBlank()) {
+            scope.launch {
+                runCatching {
+                    farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))
+                }
+            }
+        }
+    }
+
+    fun deleteStoredFarm(farmId: String) {
+        if (farmId.isBlank()) return
+        storedFarms = storedFarms.filterNot { it.id == farmId }
+        persistFarmConfigSilently()
+    }
+
+    fun deleteActiveFarm(): Boolean {
+        val currentId = currentFarmAsStored()?.id ?: return false
+        val nextFarm = storedFarms.firstOrNull() ?: return false
+
+        switchToStoredFarm(nextFarm.id)
+        storedFarms = storedFarms.filterNot { it.id == currentId }
+        persistFarmConfigSilently()
+        return true
+    }
+
     fun fetchEnvironmentalDataForLots() {
         if (isFetchingEnvData) return
         val needsEnvData = lotSections.any { it.soilType.isBlank() || it.waterAvailability.isBlank() }
@@ -790,6 +917,15 @@ class FarmTwinAppState(
 
             finalizeLotRecommendation(followRecommendation = followRecommendation)
 
+            if (isAddFarmDraftActive) {
+                pendingActiveFarmBeforeAdd?.let { previous ->
+                    storeFarmIfUnique(previous)
+                }
+                isAddFarmDraftActive = false
+                pendingActiveFarmBeforeAdd = null
+                pendingSnapshotFarmBeforeAdd = null
+            }
+
             if (userId.isNullOrBlank()) {
                 isFarmConfigSyncing = false
                 onComplete(true)
@@ -965,6 +1101,56 @@ class FarmTwinAppState(
         )
     }
 
+    private fun currentFarmAsStored(): StoredFarm? {
+        val farmName = farmSetupFarmName.trim().ifBlank { snapshot.farm.farmName.trim() }
+        val address = farmSetupAddress.trim().ifBlank { snapshot.farm.location.trim() }
+        val mapQuery = farmSetupMapQuery.trim().ifBlank { address }
+        val totalArea = lotTotalAreaInput.trim().ifBlank { snapshot.farm.fieldSize.trim() }
+        val boundary = if (farmBoundaryPoints.size >= 3) farmBoundaryPoints else lotSections.firstOrNull()?.points.orEmpty()
+        val lotsCopy = lotSections.map { lot -> lot.copy(points = lot.points.toList()) }
+
+        if (farmName.isBlank() || lotsCopy.isEmpty()) return null
+
+        return StoredFarm(
+            id = farmIdentity(farmName = farmName, address = address, lots = lotsCopy),
+            farmName = farmName,
+            address = address,
+            mapQuery = mapQuery,
+            totalAreaInput = totalArea,
+            mode = selectedMode,
+            boundaryPoints = boundary,
+            lots = lotsCopy,
+        )
+    }
+
+    private fun storeFarmIfUnique(farm: StoredFarm, exceptId: String? = null) {
+        if (!isStoredFarmReady(farm)) return
+        if (farm.id == exceptId) return
+        if (storedFarms.any { it.id == farm.id }) return
+        storedFarms = listOf(farm) + storedFarms.filterNot { it.id == exceptId }
+    }
+
+    private fun isStoredFarmReady(farm: StoredFarm): Boolean {
+        if (farm.farmName.isBlank()) return false
+        if (farm.lots.isEmpty()) return false
+        return farm.lots.all { lot ->
+            lot.points.size >= 3 &&
+                lot.cropPlan.trim().isNotEmpty()
+        }
+    }
+
+    private fun farmIdentity(
+        farmName: String,
+        address: String,
+        lots: List<LotSectionDraft>,
+    ): String {
+        val cropFingerprint = lots
+            .map { lot -> "${lot.name.trim().lowercase()}:${lot.cropPlan.trim().lowercase()}" }
+            .sorted()
+            .joinToString("|")
+        return "${farmName.trim().lowercase()}::${address.trim().lowercase()}::${lots.size}::${cropFingerprint}"
+    }
+
     private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
         if (boundaryPoints.size < 3 || isPointInsidePolygon(candidate, boundaryPoints)) return candidate
 
@@ -1032,6 +1218,7 @@ class FarmTwinAppState(
     }
 
     private fun buildFarmConfigDraft(userId: String): FarmConfigDraft {
+        val activeFarm = currentFarmAsStored()
         val photoCache = timelineUploadByDay.map { (dayNumber, upload) ->
             TimelinePhotoCacheEntry(
                 dayNumber = dayNumber,
@@ -1052,55 +1239,107 @@ class FarmTwinAppState(
             )
         }
 
+        val farmsForSync = buildList {
+            if (activeFarm != null) {
+                add(activeFarm)
+            }
+            addAll(storedFarms)
+        }
+            .distinctBy { it.id }
+            .map { farm ->
+                FarmConfigFarmEntry(
+                    id = farm.id,
+                    farmName = farm.farmName,
+                    address = farm.address,
+                    mapQuery = farm.mapQuery,
+                    totalAreaInput = farm.totalAreaInput,
+                    mode = farm.mode,
+                    boundaryPoints = farm.boundaryPoints,
+                    lots = farm.lots,
+                )
+            }
+
         return FarmConfigDraft(
             userId = userId,
-            farmName = farmSetupFarmName.trim(),
-            address = farmSetupAddress.trim(),
-            mapQuery = farmSetupMapQuery.trim(),
-            totalAreaInput = lotTotalAreaInput.trim(),
-            mode = selectedMode,
-            boundaryPoints = farmBoundaryPoints,
-            lots = lotSections,
+            activeFarmId = activeFarm?.id.orEmpty(),
+            farms = farmsForSync,
+            farmName = activeFarm?.farmName ?: farmSetupFarmName.trim(),
+            address = activeFarm?.address ?: farmSetupAddress.trim(),
+            mapQuery = activeFarm?.mapQuery ?: farmSetupMapQuery.trim(),
+            totalAreaInput = activeFarm?.totalAreaInput ?: lotTotalAreaInput.trim(),
+            mode = activeFarm?.mode ?: selectedMode,
+            boundaryPoints = activeFarm?.boundaryPoints ?: farmBoundaryPoints,
+            lots = activeFarm?.lots ?: lotSections,
             timelinePhotoCache = photoCache,
             timelineStageVisualCache = stageCache,
         )
     }
 
     private fun applyRemoteFarmConfig(remote: FarmConfigRemote) {
-        if (remote.farmName.isNotBlank()) {
+        val previousFarm = currentFarmAsStored()
+        val remoteActiveId = remote.activeFarmId.ifBlank { remote.farms.firstOrNull()?.id.orEmpty() }
+        val resolvedActive = remote.farms.firstOrNull { it.id == remoteActiveId } ?: remote.farms.firstOrNull()
+        val inactiveRemoteFarms = remote.farms.filterNot { it.id == resolvedActive?.id }
+
+        if (inactiveRemoteFarms.isNotEmpty()) {
+            storedFarms = inactiveRemoteFarms.map { farm ->
+                StoredFarm(
+                    id = farm.id,
+                    farmName = farm.farmName,
+                    address = farm.address,
+                    mapQuery = farm.mapQuery,
+                    totalAreaInput = farm.totalAreaInput,
+                    mode = farm.mode,
+                    boundaryPoints = farm.boundaryPoints,
+                    lots = farm.lots,
+                )
+            }
+        }
+
+        if (!resolvedActive?.farmName.isNullOrBlank()) {
+            farmSetupFarmName = resolvedActive.farmName
+        } else if (remote.farmName.isNotBlank()) {
             farmSetupFarmName = remote.farmName
         }
 
-        if (remote.address.isNotBlank()) {
+        if (!resolvedActive?.address.isNullOrBlank()) {
+            farmSetupAddress = resolvedActive.address
+        } else if (remote.address.isNotBlank()) {
             farmSetupAddress = remote.address
         }
 
-        if (remote.mapQuery.isNotBlank()) {
+        if (!resolvedActive?.mapQuery.isNullOrBlank()) {
+            farmSetupMapQuery = resolvedActive.mapQuery
+        } else if (remote.mapQuery.isNotBlank()) {
             farmSetupMapQuery = remote.mapQuery
         }
 
-        if (remote.totalAreaInput.isNotBlank()) {
+        if (!resolvedActive?.totalAreaInput.isNullOrBlank()) {
+            lotTotalAreaInput = resolvedActive.totalAreaInput
+        } else if (remote.totalAreaInput.isNotBlank()) {
             lotTotalAreaInput = remote.totalAreaInput
         }
 
-        selectedMode = remote.mode
+        selectedMode = resolvedActive?.mode ?: remote.mode
 
-        if (remote.boundaryPoints.size >= 3) {
-            farmBoundaryPoints = remote.boundaryPoints
+        val activeBoundary = resolvedActive?.boundaryPoints ?: remote.boundaryPoints
+        if (activeBoundary.size >= 3) {
+            farmBoundaryPoints = activeBoundary
         }
 
-        if (remote.lots.isNotEmpty()) {
-            lotSections = remote.lots
+        val activeLots = resolvedActive?.lots ?: remote.lots
+        if (activeLots.isNotEmpty()) {
+            lotSections = activeLots
         }
 
-        val primaryCrop = remote.lots.firstOrNull()?.cropPlan?.trim().orEmpty()
+        val primaryCrop = activeLots.firstOrNull()?.cropPlan?.trim().orEmpty()
         snapshot = snapshot.copy(
             farm = snapshot.farm.copy(
-                farmName = remote.farmName.ifBlank { snapshot.farm.farmName },
+                farmName = (resolvedActive?.farmName ?: remote.farmName).ifBlank { snapshot.farm.farmName },
                 cropName = if (primaryCrop.isNotBlank()) primaryCrop else snapshot.farm.cropName,
-                location = remote.address.ifBlank { snapshot.farm.location },
-                fieldSize = remote.totalAreaInput.ifBlank { snapshot.farm.fieldSize },
-                mode = remote.mode,
+                location = (resolvedActive?.address ?: remote.address).ifBlank { snapshot.farm.location },
+                fieldSize = (resolvedActive?.totalAreaInput ?: remote.totalAreaInput).ifBlank { snapshot.farm.fieldSize },
+                mode = resolvedActive?.mode ?: remote.mode,
             ),
         )
 
@@ -1134,12 +1373,30 @@ class FarmTwinAppState(
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
         timelineStageVisualError = timelineStageVisualErrorByDay[selectedDayNumber]
         timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[selectedDayNumber]
+
+        val activeId = farmIdentity(
+            farmName = farmSetupFarmName.ifBlank { snapshot.farm.farmName },
+            address = farmSetupAddress.ifBlank { snapshot.farm.location },
+            lots = lotSections,
+        )
+        if (previousFarm != null && previousFarm.id != activeId) {
+            storeFarmIfUnique(previousFarm, exceptId = activeId)
+        }
     }
 
     private fun persistTimelineCacheToCloudIfAuthenticated() {
         val userId = authenticatedUser?.userId ?: return
         if (farmSetupFarmName.trim().isBlank() || lotSections.isEmpty()) return
 
+        scope.launch {
+            runCatching {
+                farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))
+            }
+        }
+    }
+
+    private fun persistFarmConfigSilently() {
+        val userId = authenticatedUser?.userId ?: return
         scope.launch {
             runCatching {
                 farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))

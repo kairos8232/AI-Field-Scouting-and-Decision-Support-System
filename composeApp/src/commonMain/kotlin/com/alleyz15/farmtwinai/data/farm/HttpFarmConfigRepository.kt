@@ -34,6 +34,36 @@ class HttpFarmConfigRepository(
     override suspend fun upsertFarmConfig(draft: FarmConfigDraft) {
         val payload = buildJsonObject {
             put("userId", draft.userId)
+            put("activeFarmId", draft.activeFarmId)
+            put("farms", buildJsonArray {
+                draft.farms.forEach { farm ->
+                    add(
+                        buildJsonObject {
+                            put("id", farm.id)
+                            put("farmName", farm.farmName)
+                            put("address", farm.address)
+                            put("mapQuery", farm.mapQuery)
+                            put("totalAreaInput", farm.totalAreaInput)
+                            put("mode", farm.mode.name)
+                            put("boundaryPoints", buildPointsArray(farm.boundaryPoints))
+                            put("lots", buildJsonArray {
+                                farm.lots.forEach { lot ->
+                                    add(
+                                        buildJsonObject {
+                                            put("id", lot.id)
+                                            put("name", lot.name)
+                                            put("points", buildPointsArray(lot.points))
+                                            put("cropPlan", lot.cropPlan)
+                                            put("soilType", lot.soilType)
+                                            put("waterAvailability", lot.waterAvailability)
+                                        }
+                                    )
+                                }
+                            })
+                        }
+                    )
+                }
+            })
             put("farmName", draft.farmName)
             put("address", draft.address)
             put("mapQuery", draft.mapQuery)
@@ -118,6 +148,43 @@ class HttpFarmConfigRepository(
         if (item is kotlinx.serialization.json.JsonNull) return null
         val itemObj = item.jsonObject
 
+        val farms = itemObj["farms"]?.jsonArray.orEmpty().mapIndexedNotNull { index, rawFarm ->
+            val farmObj = rawFarm.jsonObject
+            val farmLots = farmObj["lots"]?.jsonArray.orEmpty().mapIndexedNotNull { lotIndex, rawLot ->
+                val lotObj = rawLot.jsonObject
+                val points = parsePoints(lotObj["points"]?.jsonArray.orEmpty())
+                if (points.size < 3) return@mapIndexedNotNull null
+
+                LotSectionDraft(
+                    id = lotObj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty().ifBlank { "lot-${lotIndex + 1}" },
+                    name = lotObj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty().ifBlank { "Lot ${lotIndex + 1}" },
+                    points = points,
+                    cropPlan = lotObj["cropPlan"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    soilType = lotObj["soilType"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    waterAvailability = lotObj["waterAvailability"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                )
+            }
+
+            val boundary = parsePoints(farmObj["boundaryPoints"]?.jsonArray.orEmpty())
+            val fallbackBoundary = farmLots.firstOrNull()?.points.orEmpty()
+            if (farmLots.isEmpty()) return@mapIndexedNotNull null
+
+            val mode = farmObj["mode"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
+                ?: AppMode.PLANNING
+
+            FarmConfigFarmEntry(
+                id = farmObj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty().ifBlank { "farm-${index + 1}" },
+                farmName = farmObj["farmName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                address = farmObj["address"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                mapQuery = farmObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                totalAreaInput = farmObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                mode = mode,
+                boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
+                lots = farmLots,
+            )
+        }
+
         val lots = itemObj["lots"]?.jsonArray.orEmpty().mapIndexedNotNull { index, rawLot ->
             val lotObj = rawLot.jsonObject
             val points = parsePoints(lotObj["points"]?.jsonArray.orEmpty())
@@ -135,6 +202,30 @@ class HttpFarmConfigRepository(
 
         val boundary = parsePoints(itemObj["boundaryPoints"]?.jsonArray.orEmpty())
         val fallbackBoundary = lots.firstOrNull()?.points.orEmpty()
+
+        val legacyMode = itemObj["mode"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
+            ?: AppMode.PLANNING
+
+        val legacyFarm = if (lots.isNotEmpty()) {
+            FarmConfigFarmEntry(
+                id = itemObj["id"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "farm-legacy" },
+                farmName = itemObj["farmName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                address = itemObj["address"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                mapQuery = itemObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                totalAreaInput = itemObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                mode = legacyMode,
+                boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
+                lots = lots,
+            )
+        } else {
+            null
+        }
+
+        val resolvedFarms = if (farms.isNotEmpty()) farms else listOfNotNull(legacyFarm)
+        val activeFarmId = itemObj["activeFarmId"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            .ifBlank { resolvedFarms.firstOrNull()?.id.orEmpty() }
+        val activeFarm = resolvedFarms.firstOrNull { it.id == activeFarmId } ?: resolvedFarms.firstOrNull()
 
         val timelinePhotoCache = itemObj["timelinePhotoCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
             val obj = rawEntry.jsonObject
@@ -164,18 +255,16 @@ class HttpFarmConfigRepository(
             )
         }
 
-        val mode = itemObj["mode"]?.jsonPrimitive?.contentOrNull
-            ?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
-            ?: AppMode.PLANNING
-
         return FarmConfigRemote(
-            farmName = itemObj["farmName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            address = itemObj["address"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            mapQuery = itemObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            totalAreaInput = itemObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-            mode = mode,
-            boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
-            lots = lots,
+            activeFarmId = activeFarm?.id.orEmpty(),
+            farms = resolvedFarms,
+            farmName = activeFarm?.farmName.orEmpty(),
+            address = activeFarm?.address.orEmpty(),
+            mapQuery = activeFarm?.mapQuery.orEmpty(),
+            totalAreaInput = activeFarm?.totalAreaInput.orEmpty(),
+            mode = activeFarm?.mode ?: AppMode.PLANNING,
+            boundaryPoints = activeFarm?.boundaryPoints.orEmpty(),
+            lots = activeFarm?.lots.orEmpty(),
             timelinePhotoCache = timelinePhotoCache,
             timelineStageVisualCache = timelineStageVisualCache,
         )

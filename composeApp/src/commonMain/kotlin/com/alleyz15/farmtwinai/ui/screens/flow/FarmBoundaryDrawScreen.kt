@@ -273,8 +273,8 @@ fun FarmBoundaryDrawScreen(
 
                 Button(
                     onClick = {
-                        if (points.size < 4) {
-                            warningMessage = "Add at least 2 taps to form a rectangular boundary."
+                        if (points.size < 3) {
+                            warningMessage = "Add at least 3 points to form a boundary polygon."
                         } else {
                             warningMessage = null
                             onBoundaryChanged(points.toList())

@@ -146,35 +146,46 @@ app.post("/api/farm-config", async (req, res) => {
       return res.status(400).json({ error: "userId is required." });
     }
 
-    const farmName = String(req.body?.farmName || "").trim();
-    const address = String(req.body?.address || "").trim();
-    const mapQuery = String(req.body?.mapQuery || "").trim();
-    const totalAreaInput = String(req.body?.totalAreaInput || "").trim();
-    const mode = String(req.body?.mode || "").trim();
-    const boundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
-    const lots = normalizeLots(req.body?.lots);
+    const legacyFarmName = String(req.body?.farmName || "").trim();
+    const legacyAddress = String(req.body?.address || "").trim();
+    const legacyMapQuery = String(req.body?.mapQuery || "").trim();
+    const legacyTotalAreaInput = String(req.body?.totalAreaInput || "").trim();
+    const legacyMode = String(req.body?.mode || "").trim();
+    const legacyBoundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
+    const legacyLots = normalizeLots(req.body?.lots);
+    const farms = normalizeFarms(req.body?.farms, {
+      farmName: legacyFarmName,
+      address: legacyAddress,
+      mapQuery: legacyMapQuery,
+      totalAreaInput: legacyTotalAreaInput,
+      mode: legacyMode,
+      boundaryPoints: legacyBoundaryPoints,
+      lots: legacyLots,
+    });
+    const requestedActiveFarmId = String(req.body?.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
+    const activeFarmId = activeFarm?.id || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
     const timelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
 
-    if (!farmName) {
-      return res.status(400).json({ error: "farmName is required." });
-    }
-
-    if (lots.length === 0) {
-      return res.status(400).json({ error: "At least one lot is required." });
+    if (farms.length === 0) {
+      return res.status(400).json({ error: "At least one farm is required." });
     }
 
     const payload = {
       userId,
-      farmName,
-      address,
-      mapQuery,
-      totalAreaInput,
-      mode,
-      boundaryPoints,
-      lots,
-        timelinePhotoCache,
-        timelineStageVisualCache,
+      activeFarmId,
+      farms,
+      // Keep legacy single-farm fields for backward compatibility.
+      farmName: activeFarm?.farmName || "",
+      address: activeFarm?.address || "",
+      mapQuery: activeFarm?.mapQuery || "",
+      totalAreaInput: activeFarm?.totalAreaInput || "",
+      mode: activeFarm?.mode || "PLANNING",
+      boundaryPoints: activeFarm?.boundaryPoints || [],
+      lots: activeFarm?.lots || [],
+      timelinePhotoCache,
+      timelineStageVisualCache,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -213,10 +224,32 @@ app.get("/api/farm-config", async (req, res) => {
       return res.json({ item: null });
     }
 
+    const data = doc.data() || {};
+    const farms = normalizeFarms(data.farms, {
+      farmName: String(data.farmName || "").trim(),
+      address: String(data.address || "").trim(),
+      mapQuery: String(data.mapQuery || "").trim(),
+      totalAreaInput: String(data.totalAreaInput || "").trim(),
+      mode: String(data.mode || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
+      lots: normalizeLots(data.lots),
+    });
+    const activeFarmId = String(data.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+
     return res.json({
       item: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
+        activeFarmId: activeFarm?.id || null,
+        farms,
+        farmName: activeFarm?.farmName || "",
+        address: activeFarm?.address || "",
+        mapQuery: activeFarm?.mapQuery || "",
+        totalAreaInput: activeFarm?.totalAreaInput || "",
+        mode: activeFarm?.mode || "PLANNING",
+        boundaryPoints: activeFarm?.boundaryPoints || [],
+        lots: activeFarm?.lots || [],
       },
     });
   } catch (error) {
@@ -247,10 +280,32 @@ app.get("/api/farm-config/latest", async (req, res) => {
       return res.json({ item: null });
     }
 
+    const data = doc.data() || {};
+    const farms = normalizeFarms(data.farms, {
+      farmName: String(data.farmName || "").trim(),
+      address: String(data.address || "").trim(),
+      mapQuery: String(data.mapQuery || "").trim(),
+      totalAreaInput: String(data.totalAreaInput || "").trim(),
+      mode: String(data.mode || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
+      lots: normalizeLots(data.lots),
+    });
+    const activeFarmId = String(data.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+
     return res.json({
       item: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
+        activeFarmId: activeFarm?.id || null,
+        farms,
+        farmName: activeFarm?.farmName || "",
+        address: activeFarm?.address || "",
+        mapQuery: activeFarm?.mapQuery || "",
+        totalAreaInput: activeFarm?.totalAreaInput || "",
+        mode: activeFarm?.mode || "PLANNING",
+        boundaryPoints: activeFarm?.boundaryPoints || [],
+        lots: activeFarm?.lots || [],
       },
     });
   } catch (error) {
@@ -702,6 +757,57 @@ function normalizeLots(input) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizeFarms(input, fallback = null) {
+  const farms = Array.isArray(input)
+    ? input
+        .map((raw, index) => {
+          const lots = normalizeLots(raw?.lots);
+          if (lots.length === 0) return null;
+
+          const boundaryPoints = normalizeNormalizedPoints(raw?.boundaryPoints);
+          return {
+            id: String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`,
+            farmName: String(raw?.farmName || "").trim(),
+            address: String(raw?.address || "").trim(),
+            mapQuery: String(raw?.mapQuery || "").trim(),
+            totalAreaInput: String(raw?.totalAreaInput || "").trim(),
+            mode: String(raw?.mode || "PLANNING").trim() || "PLANNING",
+            boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
+            lots,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  if (farms.length > 0) {
+    return farms.slice(0, 20);
+  }
+
+  if (!fallback) {
+    return [];
+  }
+
+  const lots = Array.isArray(fallback.lots) ? fallback.lots : [];
+  if (lots.length === 0) {
+    return [];
+  }
+
+  const boundaryPoints = Array.isArray(fallback.boundaryPoints) ? fallback.boundaryPoints : [];
+
+  return [
+    {
+      id: "farm-legacy",
+      farmName: String(fallback.farmName || "").trim(),
+      address: String(fallback.address || "").trim(),
+      mapQuery: String(fallback.mapQuery || "").trim(),
+      totalAreaInput: String(fallback.totalAreaInput || "").trim(),
+      mode: String(fallback.mode || "PLANNING").trim() || "PLANNING",
+      boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
+      lots,
+    },
+  ];
 }
 
 function normalizeTimelinePhotoCache(input) {

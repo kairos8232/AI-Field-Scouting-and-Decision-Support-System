@@ -99,7 +99,10 @@ fun FarmTwinNavHost(
             onAddressChange = appState::updateFarmSetupAddress,
             onSearch = appState::searchFarmSetupAddress,
             onUseCurrentLocation = appState::useCurrentLocationForFarmSetup,
-            onBack = { navigator.pop() },
+            onBack = {
+                appState.cancelAddFarmDraftIfNeeded()
+                navigator.pop()
+            },
             onContinue = {
                 appState.continueToBoundaryDrawing()
                 navigator.navigate(AppDestination.FarmBoundaryDraw)
@@ -283,9 +286,26 @@ fun FarmTwinNavHost(
         AppDestination.Me -> MePanelScreen(
             snapshot = appState.snapshot,
             lotSections = appState.lotSections,
+            storedFarms = appState.storedFarms,
             authenticatedUser = appState.authenticatedUser,
             onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
+            onAddFarm = {
+                appState.startAddFarmFlow()
+                navigator.navigate(AppDestination.FarmMapSetup)
+            },
             onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
+            onSwitchFarm = { farmId ->
+                appState.switchToStoredFarm(farmId)
+                navigator.replace(AppDestination.Dashboard)
+            },
+            onDeleteFarm = appState::deleteStoredFarm,
+            onDeleteActiveFarm = {
+                val deleted = appState.deleteActiveFarm()
+                if (deleted) {
+                    navigator.replace(AppDestination.Dashboard)
+                }
+            },
+            canDeleteActiveFarm = appState.storedFarms.isNotEmpty(),
             selectedThemePreference = appState.themePreference,
             onThemePreferenceChange = appState::setThemePreference,
             onSignOut = {

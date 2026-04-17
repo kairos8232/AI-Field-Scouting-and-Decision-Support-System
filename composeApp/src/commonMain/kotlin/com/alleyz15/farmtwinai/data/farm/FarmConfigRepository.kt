@@ -20,8 +20,21 @@ data class TimelineStageVisualCacheEntry(
     val updatedAtEpochMs: Long,
 )
 
+data class FarmConfigFarmEntry(
+    val id: String,
+    val farmName: String,
+    val address: String,
+    val mapQuery: String,
+    val totalAreaInput: String,
+    val mode: AppMode,
+    val boundaryPoints: List<FarmPoint>,
+    val lots: List<LotSectionDraft>,
+)
+
 data class FarmConfigDraft(
     val userId: String,
+    val activeFarmId: String,
+    val farms: List<FarmConfigFarmEntry>,
     val farmName: String,
     val address: String,
     val mapQuery: String,
@@ -34,6 +47,8 @@ data class FarmConfigDraft(
 )
 
 data class FarmConfigRemote(
+    val activeFarmId: String,
+    val farms: List<FarmConfigFarmEntry>,
     val farmName: String,
     val address: String,
     val mapQuery: String,
