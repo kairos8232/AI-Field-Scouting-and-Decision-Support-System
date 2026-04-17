@@ -121,12 +121,11 @@ android {
         versionCode = 1
         versionName = "1.0"
         val mapsApiKey = firstConfigured(
-            "GOOGLE_MAPS_API_KEY_ANDROID",
             "GOOGLE_MAPS_API_KEY",
             "MAPS_API_KEY",
         )
         if (mapsApiKey.isBlank()) {
-            logger.warn("GOOGLE_MAPS_API_KEY_ANDROID is blank. Checked project/root local.properties and .env files.")
+            logger.warn("GOOGLE_MAPS_API_KEY is blank. Checked project/root local.properties and .env files.")
         }
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "GOOGLE_MAPS_API_KEY", asBuildConfigString(mapsApiKey))

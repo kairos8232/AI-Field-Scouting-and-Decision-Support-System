@@ -244,8 +244,8 @@ private fun buildGoogleMapHtml(apiKey: String): String {
       <div class="wrap">
         <div class="card">
           <div class="title">Google Maps API key is missing</div>
-          Set one of these values in the project root config:
-          <div class="code">local.properties: GOOGLE_MAPS_API_KEY_ANDROID=YOUR_KEY</div>
+          Set this value in the project root config:
+          <div class="code">local.properties: GOOGLE_MAPS_API_KEY=YOUR_KEY</div>
         </div>
       </div>
     </body>

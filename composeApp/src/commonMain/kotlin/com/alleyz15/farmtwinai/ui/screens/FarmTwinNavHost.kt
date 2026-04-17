@@ -212,6 +212,10 @@ fun FarmTwinNavHost(
                 }
             }
 
+            LaunchedEffect(appState.snapshot.farm.location, appState.farmSetupAddress, appState.farmSetupMapQuery) {
+                appState.loadDashboardCurrentWeather()
+            }
+
             DashboardScreen(
                 snapshot = appState.snapshot,
                 selectedMode = appState.selectedMode,
@@ -229,6 +233,8 @@ fun FarmTwinNavHost(
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
                 getLotSummary = appState::getOrGenerateCropSummaryForLot,
+                weatherNowByLotId = appState.dashboardWeatherByLotId,
+                weatherNowFromLocation = appState.dashboardCurrentWeatherNow,
             )
         }
         is AppDestination.ZoneDetail -> ZoneDetailScreen(

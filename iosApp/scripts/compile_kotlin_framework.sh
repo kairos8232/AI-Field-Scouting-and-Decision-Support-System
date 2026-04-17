@@ -34,16 +34,13 @@ fi
 ENV_FILE="$SRCROOT/../.env"
 IOS_SECRETS_FILE="$SRCROOT/Configuration/Secrets.xcconfig"
 if [ -f "$ENV_FILE" ]; then
-  IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_IOS=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
-  if [ -z "$IOS_KEY" ]; then
-    IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY_ANDROID=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
-  fi
+  IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
   BACKEND_BASE_URL=$(awk -F= '/^FIELD_INSIGHTS_BASE_URL=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
 
   if [ -n "$IOS_KEY" ] || [ -n "$BACKEND_BASE_URL" ]; then
     : > "$IOS_SECRETS_FILE"
     if [ -n "$IOS_KEY" ]; then
-      printf 'GOOGLE_MAPS_API_KEY_IOS=%s\n' "$IOS_KEY" >> "$IOS_SECRETS_FILE"
+      printf 'GOOGLE_MAPS_API_KEY=%s\n' "$IOS_KEY" >> "$IOS_SECRETS_FILE"
     fi
     if [ -n "$BACKEND_BASE_URL" ]; then
       # xcconfig treats // as comments; rewrite :// to :/$()/ so Xcode reconstructs it.

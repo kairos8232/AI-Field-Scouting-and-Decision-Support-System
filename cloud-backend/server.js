@@ -35,6 +35,7 @@ const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
 const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
 const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
 const VERTEX_IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL || "imagen-4.0-fast-generate-001";
@@ -573,6 +574,41 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+app.post("/api/weather-now", async (req, res) => {
+  try {
+    const location = String(req.body?.location || "").trim();
+    if (!location) {
+      return res.status(400).json({ error: "location is required." });
+    }
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(503).json({
+        error: "GOOGLE_MAPS_API_KEY is not configured.",
+        detail: "Set GOOGLE_MAPS_API_KEY in backend environment and redeploy.",
+      });
+    }
+
+    const geocoded = await geocodeWithGoogleMaps(location);
+    const weather = await fetchCurrentWeather(geocoded.lat, geocoded.lng);
+    return res.json({
+      location,
+      resolvedAddress: geocoded.resolvedAddress,
+      latitude: geocoded.lat,
+      longitude: geocoded.lng,
+      condition: weather.condition,
+      temperatureC: weather.temperatureC,
+      icon: weather.icon,
+      rainfallMm: weather.rainfallMm,
+      windKmh: weather.windKmh,
+      provider: "google-geocode+open-meteo",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to fetch current weather.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Field insights service listening on ${PORT}`);
 });
@@ -716,6 +752,78 @@ async function persistInsightRecord({ userId = null, requestBody, normalized, re
   } catch (error) {
     console.error("Failed to persist field insight record:", error);
   }
+}
+
+async function geocodeWithGoogleMaps(location) {
+  const response = await fetch(
+    `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${GOOGLE_MAPS_API_KEY}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`google_geocode_http_${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.status !== "OK" || !Array.isArray(payload.results) || payload.results.length === 0) {
+    throw new Error(`google_geocode_status_${payload.status || "UNKNOWN"}`);
+  }
+
+  const first = payload.results[0];
+  const lat = Number(first?.geometry?.location?.lat);
+  const lng = Number(first?.geometry?.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error("google_geocode_invalid_latlng");
+  }
+
+  return {
+    lat,
+    lng,
+    resolvedAddress: String(first?.formatted_address || location),
+  };
+}
+
+async function fetchCurrentWeather(lat, lng) {
+  const response = await fetch(
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,precipitation,wind_speed_10m&timezone=auto`
+  );
+
+  if (!response.ok) {
+    throw new Error(`open_meteo_http_${response.status}`);
+  }
+
+  const payload = await response.json();
+  const current = payload?.current || {};
+  const weatherCode = Number(current.weather_code);
+  const temperatureC = Number(current.temperature_2m);
+  const rainfallMm = Number(current.precipitation);
+  const windKmh = Number(current.wind_speed_10m);
+
+  const { condition, icon } = describeWeatherCode(weatherCode);
+
+  return {
+    condition,
+    icon,
+    temperatureC: Number.isFinite(temperatureC) ? round(temperatureC, 1) : 0,
+    rainfallMm: Number.isFinite(rainfallMm) ? round(rainfallMm, 1) : 0,
+    windKmh: Number.isFinite(windKmh) ? round(windKmh, 1) : 0,
+  };
+}
+
+function describeWeatherCode(code) {
+  if (!Number.isFinite(code)) {
+    return { condition: "Clear", icon: "sun" };
+  }
+
+  if (code === 0) return { condition: "Clear", icon: "sun" };
+  if ([1, 2].includes(code)) return { condition: "Partly cloudy", icon: "cloud-sun" };
+  if (code === 3) return { condition: "Cloudy", icon: "cloud" };
+  if ([45, 48].includes(code)) return { condition: "Foggy", icon: "cloud-fog" };
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    return { condition: "Rainy", icon: "rain" };
+  }
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return { condition: "Snow", icon: "snow" };
+  if ([95, 96, 99].includes(code)) return { condition: "Thunderstorm", icon: "storm" };
+  return { condition: "Clear", icon: "sun" };
 }
 
 function normalizeUserId(input) {

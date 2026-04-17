@@ -53,3 +53,12 @@ data class FieldInsightHistoryRecord(
     val hasConversation: Boolean = false,
     val chatMessagesCount: Int = 0,
 )
+
+data class CurrentWeatherNow(
+    val location: String,
+    val resolvedAddress: String,
+    val temperatureC: Double,
+    val condition: String,
+    val icon: String,
+    val provider: String,
+)

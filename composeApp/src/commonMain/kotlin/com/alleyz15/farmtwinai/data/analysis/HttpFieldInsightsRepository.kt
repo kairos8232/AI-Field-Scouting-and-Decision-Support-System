@@ -3,6 +3,7 @@ package com.alleyz15.farmtwinai.data.analysis
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.AiChatReply
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
+import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
 import com.alleyz15.farmtwinai.domain.model.CropRecommendation
 import com.alleyz15.farmtwinai.domain.model.EarthEngineSummary
@@ -213,6 +214,36 @@ class HttpFieldInsightsRepository(
         return AiChatReply(
             reply = replyText,
             provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "gemini",
+        )
+    }
+
+    override suspend fun getCurrentWeatherNow(location: String): CurrentWeatherNow {
+        val cleanLocation = location.trim()
+        require(cleanLocation.isNotEmpty()) { "Location is required." }
+
+        val payload = buildJsonObject {
+            put("location", cleanLocation)
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        val response = client.post("$configuredBase/weather-now") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+
+        if (!response.status.isSuccess()) {
+            val message = extractServerErrorMessage(response.body<String>())
+            throw IllegalStateException(message)
+        }
+
+        val root = json.parseToJsonElement(response.body<String>()).jsonObject
+        return CurrentWeatherNow(
+            location = root["location"]?.jsonPrimitive?.contentOrNull ?: cleanLocation,
+            resolvedAddress = root["resolvedAddress"]?.jsonPrimitive?.contentOrNull ?: cleanLocation,
+            temperatureC = root["temperatureC"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            condition = root["condition"]?.jsonPrimitive?.contentOrNull ?: "Clear",
+            icon = root["icon"]?.jsonPrimitive?.contentOrNull ?: "sun",
+            provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "weather-fallback",
         )
     }
 

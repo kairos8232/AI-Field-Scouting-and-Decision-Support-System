@@ -70,6 +70,8 @@ fun DashboardScreen(
     onSelectDashboardTab: (() -> Unit)? = null,
     onSelectMeTab: (() -> Unit)? = null,
     getLotSummary: (LotSectionDraft) -> com.alleyz15.farmtwinai.domain.model.CropSummary = { snapshot.cropSummary },
+    weatherNowByLotId: Map<String, String> = emptyMap(),
+    weatherNowFromLocation: String? = null,
 ) {
     val darkTheme = isAppDarkTheme()
     val inactiveChipBorder = if (darkTheme) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
@@ -170,6 +172,7 @@ fun DashboardScreen(
 
                     selectedLot?.let { lot ->
                         val cropSummary = getLotSummary(lot)
+                        val weatherNow = weatherNowFromLocation ?: weatherNowByLotId[lot.id] ?: "Weather pending"
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -196,6 +199,64 @@ fun DashboardScreen(
                                 bg = summaryCardBg,
                                 border = summaryCardBorder,
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, summaryCardBorder, RoundedCornerShape(14.dp))
+                                .background(summaryCardBg, RoundedCornerShape(14.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(30.dp)
+                                            .background(Leaf400.copy(alpha = 0.16f), RoundedCornerShape(999.dp)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            imageVector = WeatherNowIcon,
+                                            contentDescription = "Weather now",
+                                            tint = Leaf400,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "Weather now",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = weatherNow,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "Live",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Leaf400,
+                                    modifier = Modifier
+                                        .border(1.dp, Leaf400.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -333,6 +394,56 @@ private val AiSparkIcon: ImageVector
             lineTo(14.8f, 15.7f)
             lineTo(13f, 15f)
             lineTo(14.8f, 14.3f)
+            close()
+        }
+    }.build()
+
+private val WeatherNowIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "WeatherNow",
+        defaultWidth = 20.dp,
+        defaultHeight = 20.dp,
+        viewportWidth = 20f,
+        viewportHeight = 20f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(10f, 4f)
+            curveTo(12.2f, 4f, 14f, 5.8f, 14f, 8f)
+            curveTo(14f, 10.2f, 12.2f, 12f, 10f, 12f)
+            curveTo(7.8f, 12f, 6f, 10.2f, 6f, 8f)
+            curveTo(6f, 5.8f, 7.8f, 4f, 10f, 4f)
+            close()
+            moveTo(10f, 1.8f)
+            lineTo(10f, 0f)
+            lineTo(10f, 1.8f)
+            close()
+            moveTo(10f, 16f)
+            lineTo(10f, 14.2f)
+            lineTo(10f, 16f)
+            close()
+            moveTo(3.6f, 8f)
+            lineTo(1.8f, 8f)
+            lineTo(3.6f, 8f)
+            close()
+            moveTo(18.2f, 8f)
+            lineTo(16.4f, 8f)
+            lineTo(18.2f, 8f)
+            close()
+            moveTo(5.3f, 3.3f)
+            lineTo(4f, 2f)
+            lineTo(5.3f, 3.3f)
+            close()
+            moveTo(16f, 14f)
+            lineTo(14.7f, 12.7f)
+            lineTo(16f, 14f)
+            close()
+            moveTo(5.3f, 12.7f)
+            lineTo(4f, 14f)
+            lineTo(5.3f, 12.7f)
+            close()
+            moveTo(16f, 2f)
+            lineTo(14.7f, 3.3f)
+            lineTo(16f, 2f)
             close()
         }
     }.build()

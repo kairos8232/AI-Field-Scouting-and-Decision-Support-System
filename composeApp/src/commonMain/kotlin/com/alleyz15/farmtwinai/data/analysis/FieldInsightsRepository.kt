@@ -3,6 +3,7 @@ package com.alleyz15.farmtwinai.data.analysis
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.AiChatReply
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
+import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
@@ -37,6 +38,8 @@ interface FieldInsightsRepository {
         userId: String? = null,
         context: AiChatContext? = null,
     ): AiChatReply
+
+    suspend fun getCurrentWeatherNow(location: String): CurrentWeatherNow
 
     suspend fun getHistory(): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>
 }

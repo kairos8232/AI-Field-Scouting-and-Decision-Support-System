@@ -180,6 +180,17 @@ class FarmTwinAppState(
     var lotReports by mutableStateOf<Map<String, FieldInsightReport>>(emptyMap())
         private set
 
+    var dashboardCurrentWeatherNow by mutableStateOf<String?>(null)
+        private set
+
+    var isLoadingDashboardCurrentWeather by mutableStateOf(false)
+        private set
+
+    val dashboardWeatherByLotId: Map<String, String>
+        get() = lotReports.mapValues { (_, report) ->
+            weatherLabelForReport(report)
+        }
+
     var timelineStageVisual by mutableStateOf<TimelineStageVisual?>(null)
         private set
 
@@ -758,6 +769,25 @@ class FarmTwinAppState(
                 lotRecommendationError = "Failed to fetch data: ${e.message}"
             }
             isFetchingEnvData = false
+        }
+    }
+
+    fun loadDashboardCurrentWeather() {
+        val location = farmSetupAddress.trim()
+            .ifBlank { farmSetupMapQuery.trim() }
+            .ifBlank { snapshot.farm.location.trim() }
+        if (location.isBlank() || isLoadingDashboardCurrentWeather) return
+
+        isLoadingDashboardCurrentWeather = true
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.getCurrentWeatherNow(location)
+            }.onSuccess { weather ->
+                dashboardCurrentWeatherNow = "${weather.condition} ${weather.temperatureC.toInt()} C"
+            }.onFailure {
+                dashboardCurrentWeatherNow = null
+            }
+            isLoadingDashboardCurrentWeather = false
         }
     }
 
@@ -1442,6 +1472,19 @@ class FarmTwinAppState(
             score >= 55 -> TimelineStatus.WARNING
             else -> TimelineStatus.ACTION_TAKEN
         }
+    }
+
+    private fun weatherLabelForReport(report: FieldInsightReport): String {
+        val temp = report.summary.averageTempC
+        val rainfall = report.summary.rainfallMm7d
+        val condition = when {
+            rainfall >= 22.0 -> "Rainy"
+            temp >= 32.0 -> "Hot"
+            temp <= 23.0 -> "Cool"
+            else -> "Clear"
+        }
+        val roundedTemp = temp.toInt()
+        return "$condition $roundedTemp C"
     }
 
     private fun recommendCropAssignment(
