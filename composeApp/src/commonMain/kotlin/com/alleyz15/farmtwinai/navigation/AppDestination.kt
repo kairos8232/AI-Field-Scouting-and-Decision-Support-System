@@ -17,7 +17,6 @@ sealed interface AppDestination {
     data class ZoneDetail(val zoneId: String) : AppDestination
     data object Timeline : AppDestination
     data object AiChat : AppDestination
-    data object AiConversation : AppDestination
     data object ActionConfirmation : AppDestination
     data object History : AppDestination
     data object Me : AppDestination

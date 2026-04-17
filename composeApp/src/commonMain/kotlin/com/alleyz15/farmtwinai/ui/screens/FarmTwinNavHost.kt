@@ -8,7 +8,6 @@ import com.alleyz15.farmtwinai.navigation.AppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
 import com.alleyz15.farmtwinai.ui.screens.flow.ActionConfirmationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.AiConversationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
@@ -236,23 +235,14 @@ fun FarmTwinNavHost(
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
         )
         AppDestination.AiChat -> AiChatScreen(
-            messages = appState.snapshot.chatMessages,
-            onBack = { navigator.pop() },
-            onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
-            onOpenConversation = { initialPrompt ->
-                appState.startAiConversation(initialPrompt)
-                navigator.navigate(AppDestination.AiConversation)
-            },
-            onOpenHistory = { navigator.navigate(AppDestination.History) },
-            authenticatedUser = appState.authenticatedUser,
-        )
-        AppDestination.AiConversation -> AiConversationScreen(
-            messages = appState.aiConversationMessages,
+            messages = if (appState.aiConversationMessages.isEmpty()) appState.snapshot.chatMessages else appState.aiConversationMessages,
             isSending = appState.isSendingAiConversationMessage,
             errorMessage = appState.aiConversationError,
-            providerLabel = appState.aiConversationProvider,
             onBack = { navigator.pop() },
+            onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
             onSend = appState::sendAiConversationMessage,
+            onOpenHistory = { navigator.navigate(AppDestination.History) },
+            authenticatedUser = appState.authenticatedUser,
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             latestAction = appState.snapshot.cropSummary.latestRecommendation,
@@ -267,7 +257,7 @@ fun FarmTwinNavHost(
             onLoadHistory = { appState.loadFieldInsightHistory() },
             onContinueChat = { initialPrompt ->
                 appState.startAiConversation(initialPrompt)
-                navigator.navigate(AppDestination.AiConversation)
+                navigator.navigate(AppDestination.AiChat)
             },
             onBack = { navigator.pop() },
         )

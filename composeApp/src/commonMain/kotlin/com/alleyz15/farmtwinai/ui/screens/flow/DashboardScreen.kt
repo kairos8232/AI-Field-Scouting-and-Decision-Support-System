@@ -271,7 +271,7 @@ private fun LotMapPreview(
     Box(
         modifier = modifier
             .height(220.dp)
-            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .background(if (isAppDarkTheme()) Color.Black.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp))
             .padding(12.dp)
             .onSizeChanged { mapSize = it }

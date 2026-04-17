@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
+
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.components.PlatformGoogleMap
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
@@ -145,7 +147,7 @@ fun FarmBoundaryDrawScreen(
                         .fillMaxWidth()
                         .widthIn(max = maxContentWidth)
                         .height(320.dp)
-                        .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        .background(if (isAppDarkTheme()) Color.Black.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                         .clip(RoundedCornerShape(16.dp))
                         .onSizeChanged { mapSize = it },
                 ) {

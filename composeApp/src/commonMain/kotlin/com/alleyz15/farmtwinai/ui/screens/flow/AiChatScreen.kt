@@ -2,26 +2,28 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,8 +32,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,36 +53,45 @@ import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 
 @Composable
 fun AiChatScreen(
     messages: List<ChatMessage>,
+    isSending: Boolean,
+    errorMessage: String?,
     onBack: () -> Unit,
     onConfirmAction: () -> Unit,
-    onOpenConversation: (String) -> Unit,
+    onSend: (String) -> Unit,
     onOpenHistory: () -> Unit,
     authenticatedUser: AuthUser?,
 ) {
     val darkTheme = isAppDarkTheme()
-    val inputBorder = if (darkTheme) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-    val fieldContainer = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    val listState = rememberLazyListState()
+    var draft by remember { mutableStateOf("") }
+    val inputBorder = if (darkTheme) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+    val fieldContainer = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
 
-    val draft = remember { mutableStateOf("") }
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
 
         OnboardingAdaptiveWidth { maxContentWidth, _ ->
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .systemBarsPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 18.dp)
+                    .widthIn(max = maxContentWidth),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -125,26 +139,40 @@ fun AiChatScreen(
                     }
                 }
 
-                // Chat Messages
-                Column(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    messages.forEach { message ->
-                        ChatMessageRow(message = message)
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (messages.isEmpty() && !isSending) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                "Start a conversation to get insights.",
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            items(messages) { message ->
+                                ChatMessageRow(message = message)
+                            }
+                            if (isSending) {
+                                item {
+                                    TypingIndicatorRow()
+                                }
+                            }
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(1f, fill = false))
-
-                // Input Area
                 Column(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedTextField(
-                        value = draft.value,
-                        onValueChange = { draft.value = it },
+                        value = draft,
+                        onValueChange = { draft = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = {
                             Text(
@@ -155,6 +183,7 @@ fun AiChatScreen(
                         shape = RoundedCornerShape(16.dp),
                         minLines = 2,
                         maxLines = 5,
+                        enabled = !isSending,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = MaterialTheme.colorScheme.onBackground,
                             unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
@@ -165,7 +194,7 @@ fun AiChatScreen(
                             cursorColor = Leaf400,
                         ),
                     )
-                    
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -180,12 +209,13 @@ fun AiChatScreen(
                         }
                         Button(
                             onClick = {
-                                val prompt = draft.value.trim()
+                                val prompt = draft.trim()
                                 if (prompt.isNotEmpty()) {
-                                    onOpenConversation(prompt)
-                                    draft.value = ""
+                                    onSend(prompt)
+                                    draft = ""
                                 }
                             },
+                            enabled = !isSending,
                             modifier = Modifier.weight(1f).height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
@@ -194,46 +224,7 @@ fun AiChatScreen(
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(4.dp))
             }
-        }
-    }
-}
-
-@Composable
-private fun GlassInfoCard(
-    title: String,
-    value: String,
-    supporting: String,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Text(
-                text = supporting,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
-            )
         }
     }
 }
@@ -242,7 +233,8 @@ private fun GlassInfoCard(
 private fun ChatMessageRow(message: ChatMessage) {
     val darkTheme = isAppDarkTheme()
     val isUser = message.sender == MessageSender.USER
-    val containerColor = if (isUser) Leaf400.copy(alpha = if (darkTheme) 0.7f else 0.52f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.45f else 0.85f)
+    // Increased contrast: opaque Leaf400 for user, surfaceVariant for AI
+    val containerColor = if (isUser) Leaf400 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.45f else 0.85f)
     val labelColor = if (isUser) Color.White.copy(alpha = 0.95f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f)
     val contentColor = if (isUser) Color.White else MaterialTheme.colorScheme.onBackground
 
@@ -344,3 +336,54 @@ private val HistoryIcon: ImageVector
             close()
         }
     }.build()
+
+
+@Composable
+private fun TypingIndicatorRow() {
+    val darkTheme = isAppDarkTheme()
+    val containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.45f else 0.85f)
+    
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .align(Alignment.CenterStart),
+            shape = RoundedCornerShape(
+                topStart = 20.dp,
+                topEnd = 20.dp,
+                bottomStart = 8.dp,
+                bottomEnd = 20.dp
+            ),
+            colors = CardDefaults.cardColors(containerColor = containerColor),
+            border = BorderStroke(1.dp, if (darkTheme) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.42f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "FarmTwin AI",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = "Gemini is thinking...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                    )
+                }
+            }
+        }
+    }
+}
