@@ -22,12 +22,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
+import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
@@ -96,10 +103,10 @@ fun AuroraOptionCard(
 @Composable
 fun MePanelScreen(
     snapshot: FarmTwinSnapshot,
+    lotSections: List<LotSectionDraft>,
     authenticatedUser: AuthUser?,
     onBack: (() -> Unit)?,
     onModifyFarm: () -> Unit,
-    onOpenHistory: () -> Unit,
     selectedThemePreference: ThemePreference,
     onThemePreferenceChange: (ThemePreference) -> Unit,
     onSignOut: () -> Unit,
@@ -107,6 +114,23 @@ fun MePanelScreen(
     onSelectDashboardTab: () -> Unit,
     onSelectMeTab: () -> Unit,
 ) {
+    var showThemeDropdown by remember { mutableStateOf(false) }
+    val themeLabel = when (selectedThemePreference) {
+        ThemePreference.SYSTEM -> "System"
+        ThemePreference.LIGHT -> "Light"
+        ThemePreference.DARK -> "Dark"
+    }
+    val cropLines = lotSections
+        .mapNotNull { lot ->
+            val crop = lot.cropPlan.trim()
+            if (crop.isEmpty()) null else "${lot.name}: $crop"
+        }
+    val cropSummaryText = if (cropLines.isNotEmpty()) {
+        cropLines.joinToString(separator = "\n")
+    } else {
+        snapshot.farm.cropName
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
         
@@ -166,42 +190,51 @@ fun MePanelScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ThemeChoiceChip(
-                        label = "System",
-                        selected = selectedThemePreference == ThemePreference.SYSTEM,
-                        onClick = { onThemePreferenceChange(ThemePreference.SYSTEM) },
-                        modifier = Modifier.weight(1f),
+                    Text(
+                        text = "Theme",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.92f),
+                        fontWeight = FontWeight.Medium,
                     )
-                    ThemeChoiceChip(
-                        label = "Light",
-                        selected = selectedThemePreference == ThemePreference.LIGHT,
-                        onClick = { onThemePreferenceChange(ThemePreference.LIGHT) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    ThemeChoiceChip(
-                        label = "Dark",
-                        selected = selectedThemePreference == ThemePreference.DARK,
-                        onClick = { onThemePreferenceChange(ThemePreference.DARK) },
-                        modifier = Modifier.weight(1f),
-                    )
+
+                    Box {
+                        OutlinedButton(
+                            onClick = { showThemeDropdown = true },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text(text = themeLabel, color = MaterialTheme.colorScheme.onBackground)
+                        }
+                        DropdownMenu(
+                            expanded = showThemeDropdown,
+                            onDismissRequest = { showThemeDropdown = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("System") },
+                                onClick = {
+                                    onThemePreferenceChange(ThemePreference.SYSTEM)
+                                    showThemeDropdown = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Light") },
+                                onClick = {
+                                    onThemePreferenceChange(ThemePreference.LIGHT)
+                                    showThemeDropdown = false
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Dark") },
+                                onClick = {
+                                    onThemePreferenceChange(ThemePreference.DARK)
+                                    showThemeDropdown = false
+                                },
+                            )
+                        }
+                    }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "My Activity & Sync",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-
-                AuroraOptionCard(
-                    title = "Cloud History",
-                    description = "Review your past field insights, AI photos, and conversations.",
-                    onClick = onOpenHistory
-                )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -215,15 +248,31 @@ fun MePanelScreen(
                 AuroraInfoCard(
                     title = "Active Farm",
                     value = snapshot.farm.farmName,
-                    supporting = "Location: ${snapshot.farm.location}\nCrop: ${snapshot.farm.cropName}",
+                    supporting = "Crops:\n$cropSummaryText",
                 )
 
-                AuroraOptionCard(
-                    title = "Farm Map Setup",
-                    description = "Adjust the active polygon and zone configurations for your farm.",
-                    onClick = onModifyFarm
-                )
-                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Button(
+                        onClick = onModifyFarm,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Mint200,
+                            contentColor = Color.Black,
+                        ),
+                    ) {
+                        Text("Add Farm")
+                    }
+                    OutlinedButton(
+                        onClick = onModifyFarm,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Modify Farm", color = MaterialTheme.colorScheme.onBackground)
+                    }
+                }
+
                 Spacer(modifier = Modifier.weight(1f)) // Push Sign Out to bottom if screen is tall
 
                 if (authenticatedUser != null) {
@@ -251,36 +300,6 @@ fun MePanelScreen(
                     onSelectMe = onSelectMeTab,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun ThemeChoiceChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Mint200,
-                contentColor = Color.Black,
-            ),
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(text = label, fontWeight = FontWeight.SemiBold)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier,
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(text = label, color = MaterialTheme.colorScheme.onBackground)
         }
     }
 }

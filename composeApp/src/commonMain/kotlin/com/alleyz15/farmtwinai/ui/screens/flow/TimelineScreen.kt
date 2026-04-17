@@ -122,7 +122,7 @@ fun TimelineScreen(
     photoAssessment: TimelinePhotoAssessment?,
     photoAssessmentError: String?,
     isAssessingPhoto: Boolean,
-    resolvedStatus: TimelineStatus,
+    resolvedStatus: TimelineStatus?,
     cachedPhotoBase64: String?,
     cachedPhotoMimeType: String?,
     onBack: () -> Unit,
@@ -227,7 +227,9 @@ fun TimelineScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                     )
-                    StatusBadge(resolvedStatus.style())
+                    if (resolvedStatus != null) {
+                        StatusBadge(resolvedStatus.style())
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),

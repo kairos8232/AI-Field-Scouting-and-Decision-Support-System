@@ -32,6 +32,15 @@ fun FarmTwinNavHost(
 ) {
     val destination by navigator.currentDestination
 
+    LaunchedEffect(appState.isAuthenticated, destination) {
+        if (
+            appState.isAuthenticated &&
+            (destination == AppDestination.Welcome || destination is AppDestination.Auth)
+        ) {
+            navigator.resetTo(AppDestination.Dashboard)
+        }
+    }
+
     when (val current = destination) {
         AppDestination.Welcome -> WelcomeScreen(
             onLogin = { navigator.navigate(AppDestination.Auth(isLogin = true)) },
@@ -204,9 +213,15 @@ fun FarmTwinNavHost(
                 snapshot = appState.snapshot,
                 selectedMode = appState.selectedMode,
                 lotSections = appState.lotSections,
-                onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
+                onOpenTimeline = { currentDay ->
+                    appState.openTimelineForDay(currentDay)
+                    navigator.navigate(AppDestination.Timeline)
+                },
                 onOpenChat = { navigator.navigate(AppDestination.AiChat) },
-                onOpenHistory = { navigator.navigate(AppDestination.History) },
+                latestTimelineHealthScore = appState.timelinePhotoAssessmentByDay
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.similarityScore,
                 isTabBarVisible = true,
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
@@ -267,10 +282,10 @@ fun FarmTwinNavHost(
         )
         AppDestination.Me -> MePanelScreen(
             snapshot = appState.snapshot,
+            lotSections = appState.lotSections,
             authenticatedUser = appState.authenticatedUser,
             onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
             onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
-            onOpenHistory = { navigator.navigate(AppDestination.History) },
             selectedThemePreference = appState.themePreference,
             onThemePreferenceChange = appState::setThemePreference,
             onSignOut = {

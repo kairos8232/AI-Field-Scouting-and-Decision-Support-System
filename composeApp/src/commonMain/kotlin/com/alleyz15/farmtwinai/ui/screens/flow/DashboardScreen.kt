@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
@@ -22,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +38,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -58,9 +63,9 @@ fun DashboardScreen(
     snapshot: FarmTwinSnapshot,
     selectedMode: AppMode,
     lotSections: List<LotSectionDraft>,
-    onOpenTimeline: () -> Unit,
+    onOpenTimeline: (Int) -> Unit,
     onOpenChat: () -> Unit,
-    onOpenHistory: () -> Unit,
+    latestTimelineHealthScore: Int?,
     isTabBarVisible: Boolean = false,
     onSelectDashboardTab: (() -> Unit)? = null,
     onSelectMeTab: (() -> Unit)? = null,
@@ -166,34 +171,56 @@ fun DashboardScreen(
                     selectedLot?.let { lot ->
                         val cropSummary = getLotSummary(lot)
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, summaryCardBorder, RoundedCornerShape(14.dp))
-                                .background(summaryCardBg, RoundedCornerShape(14.dp))
-                                .clickable(onClick = onOpenTimeline)
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(
-                                text = "Crop ${lot.cropPlan} • Soil ${lot.soilType} • Water ${lot.waterAvailability}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onBackground,
+                            StatPillCard(
+                                title = "Crop",
+                                value = lot.cropPlan.ifBlank { "-" },
+                                modifier = Modifier.weight(1f),
+                                bg = summaryCardBg,
+                                border = summaryCardBorder,
+                            )
+                            StatPillCard(
+                                title = "Soil",
+                                value = lot.soilType.ifBlank { "-" },
+                                modifier = Modifier.weight(1f),
+                                bg = summaryCardBg,
+                                border = summaryCardBorder,
+                            )
+                            StatPillCard(
+                                title = "Water",
+                                value = lot.waterAvailability.ifBlank { "-" },
+                                modifier = Modifier.weight(1f),
+                                bg = summaryCardBg,
+                                border = summaryCardBorder,
                             )
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
+
+                        val displayDay = cropSummary.currentDay.coerceAtLeast(1)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = statCardBgAlpha), RoundedCornerShape(14.dp))
+                                    .clickable { onOpenTimeline(displayDay) }
                                     .padding(16.dp)
                             ) {
-                                Column {
-                                    Text("Current day", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f))
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text("Day ${cropSummary.currentDay}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text("Current day", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f))
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text("Day $displayDay", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    Text(">", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
                                 }
                             }
                             
@@ -206,7 +233,12 @@ fun DashboardScreen(
                                 Column {
                                     Text("Health score", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.82f))
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text("${cropSummary.currentFarmHealthScore}/100", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            text = latestTimelineHealthScore?.let { "$it/100" } ?: "Pending",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onBackground,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
                                 }
                             }
                         }
@@ -215,30 +247,25 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = onOpenHistory,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = secondaryButtonBgAlpha), contentColor = MaterialTheme.colorScheme.onBackground),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("View History")
-                    }
-
-                    Button(
-                        onClick = onOpenChat,
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = secondaryButtonBgAlpha), contentColor = MaterialTheme.colorScheme.onBackground),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Open AI Consultation")
-                    }
-                }
+                    Spacer(modifier = Modifier.height(12.dp))
             }
         }
+
+          Box(
+              modifier = Modifier
+                  .align(Alignment.BottomEnd)
+                  .padding(end = 18.dp, bottom = if (isTabBarVisible) 82.dp else 20.dp)
+                  .size(56.dp)
+                  .background(Mint200, RoundedCornerShape(999.dp))
+                  .clickable(onClick = onOpenChat),
+              contentAlignment = Alignment.Center,
+          ) {
+              Icon(
+                  imageVector = AiSparkIcon,
+                  contentDescription = "AI Consultation",
+                  tint = Color.Black,
+              )
+          }
 
         if (isTabBarVisible && onSelectDashboardTab != null && onSelectMeTab != null) {
             Box(
@@ -257,6 +284,58 @@ fun DashboardScreen(
         }
     }
 }
+
+@Composable
+private fun StatPillCard(
+    title: String,
+    value: String,
+    modifier: Modifier,
+    bg: Color,
+    border: Color,
+) {
+    Box(
+        modifier = modifier
+            .border(1.dp, border, RoundedCornerShape(14.dp))
+            .background(bg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Column {
+            Text(title, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+private val AiSparkIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "AiSpark",
+        defaultWidth = 20.dp,
+        defaultHeight = 20.dp,
+        viewportWidth = 20f,
+        viewportHeight = 20f,
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(10f, 2f)
+            lineTo(11.5f, 6f)
+            lineTo(15.5f, 7.5f)
+            lineTo(11.5f, 9f)
+            lineTo(10f, 13f)
+            lineTo(8.5f, 9f)
+            lineTo(4.5f, 7.5f)
+            lineTo(8.5f, 6f)
+            close()
+            moveTo(15.5f, 12.5f)
+            lineTo(16.2f, 14.3f)
+            lineTo(18f, 15f)
+            lineTo(16.2f, 15.7f)
+            lineTo(15.5f, 17.5f)
+            lineTo(14.8f, 15.7f)
+            lineTo(13f, 15f)
+            lineTo(14.8f, 14.3f)
+            close()
+        }
+    }.build()
 
 @Composable
 private fun LotMapPreview(

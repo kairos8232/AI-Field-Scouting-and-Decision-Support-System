@@ -21,7 +21,36 @@ class HttpAuthRepository(
     private val client: HttpClient = HttpClient(platformHttpClientEngineFactory()),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: String = resolvedFieldInsightsBaseUrl(),
+    private val sessionStore: AuthSessionStore = createAuthSessionStore(),
 ) : AuthRepository {
+
+    override fun getSavedSession(): AuthUser? {
+        val raw = sessionStore.readSessionJson() ?: return null
+        val root = runCatching { json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return null
+        val userId = root["userId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val email = root["email"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        if (userId.isBlank() || email.isBlank()) return null
+        return AuthUser(
+            userId = userId,
+            email = email,
+            displayName = root["displayName"]?.jsonPrimitive?.contentOrNull,
+            idToken = root["idToken"]?.jsonPrimitive?.contentOrNull,
+        )
+    }
+
+    override fun saveSession(user: AuthUser) {
+        val payload = buildJsonObject {
+            put("userId", user.userId)
+            put("email", user.email)
+            user.displayName?.let { put("displayName", it) }
+            user.idToken?.let { put("idToken", it) }
+        }.toString()
+        sessionStore.writeSessionJson(payload)
+    }
+
+    override fun clearSession() {
+        sessionStore.clearSessionJson()
+    }
 
     override suspend fun signIn(email: String, password: String): AuthUser {
         return requestAuth(
@@ -63,11 +92,13 @@ class HttpAuthRepository(
         }
 
         val root = json.parseToJsonElement(response.body<String>()).jsonObject
-        return AuthUser(
+        val user = AuthUser(
             userId = root["userId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             email = root["email"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             displayName = root["displayName"]?.jsonPrimitive?.contentOrNull,
             idToken = root["idToken"]?.jsonPrimitive?.contentOrNull,
         )
+        saveSession(user)
+        return user
     }
 }

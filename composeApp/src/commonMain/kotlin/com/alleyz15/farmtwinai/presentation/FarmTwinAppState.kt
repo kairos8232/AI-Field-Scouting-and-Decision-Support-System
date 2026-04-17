@@ -223,11 +223,16 @@ class FarmTwinAppState(
 
     private var aiConversationMessageIndex = 0
 
+    init {
+        authenticatedUser = authRepository.getSavedSession()
+    }
+
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
 
     fun authenticateUser(user: AuthUser) {
         authenticatedUser = user
+        authRepository.saveSession(user)
     }
 
     fun authenticateAndHydrate(
@@ -235,6 +240,7 @@ class FarmTwinAppState(
         onReady: (hasSavedFarmConfig: Boolean) -> Unit,
     ) {
         authenticatedUser = user
+        authRepository.saveSession(user)
         isFarmConfigSyncing = true
         farmConfigSyncError = null
 
@@ -256,6 +262,7 @@ class FarmTwinAppState(
 
     fun signOut() {
         authenticatedUser = null
+        authRepository.clearSession()
         isFarmConfigSyncing = false
         farmConfigSyncError = null
     }
@@ -1151,10 +1158,17 @@ class FarmTwinAppState(
         lotRecommendationSuggestedCropByLotId = emptyMap()
     }
 
-    fun timelineStatusForDay(dayNumber: Int): TimelineStatus {
+    fun timelineStatusForDay(dayNumber: Int): TimelineStatus? {
         return timelineDynamicStatusByDay[dayNumber]
-            ?: snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.status
-            ?: TimelineStatus.NORMAL
+    }
+
+    fun openTimelineForDay(dayNumber: Int) {
+        val nearest = snapshot.timeline
+            .minByOrNull { kotlin.math.abs(it.dayNumber - dayNumber) }
+            ?.dayNumber
+            ?: snapshot.timeline.lastOrNull()?.dayNumber
+            ?: dayNumber
+        selectTimelineDay(nearest)
     }
 
     private fun deriveTimelineStatus(

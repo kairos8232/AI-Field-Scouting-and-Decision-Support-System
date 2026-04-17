@@ -65,6 +65,7 @@ import androidx.compose.foundation.Image
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 
 @Composable
 fun AuthScreen(
@@ -245,99 +246,101 @@ fun AuthScreen(
                             )
                         }
 
-                        Button(
-                            onClick = {
-                                if (isSubmitting) {
-                                    return@Button
-                                }
-                                authMessage = null
-                                val trimmedEmail = email.trim()
-                                val trimmedPassword = password.trim()
-                                val trimmedDisplayName = displayName.trim()
-                                val trimmedConfirmPassword = confirmPassword.trim()
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Button(
+                                onClick = {
+                                    if (isSubmitting) {
+                                        return@Button
+                                    }
+                                    authMessage = null
+                                    val trimmedEmail = email.trim()
+                                    val trimmedPassword = password.trim()
+                                    val trimmedDisplayName = displayName.trim()
+                                    val trimmedConfirmPassword = confirmPassword.trim()
 
-                                when {
-                                    trimmedEmail.isBlank() || !trimmedEmail.contains("@") -> {
-                                        authMessage = "Please enter a valid email address."
-                                    }
-                                    trimmedPassword.length < 6 -> {
-                                        authMessage = "Password must be at least 6 characters."
-                                    }
-                                    !isLogin && trimmedDisplayName.isBlank() -> {
-                                        authMessage = "Full name is required for sign up."
-                                    }
-                                    !isLogin && trimmedConfirmPassword != trimmedPassword -> {
-                                        authMessage = "Passwords do not match."
-                                    }
-                                    else -> {
-                                        scope.launch {
-                                            isSubmitting = true
-                                            runCatching {
-                                                onSubmit(
-                                                    isLogin,
-                                                    trimmedEmail,
-                                                    trimmedPassword,
-                                                    if (isLogin) null else trimmedDisplayName,
-                                                )
-                                            }.onSuccess { user ->
-                                                authMessage = null
-                                                onAuthenticated(user)
-                                            }.onFailure { error ->
-                                                authMessage = error.message ?: "Unable to authenticate. Please try again."
+                                    when {
+                                        trimmedEmail.isBlank() || !trimmedEmail.contains("@") -> {
+                                            authMessage = "Please enter a valid email address."
+                                        }
+                                        trimmedPassword.length < 6 -> {
+                                            authMessage = "Password must be at least 6 characters."
+                                        }
+                                        !isLogin && trimmedDisplayName.isBlank() -> {
+                                            authMessage = "Full name is required for sign up."
+                                        }
+                                        !isLogin && trimmedConfirmPassword != trimmedPassword -> {
+                                            authMessage = "Passwords do not match."
+                                        }
+                                        else -> {
+                                            scope.launch {
+                                                isSubmitting = true
+                                                runCatching {
+                                                    onSubmit(
+                                                        isLogin,
+                                                        trimmedEmail,
+                                                        trimmedPassword,
+                                                        if (isLogin) null else trimmedDisplayName,
+                                                    )
+                                                }.onSuccess { user ->
+                                                    authMessage = null
+                                                    onAuthenticated(user)
+                                                }.onFailure { error ->
+                                                    authMessage = error.message ?: "Unable to authenticate. Please try again."
+                                                }
+                                                isSubmitting = false
                                             }
-                                            isSubmitting = false
                                         }
                                     }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(56.dp).padding(top = 8.dp),
-                            enabled = !isSubmitting,
-                        ) {
-                            Text(
-                                text = if (isSubmitting) "Please wait..." else if (isLogin) "Login" else "Create Account",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                if (isSubmitting) {
-                                    return@OutlinedButton
-                                }
-
-                                val googleHandler = onGoogleAuth
-                                if (googleHandler == null) {
-                                    authMessage = "Google Sign-In is not configured yet."
-                                    return@OutlinedButton
-                                }
-
-                                authMessage = null
-                                scope.launch {
-                                    isSubmitting = true
-                                    runCatching {
-                                        googleHandler()
-                                    }.onSuccess { user ->
-                                        authMessage = null
-                                        onAuthenticated(user)
-                                    }.onFailure { error ->
-                                        authMessage = error.message ?: "Google Sign-In failed. Please try again."
-                                    }
-                                    isSubmitting = false
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            enabled = !isSubmitting && onGoogleAuth != null,
-                        ) {
-                            Text(
-                                if (onGoogleAuth == null) {
-                                    "Google Sign-In (Coming soon)"
-                                } else if (isLogin) {
-                                    "Continue with Google"
-                                } else {
-                                    "Sign up with Google"
                                 },
-                                style = MaterialTheme.typography.titleMedium,
-                            )
+                                modifier = Modifier.weight(1f).height(56.dp),
+                                enabled = !isSubmitting,
+                            ) {
+                                Text(
+                                    text = if (isSubmitting) "Please wait..." else if (isLogin) "Login" else "Create Account",
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (isSubmitting) {
+                                        return@OutlinedButton
+                                    }
+
+                                    val googleHandler = onGoogleAuth
+                                    if (googleHandler == null) {
+                                        authMessage = "Google Sign-In is not configured yet."
+                                        return@OutlinedButton
+                                    }
+
+                                    authMessage = null
+                                    scope.launch {
+                                        isSubmitting = true
+                                        runCatching {
+                                            googleHandler()
+                                        }.onSuccess { user ->
+                                            authMessage = null
+                                            onAuthenticated(user)
+                                        }.onFailure { error ->
+                                            authMessage = error.message ?: "Google Sign-In failed. Please try again."
+                                        }
+                                        isSubmitting = false
+                                    }
+                                },
+                                modifier = Modifier.size(56.dp),
+                                enabled = !isSubmitting,
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Icon(
+                                    imageVector = GoogleGlyphIcon,
+                                    contentDescription = "Google Sign-In",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                )
+                            }
                         }
 
                         if (authMessage != null) {
@@ -383,6 +386,60 @@ private val ArrowBackIcon: ImageVector
             lineToRelative(1.41f, -1.41f)
             lineTo(7.83f, 13f)
             lineTo(20f, 13f)
+            close()
+        }
+    }.build()
+
+private val GoogleGlyphIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "GoogleGlyph",
+        defaultWidth = 20.dp,
+        defaultHeight = 20.dp,
+        viewportWidth = 20f,
+        viewportHeight = 20f,
+    ).apply {
+        path(fill = SolidColor(Color(0xFF4285F4))) {
+            moveTo(19f, 10.3f)
+            curveTo(19f, 9.65f, 18.94f, 9.03f, 18.83f, 8.43f)
+            lineTo(10.2f, 8.43f)
+            lineTo(10.2f, 11.97f)
+            lineTo(15.13f, 11.97f)
+            curveTo(14.92f, 13.11f, 14.27f, 14.08f, 13.3f, 14.73f)
+            lineTo(13.3f, 17.03f)
+            lineTo(16.26f, 17.03f)
+            curveTo(17.99f, 15.43f, 19f, 13.08f, 19f, 10.3f)
+            close()
+        }
+        path(fill = SolidColor(Color(0xFF34A853))) {
+            moveTo(10.2f, 19f)
+            curveTo(12.67f, 19f, 14.74f, 18.18f, 16.26f, 17.03f)
+            lineTo(13.3f, 14.73f)
+            curveTo(12.48f, 15.28f, 11.43f, 15.6f, 10.2f, 15.6f)
+            curveTo(7.82f, 15.6f, 5.8f, 13.99f, 5.08f, 11.82f)
+            lineTo(2.02f, 11.82f)
+            lineTo(2.02f, 14.19f)
+            curveTo(3.53f, 17.18f, 6.63f, 19f, 10.2f, 19f)
+            close()
+        }
+        path(fill = SolidColor(Color(0xFFFBBC05))) {
+            moveTo(5.08f, 11.82f)
+            curveTo(4.9f, 11.27f, 4.8f, 10.69f, 4.8f, 10.1f)
+            curveTo(4.8f, 9.5f, 4.9f, 8.93f, 5.08f, 8.38f)
+            lineTo(5.08f, 6.01f)
+            lineTo(2.02f, 6.01f)
+            curveTo(1.39f, 7.26f, 1.03f, 8.64f, 1.03f, 10.1f)
+            curveTo(1.03f, 11.55f, 1.39f, 12.94f, 2.02f, 14.19f)
+            lineTo(5.08f, 11.82f)
+            close()
+        }
+        path(fill = SolidColor(Color(0xFFEA4335))) {
+            moveTo(10.2f, 4.6f)
+            curveTo(11.54f, 4.6f, 12.74f, 5.06f, 13.69f, 5.96f)
+            lineTo(16.33f, 3.33f)
+            curveTo(14.74f, 1.87f, 12.67f, 1f, 10.2f, 1f)
+            curveTo(6.63f, 1f, 3.53f, 2.82f, 2.02f, 5.81f)
+            lineTo(5.08f, 8.18f)
+            curveTo(5.8f, 6.01f, 7.82f, 4.6f, 10.2f, 4.6f)
             close()
         }
     }.build()
