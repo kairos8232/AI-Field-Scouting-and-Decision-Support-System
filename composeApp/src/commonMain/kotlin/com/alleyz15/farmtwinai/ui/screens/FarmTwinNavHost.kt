@@ -228,9 +228,13 @@ fun FarmTwinNavHost(
             photoAssessment = appState.timelinePhotoAssessment,
             photoAssessmentError = appState.timelinePhotoAssessmentError,
             isAssessingPhoto = appState.isAssessingTimelinePhoto,
+            resolvedStatus = appState.timelineStatusForDay(appState.selectedTimelineDay.dayNumber),
+            cachedPhotoBase64 = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoBase64,
+            cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
+            onCacheUploadedPhoto = appState::cacheTimelineUploadedPhoto,
             onComparePhoto = appState::compareTimelinePhoto,
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
         )

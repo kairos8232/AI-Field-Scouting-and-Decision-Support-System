@@ -153,6 +153,8 @@ app.post("/api/farm-config", async (req, res) => {
     const mode = String(req.body?.mode || "").trim();
     const boundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
     const lots = normalizeLots(req.body?.lots);
+    const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
 
     if (!farmName) {
       return res.status(400).json({ error: "farmName is required." });
@@ -171,6 +173,8 @@ app.post("/api/farm-config", async (req, res) => {
       mode,
       boundaryPoints,
       lots,
+        timelinePhotoCache,
+        timelineStageVisualCache,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -698,6 +702,49 @@ function normalizeLots(input) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizeTimelinePhotoCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      const photoBase64 = String(raw?.photoBase64 || "").trim();
+      const photoMimeType = String(raw?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !photoBase64) return null;
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        photoBase64,
+        photoMimeType,
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineStageVisualCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      const imageDataUrl = String(raw?.imageDataUrl || "").trim();
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageDataUrl) return null;
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        title: String(raw?.title || "").trim(),
+        description: String(raw?.description || "").trim(),
+        imageDataUrl,
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
 }
 
 function toLatLngPoint(raw) {

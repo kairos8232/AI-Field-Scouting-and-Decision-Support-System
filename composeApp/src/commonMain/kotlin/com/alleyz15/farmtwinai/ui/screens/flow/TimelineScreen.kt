@@ -2,7 +2,7 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.TimelineDay
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
+import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.ImagePickerController
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
@@ -119,21 +122,28 @@ fun TimelineScreen(
     photoAssessment: TimelinePhotoAssessment?,
     photoAssessmentError: String?,
     isAssessingPhoto: Boolean,
+    resolvedStatus: TimelineStatus,
+    cachedPhotoBase64: String?,
+    cachedPhotoMimeType: String?,
     onBack: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onLoadStageVisual: (Int, String) -> Unit,
+    onCacheUploadedPhoto: (Int, String, String) -> Unit,
     onComparePhoto: (Int, String, String, String, Boolean?) -> Unit,
     onOpenChat: () -> Unit,
 ) {
     var similarityFeedback by remember(selectedDay.dayNumber) { mutableStateOf<Boolean?>(null) }
-    var pickedPhotoBase64 by remember(selectedDay.dayNumber) { mutableStateOf<String?>(null) }
-    var pickedPhotoMimeType by remember(selectedDay.dayNumber) { mutableStateOf("image/jpeg") }
     var imagePickerMessage by remember(selectedDay.dayNumber) { mutableStateOf<String?>(null) }
+    val selectedIndex = days.indexOfFirst { it.dayNumber == selectedDay.dayNumber }.let { if (it >= 0) it else 0 }
+    val resolvedPhotoMimeType = cachedPhotoMimeType?.ifBlank { "image/jpeg" } ?: "image/jpeg"
+    val pickedPhotoDataUrl = cachedPhotoBase64?.let { base64 ->
+        if (base64.startsWith("data:")) base64 else "data:$resolvedPhotoMimeType;base64,$base64"
+    }
+    val dayPagerState = rememberPagerState(initialPage = selectedIndex, pageCount = { days.size })
 
     val imagePickerController: ImagePickerController = rememberImagePickerController(
         onImagePicked = { base64, mimeType ->
-            pickedPhotoBase64 = base64
-            pickedPhotoMimeType = mimeType
+            onCacheUploadedPhoto(selectedDay.dayNumber, base64, mimeType)
             imagePickerMessage = "Photo selected (${mimeType}). Ready for AI compare."
         },
         onError = { message ->
@@ -145,6 +155,19 @@ fun TimelineScreen(
         onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
     }
 
+    LaunchedEffect(selectedIndex) {
+        if (dayPagerState.currentPage != selectedIndex && selectedIndex in days.indices) {
+            dayPagerState.animateScrollToPage(selectedIndex)
+        }
+    }
+
+    LaunchedEffect(dayPagerState.currentPage) {
+        val day = days.getOrNull(dayPagerState.currentPage) ?: return@LaunchedEffect
+        if (day.dayNumber != selectedDay.dayNumber) {
+            onSelectDay(day.dayNumber)
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         AuroraBackground()
         
@@ -153,16 +176,21 @@ fun TimelineScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 16.dp)
+                    .widthIn(max = maxContentWidth),
             ) {
-                // Header row
-                Row(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
+                    // Header row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
                     IconButton(
                         onClick = onBack,
                         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
@@ -191,96 +219,174 @@ fun TimelineScreen(
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                Text(
-                    text = "Expected daily journey",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    days.forEach { day ->
-                        val selected = day.dayNumber == selectedDay.dayNumber
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (selected) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                                .clickable { onSelectDay(day.dayNumber) }
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                        ) {
-                            Text(
-                                "Day ${day.dayNumber}", 
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                    }
-                }
-                StatusBadge(selectedDay.status.style())
-                if (isLoadingStageVisual) {
-                    CircularProgressIndicator(color = Mint200)
-                } else {
-                    stageVisual?.imageDataUrl?.takeIf { it.isNotBlank() }?.let { imageDataUrl ->
-                        PlatformDataUrlImage(
-                            dataUrl = imageDataUrl,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(240.dp)
-                                .clip(RoundedCornerShape(12.dp)),
-                        )
-                    }
+                    Text(
+                        text = "Day ${selectedDay.dayNumber} expected journey",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
+                    StatusBadge(resolvedStatus.style())
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stageVisual?.title ?: "Generating expected visual...",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            val desc = stageVisual?.description ?: stageVisualError
-                            if (!desc.isNullOrBlank()) {
-                                Text(
-                                    text = desc,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f)
-                                )
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (isAppDarkTheme()) 0.35f else 0.8f)
+                            ),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(250.dp)
+                                    .combinedClickable(
+                                        onClick = {},
+                                        onLongClick = {
+                                            onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
+                                            imagePickerMessage = "Regenerating expected image..."
+                                        },
+                                    )
+                            ) {
+                                val imageDataUrl = stageVisual?.imageDataUrl
+                                if (!imageDataUrl.isNullOrBlank()) {
+                                    PlatformDataUrlImage(
+                                        dataUrl = imageDataUrl,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(RoundedCornerShape(16.dp)),
+                                    )
+                                } else {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        if (isLoadingStageVisual) {
+                                            CircularProgressIndicator(color = Mint200)
+                                        } else {
+                                            Text(
+                                                text = "No AI image yet. Long press to regenerate.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                        TextButton(
-                            onClick = {
-                                onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
-                            }
+
+                        Card(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            ),
                         ) {
-                            Text("Regenerate", color = Mint200)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(250.dp)
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = stageVisual?.title ?: "AI expected visual",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "Expected for day ${selectedDay.dayNumber}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                if (pickedPhotoDataUrl == null) {
+                                    Text(
+                                        text = "Farmer upload",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                    )
+                                    Button(
+                                        onClick = { imagePickerController.launchCamera() },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Mint200, contentColor = Color.Black),
+                                    ) {
+                                        Text("Snap")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { imagePickerController.launchGallery() },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text("Gallery")
+                                    }
+                                } else {
+                                    Text(
+                                        text = "Your preview (long press to retake)",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(96.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .combinedClickable(
+                                                onClick = {},
+                                                onLongClick = {
+                                                    imagePickerController.launchCamera()
+                                                    imagePickerMessage = "Long-press detected. Camera opened for retake."
+                                                },
+                                            )
+                                    ) {
+                                        PlatformDataUrlImage(
+                                            dataUrl = pickedPhotoDataUrl,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
+                                    },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("Regenerate", color = Mint200)
+                                }
+                            }
                         }
                     }
-                }
+
+                    Text(
+                        text = "Expected output: ${selectedDay.expectedStage}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                    )
                 
-                Text(
-                    text = "Like this AI image?",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
+                    Text(
+                        text = "Like this AI image?",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                    )
                 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
                     Button(
                         onClick = {
                             similarityFeedback = true
-                            onOpenChat()
+                            imagePickerMessage = "Marked as similar. You can compare your photo now."
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
@@ -291,7 +397,10 @@ fun TimelineScreen(
                         Text("Yes")
                     }
                     Button(
-                        onClick = { similarityFeedback = false },
+                        onClick = {
+                            similarityFeedback = false
+                            imagePickerMessage = "Marked as not similar. Upload and compare to get AI assessment."
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
@@ -300,72 +409,56 @@ fun TimelineScreen(
                     ) {
                         Text("No")
                     }
-                }
-                if (similarityFeedback != null) {
-                    Text(
-                        text = if (similarityFeedback == true) "✓ Marked as similar." else "✗ Marked as not similar. Upload a photo for AI assessment.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Mint200,
-                    )
-                }
-                if (imagePickerMessage != null) {
-                    Text(
-                        text = imagePickerMessage!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isAppDarkTheme()) Mint200 else MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
                     Button(
-                        onClick = { imagePickerController.launchCamera() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = Mint200, contentColor = Color.Black),
+                        onClick = {
+                            val payload = cachedPhotoBase64
+                            if (payload == null) {
+                                imagePickerMessage = "Please snap or upload a plant photo first."
+                                return@Button
+                            }
+                            onComparePhoto(
+                                selectedDay.dayNumber,
+                                selectedDay.expectedStage,
+                                payload,
+                                resolvedPhotoMimeType,
+                                similarityFeedback,
+                            )
+                        },
+                        modifier = Modifier.weight(1.2f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (pickedPhotoDataUrl != null) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            contentColor = if (pickedPhotoDataUrl != null) Color.Black else MaterialTheme.colorScheme.onBackground,
+                        ),
                     ) {
-                        Text("Snap Photo")
+                        Text("Compare")
                     }
-                    Button(
-                        onClick = { imagePickerController.launchGallery() },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
-                    ) {
-                        Text("Gallery")
                     }
-                }
-                Button(
-                    onClick = {
-                        val payload = pickedPhotoBase64
-                        if (payload == null) {
-                            imagePickerMessage = "Please snap or upload a plant photo first."
-                            return@Button
-                        }
-                        onComparePhoto(
-                            selectedDay.dayNumber,
-                            selectedDay.expectedStage,
-                            payload,
-                            pickedPhotoMimeType,
-                            similarityFeedback,
+                    if (similarityFeedback != null) {
+                        Text(
+                            text = if (similarityFeedback == true) "✓ Marked as similar." else "✗ Marked as not similar. Upload a photo for AI assessment.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Mint200,
                         )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f), contentColor = MaterialTheme.colorScheme.onBackground),
-                ) {
-                    Text("Compare with AI")
-                }
+                    }
+                    if (imagePickerMessage != null) {
+                        Text(
+                            text = imagePickerMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isAppDarkTheme()) Mint200 else MaterialTheme.colorScheme.primary,
+                        )
+                    }
+
+                    if (isAssessingPhoto) {
+                        CircularProgressIndicator(color = Mint200)
+                    }
                 
-                if (isAssessingPhoto) {
-                    CircularProgressIndicator(color = Mint200)
-                }
-                
-                if (photoAssessment != null) {
+                    if (photoAssessment != null) {
                     AuroraInfoCard(
                         title = "AI photo comparison",
                         value = "Similarity ${photoAssessment.similarityScore}% (${if (photoAssessment.isSimilar) "Similar" else "Not similar"})",
                         supporting = "Observed stage: ${photoAssessment.observedStage}\nRecommendation: ${photoAssessment.recommendation}",
                     )
-                } else if (photoAssessmentError != null) {
+                    } else if (photoAssessmentError != null) {
                     AuroraInfoCard(
                         title = "AI photo comparison",
                         value = "Comparison unavailable",
@@ -373,36 +466,107 @@ fun TimelineScreen(
                     )
                 }
 
-                // If real analysis is available, use photoAssessment fields. Otherwise fallback to placeholders.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    if (photoAssessment != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AuroraInfoCard(
+                            title = "Health",
+                            value = "${photoAssessment.similarityScore}/100",
+                            modifier = Modifier.weight(1f)
+                        )
+                        AuroraInfoCard(
+                            title = "Growth",
+                            value = selectedDay.expectedGrowthRange,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    AuroraInfoCard(
+                        title = "Observed Stage",
+                        value = photoAssessment.observedStage
+                    )
+
+                    val currentNotes = "${photoAssessment.recommendation}\n\n${photoAssessment.rationale}"
+                    if (currentNotes.isNotBlank()) {
+                        AuroraInfoCard("Notes", currentNotes)
+                    }
+                    } else {
+                    AuroraInfoCard(
+                        title = "Comparison pending",
+                        value = "Upload a farmer photo and tap Compare with AI to unlock Health, Growth, Observed Stage, and Notes.",
+                    )
+                    }
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (isAppDarkTheme()) 0.45f else 0.88f)
+                    ),
                 ) {
-                    AuroraInfoCard(
-                        title = "Health", 
-                        value = if (photoAssessment != null) "${photoAssessment.similarityScore}/100" else "$healthScore/100", 
-                        modifier = Modifier.weight(1f)
-                    )
-                    AuroraInfoCard(
-                        title = "Growth", 
-                        value = if (photoAssessment != null) "Realtime tracking" else selectedDay.expectedGrowthRange, 
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                
-                AuroraInfoCard(
-                    title = "Observed Stage", 
-                    value = if (photoAssessment != null) photoAssessment.observedStage else selectedDay.expectedStage
-                )
-                
-                val currentNotes = if (photoAssessment != null) {
-                    "${photoAssessment.recommendation}\n\n${photoAssessment.rationale}"
-                } else {
-                    selectedDay.notes
-                }
-                
-                if (currentNotes.isNotBlank()) {
-                    AuroraInfoCard("Notes", currentNotes)
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "Expected daily journey",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        HorizontalPager(
+                            state = dayPagerState,
+                            pageSpacing = 12.dp,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { page ->
+                            val day = days[page]
+                            val selected = day.dayNumber == selectedDay.dayNumber
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectDay(day.dayNumber) },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selected) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                ),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        text = "Day ${day.dayNumber}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground,
+                                    )
+                                    Text(
+                                        text = day.expectedStage,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (selected) Color.Black.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        text = "Growth ${day.expectedGrowthRange}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selected) Color.Black.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
+                                    )
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Slide cards left/right to switch days",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
+                        )
+                    }
                 }
             }
         }

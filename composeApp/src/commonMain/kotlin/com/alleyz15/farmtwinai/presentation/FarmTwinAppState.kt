@@ -9,6 +9,8 @@ import com.alleyz15.farmtwinai.data.auth.AuthRepository
 import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRemote
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
+import com.alleyz15.farmtwinai.data.farm.TimelinePhotoCacheEntry
+import com.alleyz15.farmtwinai.data.farm.TimelineStageVisualCacheEntry
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.ActionState
@@ -23,6 +25,7 @@ import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.domain.model.SetupMethod
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
+import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 import com.alleyz15.farmtwinai.domain.model.ZoneInfo
 import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +38,12 @@ enum class ThemePreference {
     LIGHT,
     DARK,
 }
+
+data class TimelineUploadCache(
+    val photoBase64: String,
+    val photoMimeType: String,
+    val updatedAtEpochMs: Long,
+)
 
 class FarmTwinAppState(
     repository: MockFarmTwinRepository,
@@ -161,19 +170,40 @@ class FarmTwinAppState(
     var timelineStageVisual by mutableStateOf<TimelineStageVisual?>(null)
         private set
 
+    var timelineStageVisualByDay by mutableStateOf<Map<Int, TimelineStageVisual>>(emptyMap())
+        private set
+
     var isLoadingTimelineStageVisual by mutableStateOf(false)
+        private set
+
+    var timelineLoadingStageVisualDays by mutableStateOf<Set<Int>>(emptySet())
         private set
 
     var timelineStageVisualError by mutableStateOf<String?>(null)
         private set
 
+    var timelineStageVisualErrorByDay by mutableStateOf<Map<Int, String>>(emptyMap())
+        private set
+
     var timelinePhotoAssessment by mutableStateOf<TimelinePhotoAssessment?>(null)
+        private set
+
+    var timelinePhotoAssessmentByDay by mutableStateOf<Map<Int, TimelinePhotoAssessment>>(emptyMap())
         private set
 
     var isAssessingTimelinePhoto by mutableStateOf(false)
         private set
 
     var timelinePhotoAssessmentError by mutableStateOf<String?>(null)
+        private set
+
+    var timelinePhotoAssessmentErrorByDay by mutableStateOf<Map<Int, String>>(emptyMap())
+        private set
+
+    var timelineUploadByDay by mutableStateOf<Map<Int, TimelineUploadCache>>(emptyMap())
+        private set
+
+    var timelineDynamicStatusByDay by mutableStateOf<Map<Int, TimelineStatus>>(emptyMap())
         private set
 
     var aiConversationMessages by mutableStateOf<List<ChatMessage>>(emptyList())
@@ -261,14 +291,24 @@ class FarmTwinAppState(
     fun selectTimelineDay(dayNumber: Int) {
         snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.let {
             selectedTimelineDay = it
-            timelinePhotoAssessment = null
-            timelinePhotoAssessmentError = null
+            isLoadingTimelineStageVisual = dayNumber in timelineLoadingStageVisualDays
+            timelineStageVisual = timelineStageVisualByDay[dayNumber]
+            timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
+            timelinePhotoAssessment = timelinePhotoAssessmentByDay[dayNumber]
+            timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[dayNumber]
         }
     }
 
     fun loadTimelineStageVisual(dayNumber: Int, expectedStage: String) {
-        if (isLoadingTimelineStageVisual) return
-        isLoadingTimelineStageVisual = true
+        timelineStageVisualByDay[dayNumber]?.let {
+            timelineStageVisual = it
+            timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
+            return
+        }
+
+        if (dayNumber in timelineLoadingStageVisualDays) return
+        timelineLoadingStageVisualDays = timelineLoadingStageVisualDays + dayNumber
+        isLoadingTimelineStageVisual = selectedTimelineDay.dayNumber in timelineLoadingStageVisualDays
         timelineStageVisualError = null
 
         scope.launch {
@@ -279,13 +319,33 @@ class FarmTwinAppState(
                     cropName = snapshot.farm.cropName,
                 )
             }.onSuccess { visual ->
+                    timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to visual)
+                    timelineStageVisualErrorByDay = timelineStageVisualErrorByDay - dayNumber
                 timelineStageVisual = visual
+                    persistTimelineCacheToCloudIfAuthenticated()
             }.onFailure { error ->
-                timelineStageVisualError = error.message ?: "Unable to generate expected plant image."
+                    val message = error.message ?: "Unable to generate expected plant image."
+                    timelineStageVisualErrorByDay = timelineStageVisualErrorByDay + (dayNumber to message)
+                    timelineStageVisualError = message
             }
-            isLoadingTimelineStageVisual = false
+            timelineLoadingStageVisualDays = timelineLoadingStageVisualDays - dayNumber
+            isLoadingTimelineStageVisual = selectedTimelineDay.dayNumber in timelineLoadingStageVisualDays
         }
     }
+
+        fun cacheTimelineUploadedPhoto(dayNumber: Int, photoBase64: String, photoMimeType: String) {
+            val cleaned = photoBase64.substringAfter("base64,").trim()
+            if (cleaned.isBlank()) return
+
+            timelineUploadByDay = timelineUploadByDay + (
+                dayNumber to TimelineUploadCache(
+                    photoBase64 = cleaned,
+                    photoMimeType = photoMimeType,
+                    updatedAtEpochMs = currentEpochMs(),
+                )
+            )
+            persistTimelineCacheToCloudIfAuthenticated()
+        }
 
     fun compareTimelinePhoto(
         dayNumber: Int,
@@ -301,6 +361,8 @@ class FarmTwinAppState(
             return
         }
 
+        cacheTimelineUploadedPhoto(dayNumber, cleaned, photoMimeType)
+
         isAssessingTimelinePhoto = true
         timelinePhotoAssessmentError = null
 
@@ -315,9 +377,17 @@ class FarmTwinAppState(
                     userMarkedSimilar = userMarkedSimilar,
                 )
             }.onSuccess { assessment ->
+                    timelinePhotoAssessmentByDay = timelinePhotoAssessmentByDay + (dayNumber to assessment)
+                    timelinePhotoAssessmentErrorByDay = timelinePhotoAssessmentErrorByDay - dayNumber
+                    timelineDynamicStatusByDay = timelineDynamicStatusByDay + (
+                        dayNumber to deriveTimelineStatus(assessment, userMarkedSimilar)
+                    )
                 timelinePhotoAssessment = assessment
+                    persistTimelineCacheToCloudIfAuthenticated()
             }.onFailure { error ->
-                timelinePhotoAssessmentError = error.message ?: "Unable to compare plant photo right now."
+                    val message = error.message ?: "Unable to compare plant photo right now."
+                    timelinePhotoAssessmentErrorByDay = timelinePhotoAssessmentErrorByDay + (dayNumber to message)
+                    timelinePhotoAssessmentError = message
             }
             isAssessingTimelinePhoto = false
         }
@@ -955,6 +1025,26 @@ class FarmTwinAppState(
     }
 
     private fun buildFarmConfigDraft(userId: String): FarmConfigDraft {
+        val photoCache = timelineUploadByDay.map { (dayNumber, upload) ->
+            TimelinePhotoCacheEntry(
+                dayNumber = dayNumber,
+                photoBase64 = upload.photoBase64,
+                photoMimeType = upload.photoMimeType,
+                updatedAtEpochMs = upload.updatedAtEpochMs,
+            )
+        }
+
+        val stageCache = timelineStageVisualByDay.map { (dayNumber, visual) ->
+            TimelineStageVisualCacheEntry(
+                dayNumber = dayNumber,
+                title = visual.title,
+                description = visual.description,
+                imageDataUrl = visual.imageDataUrl,
+                provider = visual.provider,
+                updatedAtEpochMs = currentEpochMs(),
+            )
+        }
+
         return FarmConfigDraft(
             userId = userId,
             farmName = farmSetupFarmName.trim(),
@@ -964,6 +1054,8 @@ class FarmTwinAppState(
             mode = selectedMode,
             boundaryPoints = farmBoundaryPoints,
             lots = lotSections,
+            timelinePhotoCache = photoCache,
+            timelineStageVisualCache = stageCache,
         )
     }
 
@@ -1004,7 +1096,51 @@ class FarmTwinAppState(
                 mode = remote.mode,
             ),
         )
+
+        if (remote.timelinePhotoCache.isNotEmpty()) {
+            timelineUploadByDay = remote.timelinePhotoCache.associate { entry ->
+                entry.dayNumber to TimelineUploadCache(
+                    photoBase64 = entry.photoBase64,
+                    photoMimeType = entry.photoMimeType,
+                    updatedAtEpochMs = entry.updatedAtEpochMs,
+                )
+            }
+        }
+
+        if (remote.timelineStageVisualCache.isNotEmpty()) {
+            timelineStageVisualByDay = remote.timelineStageVisualCache.associate { entry ->
+                entry.dayNumber to TimelineStageVisual(
+                    dayNumber = entry.dayNumber,
+                    expectedStage = snapshot.timeline.firstOrNull { it.dayNumber == entry.dayNumber }?.expectedStage.orEmpty(),
+                    cropName = snapshot.farm.cropName,
+                    title = entry.title,
+                    description = entry.description,
+                    imageDataUrl = entry.imageDataUrl,
+                    prompt = "",
+                    provider = entry.provider.ifBlank { "cached" },
+                )
+            }
+        }
+
+        val selectedDayNumber = selectedTimelineDay.dayNumber
+        timelineStageVisual = timelineStageVisualByDay[selectedDayNumber]
+        timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
+        timelineStageVisualError = timelineStageVisualErrorByDay[selectedDayNumber]
+        timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[selectedDayNumber]
     }
+
+    private fun persistTimelineCacheToCloudIfAuthenticated() {
+        val userId = authenticatedUser?.userId ?: return
+        if (farmSetupFarmName.trim().isBlank() || lotSections.isEmpty()) return
+
+        scope.launch {
+            runCatching {
+                farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))
+            }
+        }
+    }
+
+    private fun currentEpochMs(): Long = 0L
 
     private fun clearLotRecommendationState() {
         isAnalyzingLots = false
@@ -1013,6 +1149,28 @@ class FarmTwinAppState(
         lotRecommendationError = null
         lotRecommendationDataSourceByLotId = emptyMap()
         lotRecommendationSuggestedCropByLotId = emptyMap()
+    }
+
+    fun timelineStatusForDay(dayNumber: Int): TimelineStatus {
+        return timelineDynamicStatusByDay[dayNumber]
+            ?: snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.status
+            ?: TimelineStatus.NORMAL
+    }
+
+    private fun deriveTimelineStatus(
+        assessment: TimelinePhotoAssessment,
+        userMarkedSimilar: Boolean?,
+    ): TimelineStatus {
+        val score = assessment.similarityScore
+        val aiSaysSimilar = assessment.isSimilar
+        val userAiMismatch = userMarkedSimilar != null && userMarkedSimilar != aiSaysSimilar
+
+        return when {
+            userAiMismatch -> TimelineStatus.WARNING
+            score >= 80 && aiSaysSimilar -> TimelineStatus.NORMAL
+            score >= 55 -> TimelineStatus.WARNING
+            else -> TimelineStatus.ACTION_TAKEN
+        }
     }
 
     private fun recommendCropAssignment(

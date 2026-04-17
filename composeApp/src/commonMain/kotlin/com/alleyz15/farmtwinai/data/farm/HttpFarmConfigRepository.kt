@@ -54,6 +54,32 @@ class HttpFarmConfigRepository(
                     )
                 }
             })
+            put("timelinePhotoCache", buildJsonArray {
+                draft.timelinePhotoCache.forEach { entry ->
+                    add(
+                        buildJsonObject {
+                            put("dayNumber", entry.dayNumber)
+                            put("photoBase64", entry.photoBase64)
+                            put("photoMimeType", entry.photoMimeType)
+                            put("updatedAtEpochMs", entry.updatedAtEpochMs)
+                        }
+                    )
+                }
+            })
+            put("timelineStageVisualCache", buildJsonArray {
+                draft.timelineStageVisualCache.forEach { entry ->
+                    add(
+                        buildJsonObject {
+                            put("dayNumber", entry.dayNumber)
+                            put("title", entry.title)
+                            put("description", entry.description)
+                            put("imageDataUrl", entry.imageDataUrl)
+                            put("provider", entry.provider)
+                            put("updatedAtEpochMs", entry.updatedAtEpochMs)
+                        }
+                    )
+                }
+            })
         }
 
         val response = client.post("${baseUrl.trimEnd('/')}/farm-config") {
@@ -110,6 +136,34 @@ class HttpFarmConfigRepository(
         val boundary = parsePoints(itemObj["boundaryPoints"]?.jsonArray.orEmpty())
         val fallbackBoundary = lots.firstOrNull()?.points.orEmpty()
 
+        val timelinePhotoCache = itemObj["timelinePhotoCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
+            val obj = rawEntry.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
+            val base64 = obj["photoBase64"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (base64.isBlank()) return@mapNotNull null
+            TimelinePhotoCacheEntry(
+                dayNumber = dayNumber,
+                photoBase64 = base64,
+                photoMimeType = obj["photoMimeType"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "image/jpeg" },
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            )
+        }
+
+        val timelineStageVisualCache = itemObj["timelineStageVisualCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
+            val obj = rawEntry.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
+            val imageDataUrl = obj["imageDataUrl"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (imageDataUrl.isBlank()) return@mapNotNull null
+            TimelineStageVisualCacheEntry(
+                dayNumber = dayNumber,
+                title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                imageDataUrl = imageDataUrl,
+                provider = obj["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            )
+        }
+
         val mode = itemObj["mode"]?.jsonPrimitive?.contentOrNull
             ?.let { runCatching { AppMode.valueOf(it) }.getOrNull() }
             ?: AppMode.PLANNING
@@ -122,6 +176,8 @@ class HttpFarmConfigRepository(
             mode = mode,
             boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
             lots = lots,
+            timelinePhotoCache = timelinePhotoCache,
+            timelineStageVisualCache = timelineStageVisualCache,
         )
     }
 
