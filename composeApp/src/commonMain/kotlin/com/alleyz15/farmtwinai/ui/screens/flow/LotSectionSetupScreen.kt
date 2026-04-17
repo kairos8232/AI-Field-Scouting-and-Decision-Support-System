@@ -776,28 +776,51 @@ private fun generateMockLots(boundary: List<FarmPoint>, mode: String, count: Int
         else -> listOf(boundary)
     }
 
-    return rawLots.map { lot ->
-        val constrained = lot.map { point -> keepPointInsideBoundary(point, boundary) }
-        if (constrained.distinctBy { "${it.x}-${it.y}" }.size >= 3) constrained else boundary
+    return rawLots.mapNotNull { lot ->
+        val xMin = lot.minOf { it.x }
+        val xMax = lot.maxOf { it.x }
+        val yMin = lot.minOf { it.y }
+        val yMax = lot.maxOf { it.y }
+        val clipped = clipPolygonAgainstRectangle(boundary, xMin, yMin, xMax, yMax)
+        if (clipped.size >= 3) clipped else null
     }
 }
 
-private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
-    if (boundaryPoints.size < 3 || isPointInsidePolygon(candidate, boundaryPoints)) return candidate
-
-    val center = polygonCentroid(boundaryPoints)
-    var t = 1.0f
-    while (t > 0.0f) {
-        val trial = FarmPoint(
-            x = center.x + (candidate.x - center.x) * t,
-            y = center.y + (candidate.y - center.y) * t,
-        )
-        if (isPointInsidePolygon(trial, boundaryPoints)) return trial
-        t -= 0.05f
-    }
-
-    return center
+private fun clipPolygonAgainstRectangle(subject: List<FarmPoint>, xMin: Float, yMin: Float, xMax: Float, yMax: Float): List<FarmPoint> {
+    var clipped = subject
+    clipped = clipEdge(clipped, xMin, true) { it.x >= xMin }
+    clipped = clipEdge(clipped, xMax, true) { it.x <= xMax }
+    clipped = clipEdge(clipped, yMin, false) { it.y >= yMin }
+    clipped = clipEdge(clipped, yMax, false) { it.y <= yMax }
+    return clipped
 }
+
+private fun clipEdge(subject: List<FarmPoint>, linePos: Float, isVertical: Boolean, isInside: (FarmPoint) -> Boolean): List<FarmPoint> {
+    if (subject.isEmpty()) return emptyList()
+    val out = mutableListOf<FarmPoint>()
+    var s = subject.last()
+    for (e in subject) {
+        if (isInside(e)) {
+            if (!isInside(s)) out.add(computeIntersection(s, e, linePos, isVertical))
+            out.add(e)
+        } else if (isInside(s)) {
+            out.add(computeIntersection(s, e, linePos, isVertical))
+        }
+        s = e
+    }
+    return out
+}
+
+private fun computeIntersection(p1: FarmPoint, p2: FarmPoint, linePos: Float, isVertical: Boolean): FarmPoint {
+    return if (isVertical) {
+        val t = if (p2.x == p1.x) 0f else (linePos - p1.x) / (p2.x - p1.x)
+        FarmPoint(linePos, p1.y + t * (p2.y - p1.y))
+    } else {
+        val t = if (p2.y == p1.y) 0f else (linePos - p1.y) / (p2.y - p1.y)
+        FarmPoint(p1.x + t * (p2.x - p1.x), linePos)
+    }
+}
+
 
 private fun isPointInsidePolygon(point: FarmPoint, polygon: List<FarmPoint>): Boolean {
     if (polygon.size < 3) return true
@@ -957,3 +980,20 @@ private val BackIconDraw2: ImageVector
             close()
         }
     }.build()
+
+private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
+    if (boundaryPoints.size < 3 || isPointInsidePolygon(candidate, boundaryPoints)) return candidate
+
+    val center = polygonCentroid(boundaryPoints)
+    var t = 1.0f
+    while (t > 0.0f) {
+        val trial = FarmPoint(
+            x = center.x + (candidate.x - center.x) * t,
+            y = center.y + (candidate.y - center.y) * t,
+        )
+        if (isPointInsidePolygon(trial, boundaryPoints)) return trial
+        t -= 0.05f
+    }
+
+    return center
+}

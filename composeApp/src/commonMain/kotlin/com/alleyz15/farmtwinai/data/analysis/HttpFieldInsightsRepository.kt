@@ -85,6 +85,9 @@ class HttpFieldInsightsRepository(
         return runCatching {
             requestInsights(configuredBase, payload.toString())
         }.getOrElse { cause ->
+            if (cause is IllegalStateException) {
+                throw cause
+            }
             throw IllegalStateException(
                 "Backend unreachable (baseUrl from env: $configuredBase)",
                 cause,

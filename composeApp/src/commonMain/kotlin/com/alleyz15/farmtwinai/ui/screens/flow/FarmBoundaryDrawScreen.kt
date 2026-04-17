@@ -70,7 +70,7 @@ fun FarmBoundaryDrawScreen(
     onContinue: () -> Unit,
 ) {
     val points = remember(boundaryPoints) {
-        mutableStateListOf<FarmPoint>().apply { addAll(normalizeBoundaryToRectangle(boundaryPoints)) }
+        mutableStateListOf<FarmPoint>().apply { addAll(boundaryPoints) }
     }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedVertex by remember { mutableIntStateOf(-1) }
@@ -166,10 +166,7 @@ fun FarmBoundaryDrawScreen(
                                 detectTapGestures { tap ->
                                     val normalized = toFarmPoint(tap, mapSize)
                                     points.add(normalized)
-                                    val rectified = normalizeBoundaryToRectangle(points.toList())
-                                    points.clear()
-                                    points.addAll(rectified)
-                                    onBoundaryChanged(rectified)
+                                    onBoundaryChanged(points.toList())
                                     warningMessage = null
                                 }
                             }
@@ -187,9 +184,6 @@ fun FarmBoundaryDrawScreen(
                                         val index = selectedVertex
                                         if (index in points.indices) {
                                             points[index] = toFarmPoint(change.position, mapSize)
-                                            val rectified = normalizeBoundaryToRectangle(points.toList())
-                                            points.clear()
-                                            points.addAll(rectified)
                                         }
                                     },
                                 )
@@ -324,26 +318,6 @@ private fun nearestVertexIndex(points: List<FarmPoint>, tap: Offset, size: IntSi
         }
     }
     return best
-}
-
-private fun normalizeBoundaryToRectangle(points: List<FarmPoint>): List<FarmPoint> {
-    if (points.isEmpty()) return emptyList()
-    if (points.size == 1) {
-        val p = points.first()
-        return listOf(FarmPoint(p.x.coerceIn(0f, 1f), p.y.coerceIn(0f, 1f)))
-    }
-
-    val minX = points.minOf { it.x.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val maxX = points.maxOf { it.x.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val minY = points.minOf { it.y.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val maxY = points.maxOf { it.y.toDouble() }.toFloat().coerceIn(0f, 1f)
-
-    return listOf(
-        FarmPoint(minX, minY),
-        FarmPoint(maxX, minY),
-        FarmPoint(maxX, maxY),
-        FarmPoint(minX, maxY),
-    )
 }
 
 private val BackIconDraw: ImageVector

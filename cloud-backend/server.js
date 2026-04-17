@@ -1025,7 +1025,7 @@ function eeEvaluate(obj) {
 
 async function getCropRecommendations(summary, targetCrops = [], areaContext = {}) {
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return fallbackRecommendations(summary, targetCrops);
   }
 
   const cropHint = targetCrops.length
@@ -1060,7 +1060,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
     const text = result.text || "";
     const parsed = safeParseJsonArray(text);
     if (!parsed.length) {
-      throw new Error("wrong connection to server");
+      return fallbackRecommendations(summary, targetCrops);
     }
 
     const normalized = parsed.map((item) => ({
@@ -1071,7 +1071,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
 
     return ensureTargetCropCoverage(summary, targetCrops, normalized).slice(0, Math.max(3, targetCrops.length));
   } catch (_error) {
-    throw new Error("wrong connection to server");
+    return fallbackRecommendations(summary, targetCrops);
   }
 }
 

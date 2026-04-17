@@ -95,10 +95,9 @@ class FarmTwinAppState(
 
     var farmBoundaryPoints by mutableStateOf(
         listOf(
-            FarmPoint(0.20f, 0.25f),
-            FarmPoint(0.82f, 0.22f),
-            FarmPoint(0.88f, 0.70f),
-            FarmPoint(0.26f, 0.78f),
+            FarmPoint(0.50f, 0.25f),
+            FarmPoint(0.85f, 0.75f),
+            FarmPoint(0.15f, 0.75f),
         )
     )
         private set
@@ -549,6 +548,10 @@ class FarmTwinAppState(
                 }
                 lotRecommendationDataSourceByLotId = sources
                 lotReports = reports
+            }.onFailure { e ->
+                println("FarmTwinAppState: Failed to fetch environmental data: $e")
+                e.printStackTrace()
+                lotRecommendationError = "Failed to fetch data: ${e.message}"
             }
             isFetchingEnvData = false
         }
@@ -879,10 +882,9 @@ class FarmTwinAppState(
 
     private fun defaultFarmBoundary(): List<FarmPoint> {
         return listOf(
-            FarmPoint(0.20f, 0.25f),
-            FarmPoint(0.82f, 0.22f),
-            FarmPoint(0.88f, 0.70f),
-            FarmPoint(0.26f, 0.78f),
+            FarmPoint(0.50f, 0.25f),
+            FarmPoint(0.85f, 0.75f),
+            FarmPoint(0.15f, 0.75f),
         )
     }
 
