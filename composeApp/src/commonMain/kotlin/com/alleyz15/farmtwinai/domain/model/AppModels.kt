@@ -43,8 +43,33 @@ enum class ActionType {
     WATERED,
     IMPROVED_DRAINAGE,
     ADJUSTED_FERTILIZER,
+    APPLIED_PESTICIDE_FUNGICIDE,
+    PRUNED_AFFECTED_LEAVES,
     MONITORED_ONLY,
     REPLANTED,
+}
+
+enum class RecoveryTrend {
+    IMPROVING,
+    STABLE,
+    WORSENING,
+    UNKNOWN,
+}
+
+data class TimelineRecoveryForecast(
+    val sourceDayNumber: Int,
+    val trend: RecoveryTrend,
+    val etaDaysMin: Int,
+    val etaDaysMax: Int,
+    val confidencePercent: Int,
+    val confidenceTier: ForecastConfidenceTier,
+    val isUrgent: Boolean,
+)
+
+enum class ForecastConfidenceTier {
+    LOW,
+    MEDIUM,
+    HIGH,
 }
 
 data class UserProfile(

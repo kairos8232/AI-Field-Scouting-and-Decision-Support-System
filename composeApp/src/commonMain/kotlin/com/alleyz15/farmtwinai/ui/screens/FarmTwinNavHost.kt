@@ -253,13 +253,20 @@ fun FarmTwinNavHost(
             photoAssessmentError = appState.timelinePhotoAssessmentError,
             isAssessingPhoto = appState.isAssessingTimelinePhoto,
             resolvedStatus = appState.timelineStatusForDay(appState.selectedTimelineDay.dayNumber),
+            recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
+            recommendedActionText = appState.recommendedActionTextForDay(appState.selectedTimelineDay.dayNumber),
+            hasAssessmentForSelectedDay = appState.hasAssessmentForDay(appState.selectedTimelineDay.dayNumber),
+            unlockedMaxDayNumber = appState.timelineUnlockedMaxDayNumber(),
             cachedPhotoBase64 = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoBase64,
             cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
+            onRegenerateStageVisual = appState::regenerateTimelineStageVisual,
             onCacheUploadedPhoto = appState::cacheTimelineUploadedPhoto,
             onComparePhoto = appState::compareTimelinePhoto,
+            onClearUploadedPhoto = appState::clearTimelineUploadedPhoto,
+            onOpenActionPlan = { navigator.navigate(AppDestination.ActionConfirmation) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
         )
         AppDestination.AiChat -> AiChatScreen(
@@ -273,11 +280,19 @@ fun FarmTwinNavHost(
             authenticatedUser = appState.authenticatedUser,
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
-            latestAction = appState.snapshot.cropSummary.latestRecommendation,
+            dayNumber = appState.selectedTimelineDay.dayNumber,
+            latestAction = appState.recommendedActionTextForDay(appState.selectedTimelineDay.dayNumber),
+            primaryRecommendedAction = appState.defaultActionTypeForDay(appState.selectedTimelineDay.dayNumber),
+            alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
+            recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
             onBack = { navigator.pop() },
             onSubmit = { actionType, actionState ->
-                appState.recordAction(actionType, actionState)
-                navigator.navigate(AppDestination.History)
+                appState.recordTimelineAction(
+                    dayNumber = appState.selectedTimelineDay.dayNumber,
+                    actionType = actionType,
+                    actionState = actionState,
+                )
+                navigator.pop()
             },
         )
         AppDestination.History -> HistoryScreen(

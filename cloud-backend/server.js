@@ -1432,12 +1432,13 @@ function safeParseJsonObject(text) {
 
 async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName }) {
   const prompt = [
-    "Generate a realistic close-up crop growth image for stage monitoring.",
+    "Generate a photorealistic close-up crop growth photo for stage monitoring.",
     `Crop: ${cropName}`,
     `Expected stage: ${expectedStage}`,
     `Day number: ${dayNumber}`,
     "Focus on realistic morphology: leaf count, leaf shape, vein structure, stem thickness, and stage-specific traits.",
     "Image style: natural daylight farm photo, close-up framing of the plant, soft background blur.",
+    "Photorealistic image only. No illustration, no icon, no cartoon, no vector, no CGI, no drawing, no painting.",
     "The image must show the crop plant itself as the main subject.",
     "Do NOT generate maps, field layout plans, charts, tables, legends, labels, text, logos, or UI screens.",
     "Do NOT generate satellite views, top-down parcel diagrams, or infographic posters.",
@@ -1462,56 +1463,15 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
       };
     } catch (error) {
       console.warn(
-        `[timeline-stage-visual] Vertex fallback to Gemini: ${
+        `[timeline-stage-visual] Vertex photorealistic generation failed: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
-      // Fall through to Gemini SVG generation as secondary strategy.
+      throw new Error("photorealistic_image_unavailable");
     }
   }
 
-  if (!ai) {
-    throw new Error("wrong connection to server");
-  }
-
-  let svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
-
-  try {
-    const svgPrompt = [
-      "Generate a clean SVG illustration for crop growth monitoring UI.",
-      `Crop: ${cropName}`,
-      `Expected stage: ${expectedStage}`,
-      `Day number: ${dayNumber}`,
-      "Output ONLY raw SVG markup, no markdown, no explanation.",
-      "Add clear morphology detail: multiple leaves, visible veins, stem texture, and stage-specific structures.",
-      "Use transparent/very light background and no text labels.",
-    ].join("\n");
-
-    const result = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: svgPrompt,
-    });
-    const text = (result.text || "").trim();
-    const maybeSvg = extractSvg(text);
-    if (!maybeSvg) {
-      throw new Error("wrong connection to server");
-    }
-    svg = maybeSvg;
-  } catch (_error) {
-    throw new Error("wrong connection to server");
-  }
-
-  const imageDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
-  return {
-    dayNumber,
-    expectedStage,
-    cropName,
-    title,
-    description,
-    imageDataUrl,
-    prompt,
-    provider: "gemini-live",
-  };
+  throw new Error("photorealistic_image_unavailable");
 }
 
 function isVertexConfigured() {
