@@ -8,6 +8,8 @@ data class EarthEngineSummary(
     val rainfallMm7d: Double,
     val averageTempC: Double,
     val notes: String,
+    val source: String = "unknown",
+    val sourceVerified: Boolean = false,
 )
 
 data class CropRecommendation(

@@ -282,6 +282,10 @@ class HttpFieldInsightsRepository(
                 rainfallMm7d = summary["rainfallMm7d"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
                 averageTempC = summary["averageTempC"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
                 notes = summary["notes"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                source = summary["source"]?.jsonPrimitive?.contentOrNull
+                    ?: if (summary["notes"]?.jsonPrimitive?.contentOrNull.orEmpty().contains("real earth engine", ignoreCase = true)) "earth-engine-live" else "unknown",
+                sourceVerified = summary["sourceVerified"]?.jsonPrimitive?.booleanOrNull
+                    ?: summary["notes"]?.jsonPrimitive?.contentOrNull.orEmpty().contains("real earth engine", ignoreCase = true),
             ),
             recommendations = recommendations.map { item ->
                 val obj = item.jsonObject

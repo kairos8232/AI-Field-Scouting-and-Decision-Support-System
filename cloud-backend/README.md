@@ -2,7 +2,7 @@
 
 Node.js backend for polygon analysis prototype:
 - Receives polygon from mobile app
-- Produces Earth-style environment summary (mock mode by default)
+- Produces Earth Engine environment summary
 - Produces crop recommendations with Gemini (when API key is set)
 - Produces timeline stage visuals with Vertex Imagen (preferred when configured), Gemini SVG fallback otherwise
 - Optionally stores each analysis result in Firebase Firestore
@@ -59,7 +59,6 @@ From repository root:
      --region asia-southeast1 \
      --platform managed \
      --allow-unauthenticated \
-     --set-env-vars GEMINI_API_KEY=YOUR_KEY,EARTH_ENGINE_MODE=mock
 
 2. Copy service URL from output.
 

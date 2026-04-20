@@ -28,7 +28,7 @@ app.use(
 
 const PORT = Number(process.env.PORT || 8080);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "mock";
+const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "live";
 const EARTH_ENGINE_PROJECT_ID = process.env.EARTH_ENGINE_PROJECT_ID || "";
 const EARTH_ENGINE_SERVICE_ACCOUNT_JSON = process.env.EARTH_ENGINE_SERVICE_ACCOUNT_JSON || "";
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
@@ -1054,41 +1054,29 @@ function polygonArea(points) {
 }
 
 async function getEarthSummary({ polygon, centroid }) {
-  const baseSummary = buildGeometrySummary({ polygon, centroid });
-
-  if (EARTH_ENGINE_MODE !== "mock") {
-    const eeStatus = await resolveEarthEngineStatus();
-    if (eeStatus.linked) {
-      try {
-        const sampled = await sampleEarthEngineSummary(polygon, centroid);
-        if (isSparseEarthSummary(sampled)) {
-          return {
-            ...baseSummary,
-            notes: "Earth Engine returned sparse metrics for this polygon; using geometry fallback summary.",
-          };
-        }
-        return {
-          ...sampled,
-          notes: "Real Earth Engine datasets sampled (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature).",
-        };
-      } catch (error) {
-        return {
-          ...baseSummary,
-          notes: `Earth Engine linked but sampling failed (${error instanceof Error ? error.message : String(error)}); using geometry fallback summary.`,
-        };
-      }
-    }
-
-    return {
-      ...baseSummary,
-      notes: `Earth Engine live mode requested but unavailable (${eeStatus.reason}); using geometry fallback summary.`,
-    };
+  if (EARTH_ENGINE_MODE === "mock") {
+    throw new Error("EARTH_ENGINE_MODE=mock is disabled. Set EARTH_ENGINE_MODE=live.");
   }
 
-  return {
-    ...baseSummary,
-    notes: "Mock Earth summary. Set EARTH_ENGINE_MODE=live and add Earth Engine credentials to verify the link.",
-  };
+  const eeStatus = await resolveEarthEngineStatus();
+  if (!eeStatus.linked) {
+    throw new Error(`Earth Engine live mode unavailable (${eeStatus.reason}).`);
+  }
+
+  try {
+    const sampled = await sampleEarthEngineSummary(polygon, centroid);
+    const sparse = isSparseEarthSummary(sampled);
+    return {
+      ...sampled,
+      source: "earth-engine-live",
+      sourceVerified: true,
+      notes: sparse
+        ? "Real Earth Engine datasets sampled, but metrics are sparse for this polygon/time window (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature)."
+        : "Real Earth Engine datasets sampled (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature).",
+    };
+  } catch (error) {
+    throw new Error(`Earth Engine sampling failed (${error instanceof Error ? error.message : String(error)}).`);
+  }
 }
 
 function buildGeometrySummary({ polygon, centroid }) {

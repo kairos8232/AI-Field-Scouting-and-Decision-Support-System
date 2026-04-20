@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,6 +55,7 @@ import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.HomeTab
 import com.alleyz15.farmtwinai.ui.components.HomeTabBar
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
+import com.alleyz15.farmtwinai.ui.components.PlatformGoogleMap
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
 import com.alleyz15.farmtwinai.ui.theme.Mint200
 import com.alleyz15.farmtwinai.ui.theme.Sand100
@@ -135,6 +137,7 @@ fun DashboardScreen(
                         lots = lotSections,
                         selectedLotId = selectedLot?.id,
                         onLotSelected = { selectedLotId = it },
+                        mapLocationQuery = snapshot.farm.location,
                         modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth)
                     )
 
@@ -453,17 +456,21 @@ private fun LotMapPreview(
     lots: List<LotSectionDraft>,
     selectedLotId: String?,
     onLotSelected: (String) -> Unit,
+    mapLocationQuery: String,
     modifier: Modifier = Modifier
 ) {
     val palette = listOf(Leaf400, Mint200, MaterialTheme.colorScheme.onBackground)
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
+    val normalizedLocationQuery = mapLocationQuery.trim()
+    val searchTrigger = remember(normalizedLocationQuery) {
+        mutableIntStateOf(if (normalizedLocationQuery.isNotBlank()) 1 else 0)
+    }
 
     Box(
         modifier = modifier
             .height(220.dp)
             .background(if (isAppDarkTheme()) Color.Black.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp))
-            .padding(12.dp)
             .onSizeChanged { mapSize = it }
             .pointerInput(lots, mapSize) {
                 detectTapGestures { tapOffset ->
@@ -479,6 +486,14 @@ private fun LotMapPreview(
                 }
             },
     ) {
+        PlatformGoogleMap(
+            modifier = Modifier.matchParentSize(),
+            locationQuery = normalizedLocationQuery,
+            searchTrigger = searchTrigger.intValue,
+            allowMapInteraction = false,
+            useCurrentLocationTrigger = 0,
+        )
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             lots.forEachIndexed { index, lot ->
                 if (lot.points.size < 3) return@forEachIndexed

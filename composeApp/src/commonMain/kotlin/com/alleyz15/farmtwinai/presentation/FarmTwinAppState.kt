@@ -794,7 +794,11 @@ class FarmTwinAppState(
                 // Update data source labels for the UI
                 val sources = mutableMapOf<String, String>()
                 reports.forEach { (lotId, report) ->
-                    val earthSource = if (report.summary.notes.contains("mock", ignoreCase = true)) "Earth: mock" else "Earth: live"
+                    val earthSource = if (report.summary.sourceVerified && report.summary.source == "earth-engine-live") {
+                        "Earth: live (verified)"
+                    } else {
+                        "Earth: unverified"
+                    }
                     val aiSource = "Gemini: ${report.provider}"
                     sources[lotId] = "$earthSource | $aiSource"
                 }
@@ -862,7 +866,11 @@ class FarmTwinAppState(
                         if (report != null) {
                             val score = scoreLotForCrop(lot.cropPlan, report)
                             val reason = lotReason(lot.cropPlan, report)
-                            val earthSource = if (report.summary.notes.contains("mock", ignoreCase = true)) "Earth: mock" else "Earth: live"
+                            val earthSource = if (report.summary.sourceVerified && report.summary.source == "earth-engine-live") {
+                                "Earth: live (verified)"
+                            } else {
+                                "Earth: unverified"
+                            }
                             val aiSource = "Gemini: ${report.provider}"
                             AnalyzedLot(
                                 lot = lot,
