@@ -1573,7 +1573,7 @@ async function assessTimelinePhoto({
 }) {
   const fallback = fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarkedSimilar, seedText: photoBase64 });
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return { ...fallback, provider: "fallback (no connection)" };
   }
 
   const prompt = [
@@ -1583,7 +1583,7 @@ async function assessTimelinePhoto({
     userMarkedSimilar == null ? "User similarity feedback: not provided" : `User similarity feedback: ${userMarkedSimilar ? "similar" : "not similar"}`,
     "Analyze the uploaded crop photo and return STRICT JSON with keys:",
     "similarityScore (0-100 integer), isSimilar (boolean), observedStage (string), recommendation (string), rationale (string)",
-    "Keep recommendation practical for farmers.",
+    "Keep recommendation and rationale extremely short (max 1 sentence each) and direct.",
   ].join("\n");
 
   try {
@@ -1607,7 +1607,7 @@ async function assessTimelinePhoto({
 
     const parsed = safeParseJsonObject(result.text || "");
     if (!parsed) {
-      throw new Error("wrong connection to server");
+      return { ...fallback, provider: "fallback (parse error)" };
     }
 
     const similarityScore = clamp(Number(parsed.similarityScore ?? fallback.similarityScore), 0, 100);
@@ -1626,8 +1626,9 @@ async function assessTimelinePhoto({
       rationale: String(parsed.rationale || fallback.rationale),
       provider: "gemini-live",
     };
-  } catch (_error) {
-    throw new Error("wrong connection to server");
+  } catch (error) {
+    console.error("Gemini assessment error:", error);
+    return { ...fallback, provider: "fallback (api error)" };
   }
 }
 
@@ -1731,11 +1732,11 @@ function fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarke
     isSimilar,
     observedStage: isSimilar ? expectedStage : "Slightly behind expected stage",
     recommendation: isSimilar
-      ? "Maintain current irrigation and nutrient schedule; continue daily monitoring."
-      : "Re-check watering pattern and inspect leaf color/uniformity; consider light nutrient correction.",
+      ? "Maintain current irrigation and monitor."
+      : "Adjust watering and inspect leaf health.",
     rationale: isSimilar
-      ? "Visual structure appears aligned with expected morphology for this day."
-      : "Detected differences in canopy density/stage cues compared with expected progression.",
+      ? "Plant looks on track."
+      : "Canopy differs from expected.",
   };
 }
 

@@ -110,6 +110,24 @@ class HttpFarmConfigRepository(
                     )
                 }
             })
+            put("timelineAssessmentCache", buildJsonArray {
+                draft.timelineAssessmentCache.forEach { entry ->
+                    add(
+                        buildJsonObject {
+                            put("dayNumber", entry.dayNumber)
+                            put("expectedStage", entry.expectedStage)
+                            put("cropName", entry.cropName)
+                            put("similarityScore", entry.similarityScore)
+                            put("isSimilar", entry.isSimilar)
+                            put("observedStage", entry.observedStage)
+                            put("recommendation", entry.recommendation)
+                            put("rationale", entry.rationale)
+                            put("provider", entry.provider)
+                            put("updatedAtEpochMs", entry.updatedAtEpochMs)
+                        }
+                    )
+                }
+            })
         }
 
         val response = client.post("${baseUrl.trimEnd('/')}/farm-config") {
@@ -255,6 +273,23 @@ class HttpFarmConfigRepository(
             )
         }
 
+        val timelineAssessmentCache = itemObj["timelineAssessmentCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
+            val obj = rawEntry.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
+            TimelinePhotoAssessmentCacheEntry(
+                dayNumber = dayNumber,
+                expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                similarityScore = obj["similarityScore"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+                isSimilar = obj["isSimilar"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
+                observedStage = obj["observedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                recommendation = obj["recommendation"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                rationale = obj["rationale"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                provider = obj["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            )
+        }
+
         return FarmConfigRemote(
             activeFarmId = activeFarm?.id.orEmpty(),
             farms = resolvedFarms,
@@ -267,6 +302,7 @@ class HttpFarmConfigRepository(
             lots = activeFarm?.lots.orEmpty(),
             timelinePhotoCache = timelinePhotoCache,
             timelineStageVisualCache = timelineStageVisualCache,
+            timelineAssessmentCache = timelineAssessmentCache,
         )
     }
 

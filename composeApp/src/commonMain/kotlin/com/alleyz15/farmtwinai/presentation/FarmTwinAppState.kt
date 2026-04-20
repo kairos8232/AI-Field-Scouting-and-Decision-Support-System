@@ -12,6 +12,7 @@ import com.alleyz15.farmtwinai.data.farm.FarmConfigRemote
 import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
 import com.alleyz15.farmtwinai.data.farm.TimelinePhotoCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelineStageVisualCacheEntry
+import com.alleyz15.farmtwinai.data.farm.TimelinePhotoAssessmentCacheEntry
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.ActionState
@@ -1361,6 +1362,21 @@ class FarmTwinAppState(
             )
         }
 
+        val assessmentCache = timelinePhotoAssessmentByDay.map { (dayNumber, assessment) ->
+            TimelinePhotoAssessmentCacheEntry(
+                dayNumber = dayNumber,
+                expectedStage = assessment.expectedStage,
+                cropName = assessment.cropName,
+                similarityScore = assessment.similarityScore,
+                isSimilar = assessment.isSimilar,
+                observedStage = assessment.observedStage,
+                recommendation = assessment.recommendation,
+                rationale = assessment.rationale,
+                provider = assessment.provider,
+                updatedAtEpochMs = currentEpochMs(),
+            )
+        }
+
         val farmsForSync = buildList {
             if (activeFarm != null) {
                 add(activeFarm)
@@ -1394,6 +1410,7 @@ class FarmTwinAppState(
             lots = activeFarm?.lots ?: lotSections,
             timelinePhotoCache = photoCache,
             timelineStageVisualCache = stageCache,
+            timelineAssessmentCache = assessmentCache,
         )
     }
 
@@ -1476,18 +1493,35 @@ class FarmTwinAppState(
         }
 
         if (remote.timelineStageVisualCache.isNotEmpty()) {
-            timelineStageVisualByDay = remote.timelineStageVisualCache.associate { entry ->
+            val remoteStages = remote.timelineStageVisualCache.associate { entry ->
                 entry.dayNumber to TimelineStageVisual(
                     dayNumber = entry.dayNumber,
-                    expectedStage = snapshot.timeline.firstOrNull { it.dayNumber == entry.dayNumber }?.expectedStage.orEmpty(),
+                    expectedStage = "",
                     cropName = snapshot.farm.cropName,
                     title = entry.title,
                     description = entry.description,
                     imageDataUrl = entry.imageDataUrl,
                     prompt = "",
-                    provider = entry.provider.ifBlank { "cached" },
+                    provider = entry.provider,
                 )
             }
+
+            val remoteAssessments = remote.timelineAssessmentCache.associate { entry ->
+                entry.dayNumber to TimelinePhotoAssessment(
+                    dayNumber = entry.dayNumber,
+                    expectedStage = entry.expectedStage,
+                    cropName = entry.cropName,
+                    similarityScore = entry.similarityScore,
+                    isSimilar = entry.isSimilar,
+                    observedStage = entry.observedStage,
+                    recommendation = entry.recommendation,
+                    rationale = entry.rationale,
+                    provider = entry.provider,
+                )
+            }
+
+            timelineStageVisualByDay = remoteStages.toMutableMap()
+            timelinePhotoAssessmentByDay = remoteAssessments.toMutableMap()
         }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber

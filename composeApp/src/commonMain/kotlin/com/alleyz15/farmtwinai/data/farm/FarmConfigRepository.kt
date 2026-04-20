@@ -20,6 +20,19 @@ data class TimelineStageVisualCacheEntry(
     val updatedAtEpochMs: Long,
 )
 
+data class TimelinePhotoAssessmentCacheEntry(
+    val dayNumber: Int,
+    val expectedStage: String,
+    val cropName: String,
+    val similarityScore: Int,
+    val isSimilar: Boolean,
+    val observedStage: String,
+    val recommendation: String,
+    val rationale: String,
+    val provider: String,
+    val updatedAtEpochMs: Long,
+)
+
 data class FarmConfigFarmEntry(
     val id: String,
     val farmName: String,
@@ -44,6 +57,7 @@ data class FarmConfigDraft(
     val lots: List<LotSectionDraft>,
     val timelinePhotoCache: List<TimelinePhotoCacheEntry> = emptyList(),
     val timelineStageVisualCache: List<TimelineStageVisualCacheEntry> = emptyList(),
+    val timelineAssessmentCache: List<TimelinePhotoAssessmentCacheEntry> = emptyList(),
 )
 
 data class FarmConfigRemote(
@@ -58,6 +72,7 @@ data class FarmConfigRemote(
     val lots: List<LotSectionDraft>,
     val timelinePhotoCache: List<TimelinePhotoCacheEntry> = emptyList(),
     val timelineStageVisualCache: List<TimelineStageVisualCacheEntry> = emptyList(),
+    val timelineAssessmentCache: List<TimelinePhotoAssessmentCacheEntry> = emptyList(),
 )
 
 interface FarmConfigRepository {
