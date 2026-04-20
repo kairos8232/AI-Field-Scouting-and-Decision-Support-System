@@ -64,6 +64,7 @@ fun AiChatScreen(
     onConfirmAction: () -> Unit,
     onSend: (String) -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenKnowledgeBase: () -> Unit,
     authenticatedUser: AuthUser?,
 ) {
     val darkTheme = isAppDarkTheme()
@@ -126,16 +127,29 @@ fun AiChatScreen(
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.88f),
                         )
                     }
-                    IconButton(
-                        onClick = onOpenHistory,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.3f else 0.8f), CircleShape),
-                    ) {
-                        Icon(
-                            imageVector = HistoryIcon,
-                            contentDescription = "History",
-                            tint = MaterialTheme.colorScheme.onBackground,
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onOpenKnowledgeBase,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.3f else 0.8f), CircleShape),
+                        ) {
+                            Icon(
+                                imageVector = KnowledgeIcon,
+                                contentDescription = "Knowledge Base",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                            )
+                        }
+                        IconButton(
+                            onClick = onOpenHistory,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.3f else 0.8f), CircleShape),
+                        ) {
+                            Icon(
+                                imageVector = HistoryIcon,
+                                contentDescription = "History",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                            )
+                        }
                     }
                 }
 
@@ -333,6 +347,42 @@ private val HistoryIcon: ImageVector
             lineToRelative(-3.5f, -2.08f)
             lineTo(13.5f, 8f)
             lineTo(12f, 8f)
+            close()
+        }
+    }.build()
+
+private val KnowledgeIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "Knowledge",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(4f, 5f)
+            curveTo(4f, 3.9f, 4.9f, 3f, 6f, 3f)
+            horizontalLineTo(18f)
+            curveTo(19.1f, 3f, 20f, 3.9f, 20f, 5f)
+            verticalLineTo(19f)
+            curveTo(20f, 20.1f, 19.1f, 21f, 18f, 21f)
+            horizontalLineTo(6f)
+            curveTo(4.9f, 21f, 4f, 20.1f, 4f, 19f)
+            close()
+            moveTo(7f, 7f)
+            horizontalLineTo(17f)
+            verticalLineTo(9f)
+            horizontalLineTo(7f)
+            close()
+            moveTo(7f, 11f)
+            horizontalLineTo(17f)
+            verticalLineTo(13f)
+            horizontalLineTo(7f)
+            close()
+            moveTo(7f, 15f)
+            horizontalLineTo(14f)
+            verticalLineTo(17f)
+            horizontalLineTo(7f)
             close()
         }
     }.build()

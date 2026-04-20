@@ -6,6 +6,7 @@ import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseReply
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 
@@ -39,7 +40,16 @@ interface FieldInsightsRepository {
         context: AiChatContext? = null,
     ): AiChatReply
 
-    suspend fun getCurrentWeatherNow(location: String): CurrentWeatherNow
+    suspend fun getCurrentWeatherNow(
+        location: String,
+        latitude: Double? = null,
+        longitude: Double? = null,
+    ): CurrentWeatherNow
+
+    suspend fun queryKnowledgeBase(
+        query: String,
+        pageSize: Int = 5,
+    ): KnowledgeBaseReply
 
     suspend fun getHistory(): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>
 }

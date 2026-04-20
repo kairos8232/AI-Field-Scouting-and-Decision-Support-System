@@ -147,6 +147,21 @@ data class AiChatReply(
     val provider: String,
 )
 
+data class KnowledgeBaseResult(
+    val title: String,
+    val snippet: String,
+    val uri: String?,
+    val sourceId: String,
+    val score: Double,
+)
+
+data class KnowledgeBaseReply(
+    val query: String,
+    val results: List<KnowledgeBaseResult>,
+    val totalResults: Int,
+    val provider: String,
+)
+
 enum class MessageSender {
     USER,
     ASSISTANT,

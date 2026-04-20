@@ -25,6 +25,7 @@ import com.alleyz15.farmtwinai.domain.model.FarmProfile
 import com.alleyz15.farmtwinai.domain.model.FarmTwinSnapshot
 import com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
+import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseResult
 import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
 import com.alleyz15.farmtwinai.domain.model.SetupMethod
@@ -264,6 +265,24 @@ class FarmTwinAppState(
         private set
 
     var aiConversationProvider by mutableStateOf<String?>(null)
+        private set
+
+    var knowledgeBaseResults by mutableStateOf<List<KnowledgeBaseResult>>(emptyList())
+        private set
+
+    var knowledgeBaseLastQuery by mutableStateOf("")
+        private set
+
+    var knowledgeBaseTotalResults by mutableStateOf(0)
+        private set
+
+    var knowledgeBaseProvider by mutableStateOf<String?>(null)
+        private set
+
+    var isSearchingKnowledgeBase by mutableStateOf(false)
+        private set
+
+    var knowledgeBaseError by mutableStateOf<String?>(null)
         private set
 
     var themePreference by mutableStateOf(ThemePreference.SYSTEM)
@@ -525,6 +544,43 @@ class FarmTwinAppState(
 
             isSendingAiConversationMessage = false
         }
+    }
+
+    fun searchKnowledgeBase(rawQuery: String, pageSize: Int = 5) {
+        val cleanQuery = rawQuery.trim()
+        if (cleanQuery.isEmpty() || isSearchingKnowledgeBase) return
+
+        isSearchingKnowledgeBase = true
+        knowledgeBaseError = null
+
+        scope.launch {
+            runCatching {
+                fieldInsightsRepository.queryKnowledgeBase(
+                    query = cleanQuery,
+                    pageSize = pageSize,
+                )
+            }.onSuccess { reply ->
+                knowledgeBaseLastQuery = reply.query
+                knowledgeBaseResults = reply.results
+                knowledgeBaseTotalResults = reply.totalResults
+                knowledgeBaseProvider = reply.provider
+            }.onFailure { error ->
+                knowledgeBaseError = error.message ?: "Unable to search knowledge base right now."
+                knowledgeBaseResults = emptyList()
+                knowledgeBaseTotalResults = 0
+                knowledgeBaseProvider = null
+            }
+
+            isSearchingKnowledgeBase = false
+        }
+    }
+
+    fun clearKnowledgeBaseSearch() {
+        knowledgeBaseResults = emptyList()
+        knowledgeBaseLastQuery = ""
+        knowledgeBaseTotalResults = 0
+        knowledgeBaseProvider = null
+        knowledgeBaseError = null
     }
 
     fun updateFarmBoundary(points: List<FarmPoint>) {
@@ -817,12 +873,17 @@ class FarmTwinAppState(
         val location = farmSetupAddress.trim()
             .ifBlank { farmSetupMapQuery.trim() }
             .ifBlank { snapshot.farm.location.trim() }
-        if (location.isBlank() || isLoadingDashboardCurrentWeather) return
+        val centroid = lotReports.values.firstOrNull()?.summary
+        if ((location.isBlank() && centroid == null) || isLoadingDashboardCurrentWeather) return
 
         isLoadingDashboardCurrentWeather = true
         scope.launch {
             runCatching {
-                fieldInsightsRepository.getCurrentWeatherNow(location)
+                fieldInsightsRepository.getCurrentWeatherNow(
+                    location = location,
+                    latitude = centroid?.centroidLat,
+                    longitude = centroid?.centroidLng,
+                )
             }.onSuccess { weather ->
                 dashboardCurrentWeatherNow = "${weather.condition} ${weather.temperatureC.toInt()} C"
             }.onFailure {

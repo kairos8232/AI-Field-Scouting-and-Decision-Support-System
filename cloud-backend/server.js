@@ -45,6 +45,18 @@ const VERTEX_IMAGE_MODEL_CANDIDATES = (process.env.VERTEX_IMAGE_MODEL_CANDIDATES
   .filter(Boolean);
 const VERTEX_SERVICE_ACCOUNT_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON || "";
 const VERTEX_IMAGE_ENABLED = String(process.env.VERTEX_IMAGE_ENABLED || "true").toLowerCase() !== "false";
+const VERTEX_SEARCH_ENABLED = String(process.env.VERTEX_SEARCH_ENABLED || "false").toLowerCase() === "true";
+const VERTEX_SEARCH_LOCATION = process.env.VERTEX_SEARCH_LOCATION || "global";
+const VERTEX_SEARCH_COLLECTION = process.env.VERTEX_SEARCH_COLLECTION || "default_collection";
+const VERTEX_SEARCH_DATA_STORE = process.env.VERTEX_SEARCH_DATA_STORE || "";
+const VERTEX_SEARCH_SERVING_CONFIG = process.env.VERTEX_SEARCH_SERVING_CONFIG || "default_search";
+const VERTEX_SEARCH_QUERY_EXPANSION_ENABLED = String(process.env.VERTEX_SEARCH_QUERY_EXPANSION_ENABLED || "true").toLowerCase() !== "false";
+const VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS = Number.isFinite(Number(process.env.VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS))
+  ? Math.min(Math.max(Math.trunc(Number(process.env.VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS)), 0), 8)
+  : 3;
+const VERTEX_SEARCH_EXPANSION_PAGE_SIZE = Number.isFinite(Number(process.env.VERTEX_SEARCH_EXPANSION_PAGE_SIZE))
+  ? Math.min(Math.max(Math.trunc(Number(process.env.VERTEX_SEARCH_EXPANSION_PAGE_SIZE)), 1), 10)
+  : 4;
 
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
@@ -81,6 +93,10 @@ app.get("/health", async (_req, res) => {
     earthEngineReason: eeStatus.reason,
     firestoreEnabled: firebaseStatus.enabled,
     firestoreReason: firebaseStatus.reason,
+    knowledgeBaseEnabled: VERTEX_SEARCH_ENABLED,
+    knowledgeBaseConfigured: isVertexSearchConfigured(),
+    knowledgeQueryExpansionEnabled: VERTEX_SEARCH_QUERY_EXPANSION_ENABLED,
+    knowledgeQueryExpansionVariants: VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS,
   });
 });
 
@@ -588,23 +604,81 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+app.post("/api/knowledge/query", async (req, res) => {
+  try {
+    if (!isVertexSearchConfigured()) {
+      return res.status(503).json({
+        error: "Knowledge base is not configured.",
+        detail: "Set VERTEX_SEARCH_ENABLED=true and provide VERTEX_SEARCH_DATA_STORE before querying.",
+      });
+    }
+
+    const query = String(req.body?.query || "").trim();
+    if (!query) {
+      return res.status(400).json({ error: "query is required." });
+    }
+
+    const requestedPageSize = Number(req.body?.pageSize);
+    const pageSize = Number.isFinite(requestedPageSize)
+      ? Math.min(Math.max(Math.trunc(requestedPageSize), 1), 10)
+      : 5;
+    const requestedExpand = req.body?.expandQuery;
+    const expandQuery = typeof requestedExpand === "boolean"
+      ? requestedExpand
+      : VERTEX_SEARCH_QUERY_EXPANSION_ENABLED;
+
+    const searchResult = await queryKnowledgeBase({ query, pageSize, expandQuery });
+    const ragAnswer = await buildKnowledgeRagAnswer({
+      query,
+      results: searchResult.results,
+    });
+    const mergedResults = ragAnswer
+      ? [ragAnswer, ...searchResult.results]
+      : searchResult.results;
+
+    return res.json({
+      query,
+      results: mergedResults,
+      totalResults: Math.max(searchResult.totalResults, mergedResults.length),
+      provider: ragAnswer ? "vertex-ai-search+gemini-rag" : "vertex-ai-search-live",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to query knowledge base.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 app.post("/api/weather-now", async (req, res) => {
   try {
     const location = String(req.body?.location || "").trim();
-    if (!location) {
-      return res.status(400).json({ error: "location is required." });
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+    if (!location && !hasCoordinates) {
+      return res.status(400).json({ error: "location or coordinates are required." });
     }
-    if (!GOOGLE_MAPS_API_KEY) {
+
+    if (!hasCoordinates && !GOOGLE_MAPS_API_KEY) {
       return res.status(503).json({
         error: "GOOGLE_MAPS_API_KEY is not configured.",
         detail: "Set GOOGLE_MAPS_API_KEY in backend environment and redeploy.",
       });
     }
 
-    const geocoded = await geocodeWithGoogleMaps(location);
+    const geocoded = hasCoordinates
+      ? {
+          lat: latitude,
+          lng: longitude,
+          resolvedAddress: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+        }
+      : await geocodeWithGoogleMaps(location);
+
     const weather = await fetchCurrentWeather(geocoded.lat, geocoded.lng);
     return res.json({
-      location,
+      location: location || geocoded.resolvedAddress,
       resolvedAddress: geocoded.resolvedAddress,
       latitude: geocoded.lat,
       longitude: geocoded.lng,
@@ -613,7 +687,7 @@ app.post("/api/weather-now", async (req, res) => {
       icon: weather.icon,
       rainfallMm: weather.rainfallMm,
       windKmh: weather.windKmh,
-      provider: "google-geocode+open-meteo",
+      provider: hasCoordinates ? "open-meteo-coordinates" : "google-geocode+open-meteo",
     });
   } catch (error) {
     return res.status(500).json({
@@ -1720,6 +1794,355 @@ async function generateAiChatReply({ message, history, context }) {
     reply: text,
     provider: "gemini-live",
   };
+}
+
+function isVertexSearchConfigured() {
+  return VERTEX_SEARCH_ENABLED && Boolean(VERTEX_PROJECT_ID && VERTEX_SEARCH_DATA_STORE);
+}
+
+async function queryKnowledgeBase({ query, pageSize, expandQuery = VERTEX_SEARCH_QUERY_EXPANSION_ENABLED }) {
+  const cleanQuery = String(query || "").trim();
+  const normalizedPageSize = Math.min(Math.max(Math.trunc(Number(pageSize) || 5), 1), 10);
+  const candidates = buildKnowledgeQueryCandidates(cleanQuery, {
+    enabled: expandQuery,
+    maxVariants: VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS,
+  });
+  const useExpansion = candidates.length > 1;
+  const perQueryPageSize = useExpansion
+    ? Math.min(normalizedPageSize, VERTEX_SEARCH_EXPANSION_PAGE_SIZE)
+    : normalizedPageSize;
+
+  const settled = await Promise.allSettled(
+    candidates.map((candidate) => queryKnowledgeBaseSingle({
+      query: candidate,
+      pageSize: perQueryPageSize,
+    }))
+  );
+
+  const fulfilled = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => item.value);
+
+  if (fulfilled.length === 0) {
+    const firstRejected = settled.find((item) => item.status === "rejected");
+    throw firstRejected?.reason || new Error("Knowledge base query failed.");
+  }
+
+  const merged = mergeKnowledgeResults(fulfilled, normalizedPageSize);
+  const scored = applyFallbackRankScores(merged);
+  const totalResults = Math.max(
+    scored.length,
+    ...fulfilled.map((item) => Number(item.totalResults || 0))
+  );
+
+  return {
+    results: scored,
+    totalResults,
+  };
+}
+
+async function queryKnowledgeBaseSingle({ query, pageSize }) {
+  const accessToken = await getVertexAccessToken();
+  const endpoint = [
+    "https://discoveryengine.googleapis.com/v1",
+    `projects/${VERTEX_PROJECT_ID}`,
+    `locations/${VERTEX_SEARCH_LOCATION}`,
+    `collections/${VERTEX_SEARCH_COLLECTION}`,
+    `dataStores/${VERTEX_SEARCH_DATA_STORE}`,
+    `servingConfigs/${VERTEX_SEARCH_SERVING_CONFIG}:search`,
+  ].join("/");
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      query,
+      pageSize,
+      contentSearchSpec: {
+        snippetSpec: {
+          returnSnippet: true,
+        },
+      },
+      spellCorrectionSpec: {
+        mode: "AUTO",
+      },
+      queryExpansionSpec: {
+        condition: "AUTO",
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Vertex AI Search error ${response.status}: ${detail.slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  const rawResults = Array.isArray(payload?.results) ? payload.results : [];
+  return {
+    results: rawResults.map(mapKnowledgeSearchResult).filter((item) => item.title || item.snippet),
+    totalResults: Number(payload?.totalSize || rawResults.length || 0),
+  };
+}
+
+function buildKnowledgeQueryCandidates(query, { enabled, maxVariants }) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery) return [];
+
+  const normalized = cleanQuery.toLowerCase();
+  const candidates = [cleanQuery];
+  const addCandidate = (value) => {
+    const next = String(value || "").trim();
+    if (!next) return;
+    if (candidates.some((item) => item.toLowerCase() === next.toLowerCase())) return;
+    candidates.push(next);
+  };
+
+  if (!enabled || maxVariants <= 0) {
+    return candidates;
+  }
+
+  if (/\bpest|insect|borer|worm\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} integrated pest management`);
+    addCandidate(`${cleanQuery} IPM`);
+    addCandidate("field scouting pest management");
+  }
+
+  if (/\bdisease|blast|blight|fung|mildew|rot\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} disease management`);
+    addCandidate("fungal disease prevention in crops");
+  }
+
+  if (/\bfertilizer|nutrient|npk|nitrogen|phosphorus|potassium\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} nutrient management`);
+    addCandidate("fertilizer schedule by crop stage");
+  }
+
+  if (/\birrigation|water|drip|sprinkler\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} water management`);
+    addCandidate("irrigation scheduling for smallholder farms");
+  }
+
+  if (/\brice|paddy\b/.test(normalized)) {
+    addCandidate("rice disease and pest control");
+  }
+
+  if (/\bcorn|maize\b/.test(normalized)) {
+    addCandidate("corn pest scouting and control");
+  }
+
+  if (/\bchili|chilli|pepper\b/.test(normalized)) {
+    addCandidate("chili crop nutrition and pest management");
+  }
+
+  addCandidate(`${cleanQuery} best practices`);
+
+  return candidates.slice(0, maxVariants + 1);
+}
+
+function mergeKnowledgeResults(searchReplies, pageSize) {
+  const normalizedPageSize = Math.min(Math.max(Math.trunc(Number(pageSize) || 5), 1), 10);
+  const mergedMap = new Map();
+
+  for (const reply of searchReplies) {
+    const items = Array.isArray(reply?.results) ? reply.results : [];
+    for (const item of items) {
+      const key = toKnowledgeResultKey(item);
+      const score = Number(item?.score || 0);
+      const existing = mergedMap.get(key);
+
+      if (!existing) {
+        mergedMap.set(key, {
+          title: String(item?.title || "Knowledge Result").trim(),
+          snippet: String(item?.snippet || "").trim(),
+          uri: item?.uri || null,
+          sourceId: String(item?.sourceId || "knowledge-doc"),
+          score: Number.isFinite(score) ? score : 0,
+          hitCount: 1,
+        });
+        continue;
+      }
+
+      existing.hitCount += 1;
+      if (Number.isFinite(score) && score > existing.score) {
+        existing.score = score;
+      }
+      if ((!existing.snippet || existing.snippet.length < 40) && item?.snippet) {
+        existing.snippet = String(item.snippet).trim();
+      }
+      if (!existing.uri && item?.uri) {
+        existing.uri = item.uri;
+      }
+    }
+  }
+
+  return Array.from(mergedMap.values())
+    .sort((a, b) => {
+      if (b.hitCount !== a.hitCount) return b.hitCount - a.hitCount;
+      return b.score - a.score;
+    })
+    .slice(0, normalizedPageSize)
+    .map((item) => ({
+      title: item.title,
+      snippet: item.snippet,
+      uri: item.uri,
+      sourceId: item.sourceId,
+      score: item.score,
+    }));
+}
+
+function applyFallbackRankScores(results) {
+  const items = Array.isArray(results) ? results : [];
+  if (items.length === 0) {
+    return [];
+  }
+
+  const hasRealScores = items.some((item) => Number(item?.score) > 0);
+  if (hasRealScores) {
+    return items;
+  }
+
+  const total = items.length;
+  return items.map((item, index) => {
+    const rank = index + 1;
+    const score = total === 1
+      ? 1
+      : 1 - ((rank - 1) / (total - 1)) * 0.6;
+
+    return {
+      ...item,
+      score: Number(score.toFixed(3)),
+    };
+  });
+}
+
+function toKnowledgeResultKey(item) {
+  const sourceId = String(item?.sourceId || "").trim().toLowerCase();
+  const uri = String(item?.uri || "").trim().toLowerCase();
+  const title = String(item?.title || "").trim().toLowerCase();
+  const snippet = String(item?.snippet || "").trim().toLowerCase().slice(0, 80);
+
+  if (sourceId) return `source:${sourceId}`;
+  if (uri) return `uri:${uri}`;
+  if (title && snippet) return `title-snippet:${title}:${snippet}`;
+  if (title) return `title:${title}`;
+  return `snippet:${snippet}`;
+}
+
+async function buildKnowledgeRagAnswer({ query, results }) {
+  const contexts = Array.isArray(results)
+    ? results
+        .filter((item) => item && (item.snippet || item.title))
+        .slice(0, 5)
+        .map((item, index) => {
+          const title = String(item.title || "Untitled").trim();
+          const snippet = String(item.snippet || "").trim();
+          const source = String(item.sourceId || "knowledge-doc").trim();
+          const url = item.uri ? ` | uri: ${item.uri}` : "";
+          return `[${index + 1}] title: ${title} | source: ${source}${url}\n${snippet}`;
+        })
+    : [];
+  const hasContext = contexts.length > 0;
+  if (!hasContext) {
+    return null;
+  }
+
+  if (!ai) {
+    return null;
+  }
+
+  const prompt = [
+    "You are a practical agronomy assistant.",
+    "Respond in 2-4 concise sentences with actionable guidance.",
+    "Use only the retrieved context below and cite source indices like [1], [2].",
+    "If the context does not support a claim, do not invent it.",
+    `User question: ${query}`,
+    "Retrieved context:",
+    contexts.join("\n\n"),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: prompt,
+    });
+    const text = String(result.text || "").trim();
+    if (!text) {
+      return null;
+    }
+
+    const normalizedText = text.replace(/\s+/g, " ").trim().slice(0, 700);
+    return {
+      title: "RAG answer",
+      snippet: normalizedText,
+      uri: null,
+      sourceId: "rag-grounded",
+      score: 1,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function mapKnowledgeSearchResult(result) {
+  const document = result?.document && typeof result.document === "object" ? result.document : {};
+  const derived = document?.derivedStructData && typeof document.derivedStructData === "object"
+    ? document.derivedStructData
+    : {};
+  const structured = document?.structData && typeof document.structData === "object"
+    ? document.structData
+    : {};
+
+  const snippets = Array.isArray(derived?.snippets) ? derived.snippets : [];
+  const firstSnippet = snippets.find((snippet) => typeof snippet?.snippet === "string")?.snippet || "";
+  const snippetFallback = [
+    structured?.description,
+    structured?.content,
+    structured?.summary,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || "";
+
+  const title = [
+    document?.title,
+    derived?.title,
+    structured?.title,
+    structured?.name,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || "Knowledge Result";
+
+  const uri = [
+    document?.uri,
+    derived?.link,
+    structured?.uri,
+    structured?.link,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || null;
+
+  const score = Number(result?.modelScores?.relevanceScore || result?.chunk?.relevanceScore || 0);
+  const normalizedPrimarySnippet = normalizeSearchSnippet(firstSnippet);
+  const normalizedFallbackSnippet = normalizeSearchSnippet(snippetFallback);
+  return {
+    title: String(title).trim(),
+    snippet: normalizedPrimarySnippet || normalizedFallbackSnippet,
+    uri,
+    sourceId: String(document?.id || document?.name || "knowledge-doc"),
+    score: Number.isFinite(score) ? score : 0,
+  };
+}
+
+function normalizeSearchSnippet(input) {
+  const text = String(input || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.toLowerCase() === "no snippet is available for this page.") {
+    return "";
+  }
+  return text.slice(0, 320);
 }
 
 function extractSvg(text) {

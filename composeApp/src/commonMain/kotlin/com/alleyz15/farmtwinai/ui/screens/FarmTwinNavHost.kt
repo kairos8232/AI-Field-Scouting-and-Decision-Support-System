@@ -17,6 +17,7 @@ import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotRecommendationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.KnowledgeBaseScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.PolygonInsightsScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
@@ -225,6 +226,7 @@ fun FarmTwinNavHost(
                     navigator.navigate(AppDestination.Timeline)
                 },
                 onOpenChat = { navigator.navigate(AppDestination.AiChat) },
+                onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
                 latestTimelineHealthScore = appState.timelinePhotoAssessmentByDay
                     .maxByOrNull { it.key }
                     ?.value
@@ -277,7 +279,18 @@ fun FarmTwinNavHost(
             onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
             onSend = appState::sendAiConversationMessage,
             onOpenHistory = { navigator.navigate(AppDestination.History) },
+            onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
             authenticatedUser = appState.authenticatedUser,
+        )
+        AppDestination.KnowledgeBase -> KnowledgeBaseScreen(
+            results = appState.knowledgeBaseResults,
+            isSearching = appState.isSearchingKnowledgeBase,
+            errorMessage = appState.knowledgeBaseError,
+            provider = appState.knowledgeBaseProvider,
+            totalResults = appState.knowledgeBaseTotalResults,
+            lastQuery = appState.knowledgeBaseLastQuery,
+            onBack = { navigator.pop() },
+            onSearch = { query -> appState.searchKnowledgeBase(query) },
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             dayNumber = appState.selectedTimelineDay.dayNumber,

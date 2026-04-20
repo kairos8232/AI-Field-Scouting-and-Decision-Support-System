@@ -9,6 +9,8 @@ import com.alleyz15.farmtwinai.domain.model.CropRecommendation
 import com.alleyz15.farmtwinai.domain.model.EarthEngineSummary
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseReply
+import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseResult
 import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
@@ -217,12 +219,26 @@ class HttpFieldInsightsRepository(
         )
     }
 
-    override suspend fun getCurrentWeatherNow(location: String): CurrentWeatherNow {
+    override suspend fun getCurrentWeatherNow(
+        location: String,
+        latitude: Double?,
+        longitude: Double?,
+    ): CurrentWeatherNow {
         val cleanLocation = location.trim()
-        require(cleanLocation.isNotEmpty()) { "Location is required." }
+        val safeLatitude = latitude?.takeIf { it.isFinite() }
+        val safeLongitude = longitude?.takeIf { it.isFinite() }
+        require(cleanLocation.isNotEmpty() || (safeLatitude != null && safeLongitude != null)) {
+            "Location or coordinates are required."
+        }
 
         val payload = buildJsonObject {
-            put("location", cleanLocation)
+            if (cleanLocation.isNotEmpty()) {
+                put("location", cleanLocation)
+            }
+            if (safeLatitude != null && safeLongitude != null) {
+                put("latitude", safeLatitude)
+                put("longitude", safeLongitude)
+            }
         }
 
         val configuredBase = baseUrl.trimEnd('/')
@@ -237,13 +253,54 @@ class HttpFieldInsightsRepository(
         }
 
         val root = json.parseToJsonElement(response.body<String>()).jsonObject
+        val fallbackLocation = cleanLocation.ifBlank { "Farm centroid" }
         return CurrentWeatherNow(
-            location = root["location"]?.jsonPrimitive?.contentOrNull ?: cleanLocation,
-            resolvedAddress = root["resolvedAddress"]?.jsonPrimitive?.contentOrNull ?: cleanLocation,
+            location = root["location"]?.jsonPrimitive?.contentOrNull ?: fallbackLocation,
+            resolvedAddress = root["resolvedAddress"]?.jsonPrimitive?.contentOrNull ?: fallbackLocation,
             temperatureC = root["temperatureC"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
             condition = root["condition"]?.jsonPrimitive?.contentOrNull ?: "Clear",
             icon = root["icon"]?.jsonPrimitive?.contentOrNull ?: "sun",
             provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "weather-fallback",
+        )
+    }
+
+    override suspend fun queryKnowledgeBase(query: String, pageSize: Int): KnowledgeBaseReply {
+        val cleanQuery = query.trim()
+        require(cleanQuery.isNotEmpty()) { "Query cannot be empty." }
+
+        val payload = buildJsonObject {
+            put("query", cleanQuery)
+            put("pageSize", pageSize.coerceIn(1, 10))
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        val response = client.post("$configuredBase/knowledge/query") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+
+        if (!response.status.isSuccess()) {
+            val message = extractServerErrorMessage(response.body<String>())
+            throw IllegalStateException(message)
+        }
+
+        val root = json.parseToJsonElement(response.body<String>()).jsonObject
+        val results = root["results"]?.jsonArray.orEmpty().map { item ->
+            val obj = item.jsonObject
+            KnowledgeBaseResult(
+                title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "Knowledge Result",
+                snippet = obj["snippet"]?.jsonPrimitive?.contentOrNull ?: "",
+                uri = obj["uri"]?.jsonPrimitive?.contentOrNull,
+                sourceId = obj["sourceId"]?.jsonPrimitive?.contentOrNull ?: "knowledge-doc",
+                score = obj["score"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            )
+        }
+
+        return KnowledgeBaseReply(
+            query = root["query"]?.jsonPrimitive?.contentOrNull ?: cleanQuery,
+            results = results,
+            totalResults = root["totalResults"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: results.size,
+            provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "vertex-ai-search",
         )
     }
 

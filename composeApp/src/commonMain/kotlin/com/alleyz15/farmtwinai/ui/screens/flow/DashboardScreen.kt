@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -67,6 +68,7 @@ fun DashboardScreen(
     lotSections: List<LotSectionDraft>,
     onOpenTimeline: (Int) -> Unit,
     onOpenChat: () -> Unit,
+    onOpenKnowledgeBase: () -> Unit,
     latestTimelineHealthScore: Int?,
     isTabBarVisible: Boolean = false,
     onSelectDashboardTab: (() -> Unit)? = null,
@@ -111,6 +113,19 @@ fun DashboardScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
                     )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onOpenKnowledgeBase,
+                        shape = RoundedCornerShape(999.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, inactiveChipBorder),
+                    ) {
+                        Text(
+                            text = "Knowledge Base",
+                            color = MaterialTheme.colorScheme.onBackground,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
