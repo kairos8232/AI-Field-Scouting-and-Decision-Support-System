@@ -1335,7 +1335,14 @@ class FarmTwinAppState(
         userId: String,
     ): FarmConfigDraft {
         val activeFarm = currentFarmAsStored()
-        val photoCache = timelineUploadByDay.map { (dayNumber, upload) ->
+        val prioritizedPhotoDays = buildList {
+            add(selectedTimelineDay.dayNumber)
+            timelinePhotoAssessmentByDay.keys.sortedDescending().forEach { add(it) }
+            timelineUploadByDay.keys.sortedDescending().forEach { add(it) }
+        }.distinct().take(7)
+
+        val photoCache = prioritizedPhotoDays.mapNotNull { dayNumber ->
+            val upload = timelineUploadByDay[dayNumber] ?: return@mapNotNull null
             TimelinePhotoCacheEntry(
                 dayNumber = dayNumber,
                 photoBase64 = upload.photoBase64,
@@ -1505,7 +1512,10 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
+            timelineStageVisualByDay = remoteStages.toMutableMap()
+        }
 
+        if (remote.timelineAssessmentCache.isNotEmpty()) {
             val remoteAssessments = remote.timelineAssessmentCache.associate { entry ->
                 entry.dayNumber to TimelinePhotoAssessment(
                     dayNumber = entry.dayNumber,
@@ -1519,8 +1529,6 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
-
-            timelineStageVisualByDay = remoteStages.toMutableMap()
             timelinePhotoAssessmentByDay = remoteAssessments.toMutableMap()
         }
 

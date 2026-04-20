@@ -168,6 +168,7 @@ app.post("/api/farm-config", async (req, res) => {
     const activeFarmId = activeFarm?.id || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
     const timelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(req.body?.timelineAssessmentCache);
 
     if (farms.length === 0) {
       return res.status(400).json({ error: "At least one farm is required." });
@@ -187,6 +188,7 @@ app.post("/api/farm-config", async (req, res) => {
       lots: activeFarm?.lots || [],
       timelinePhotoCache,
       timelineStageVisualCache,
+      timelineAssessmentCache,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -237,6 +239,9 @@ app.get("/api/farm-config", async (req, res) => {
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
 
     return res.json({
       item: {
@@ -251,6 +256,9 @@ app.get("/api/farm-config", async (req, res) => {
         mode: activeFarm?.mode || "PLANNING",
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
+        timelinePhotoCache,
+        timelineStageVisualCache,
+        timelineAssessmentCache,
       },
     });
   } catch (error) {
@@ -293,6 +301,9 @@ app.get("/api/farm-config/latest", async (req, res) => {
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
 
     return res.json({
       item: {
@@ -307,6 +318,9 @@ app.get("/api/farm-config/latest", async (req, res) => {
         mode: activeFarm?.mode || "PLANNING",
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
+        timelinePhotoCache,
+        timelineStageVisualCache,
+        timelineAssessmentCache,
       },
     });
   } catch (error) {
@@ -953,6 +967,34 @@ function normalizeTimelineStageVisualCache(input) {
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl,
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineAssessmentCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const similarityScore = Number(raw?.similarityScore);
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        expectedStage: String(raw?.expectedStage || "").trim(),
+        cropName: String(raw?.cropName || "").trim(),
+        similarityScore: Number.isFinite(similarityScore) ? similarityScore : 0,
+        isSimilar: Boolean(raw?.isSimilar),
+        observedStage: String(raw?.observedStage || "").trim(),
+        recommendation: String(raw?.recommendation || "").trim(),
+        rationale: String(raw?.rationale || "").trim(),
         provider: String(raw?.provider || "").trim(),
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
       };
