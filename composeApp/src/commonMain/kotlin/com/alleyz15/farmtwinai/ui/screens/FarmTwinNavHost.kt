@@ -372,7 +372,7 @@ fun FarmTwinNavHost(
             },
             canDeleteActiveFarm = appState.storedFarms.isNotEmpty(),
             selectedThemePreference = appState.themePreference,
-            onThemePreferenceChange = appState::setThemePreference,
+            onThemePreferenceChange = appState::updateThemePreference,
             onSignOut = {
                 appState.signOut()
                 navigator.resetTo(AppDestination.Welcome)

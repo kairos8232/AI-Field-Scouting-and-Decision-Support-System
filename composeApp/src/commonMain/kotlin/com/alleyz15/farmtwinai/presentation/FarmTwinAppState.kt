@@ -354,7 +354,7 @@ class FarmTwinAppState(
         selectedMode = mode
     }
 
-    fun setThemePreference(preference: ThemePreference) {
+    fun updateThemePreference(preference: ThemePreference) {
         themePreference = preference
     }
 
