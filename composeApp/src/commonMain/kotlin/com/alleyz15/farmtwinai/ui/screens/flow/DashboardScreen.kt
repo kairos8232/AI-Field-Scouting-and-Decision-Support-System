@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -100,18 +102,60 @@ fun DashboardScreen(
                     .padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = if (isTabBarVisible) 80.dp else 18.dp),
             ) {
                 // Header
-                Column {
-                    Text(
-                        text = "Farm Dashboard",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    Text(
-                        text = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
-                    )
+                val currentLot = selectedLot ?: lotSections.firstOrNull()
+                val weatherNow = weatherNowFromLocation ?: currentLot?.id?.let { weatherNowByLotId[it] } ?: "Weather pending"
+                val shortPred = when {
+                    weatherNow.contains("Rain", ignoreCase = true) || weatherNow.contains("Storm", ignoreCase = true) || weatherNow.contains("Thunder", ignoreCase = true) -> 
+                        "Rain in 2h"
+                    weatherNow.contains("Cloud", ignoreCase = true) || weatherNow.contains("Overcast", ignoreCase = true) -> 
+                        "40% Drizzle"
+                    weatherNow.contains("Pending", ignoreCase = true) -> ""
+                    else -> "Stable"
+                }
+                val weatherMain = weatherNow.replace("Thunderstorm", "Storm", ignoreCase = true).split(" ").take(2).joinToString(" ")
+                val chipText = if (shortPred.isNotEmpty()) "$weatherMain • $shortPred" else weatherMain
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Farm Dashboard",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = "${snapshot.farm.farmName} • ${selectedMode.name.replace('_', ' ')}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
+                        )
+                    }
+
+                    // Compact Weather Pill
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.4f else 0.7f), RoundedCornerShape(999.dp))
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = WeatherNowIcon,
+                            contentDescription = "Weather",
+                            tint = if (darkTheme) Mint200 else Color(0xFF2563EB),
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = chipText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -176,7 +220,6 @@ fun DashboardScreen(
 
                     selectedLot?.let { lot ->
                         val cropSummary = getLotSummary(lot)
-                        val weatherNow = weatherNowFromLocation ?: weatherNowByLotId[lot.id] ?: "Weather pending"
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -203,64 +246,6 @@ fun DashboardScreen(
                                 bg = summaryCardBg,
                                 border = summaryCardBorder,
                             )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, summaryCardBorder, RoundedCornerShape(14.dp))
-                                .background(summaryCardBg, RoundedCornerShape(14.dp))
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(30.dp)
-                                            .background(Leaf400.copy(alpha = 0.16f), RoundedCornerShape(999.dp)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = WeatherNowIcon,
-                                            contentDescription = "Weather now",
-                                            tint = Leaf400,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    }
-                                    Column {
-                                        Text(
-                                            text = "Weather now",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = weatherNow,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onBackground,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
-                                }
-
-                                Text(
-                                    text = "Live",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Leaf400,
-                                    modifier = Modifier
-                                        .border(1.dp, Leaf400.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
-                            }
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -371,6 +356,7 @@ private fun StatPillCard(
         }
     }
 }
+
 
 private val AiSparkIcon: ImageVector
     get() = ImageVector.Builder(
