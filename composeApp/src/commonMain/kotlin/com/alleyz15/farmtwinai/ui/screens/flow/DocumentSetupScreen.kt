@@ -31,22 +31,14 @@ fun DocumentSetupScreen(
                 title = "Upload farm-related documents",
                 body = "Phase 1 does not process files yet, but the UI communicates how document-assisted onboarding will work later.",
             )
-            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) {
-                        Text("Land Title")
-                    }
-                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) {
-                        Text("Soil Report")
-                    }
-                }
-                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) {
-                        Text("Crop Report")
-                    }
-                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) {
-                        Text("Farm Sketch")
-                    }
+            listOf(
+                "Land title / lot info",
+                "Soil report",
+                "Crop suitability report",
+                "PDF or image of farm sketch",
+            ).forEach {
+                OutlinedButton(onClick = {}, modifier = Modifier.fillMaxWidth()) {
+                    Text("Attach $it")
                 }
             }
             Card(

@@ -39,11 +39,14 @@ fun DualActionButtons(
     onPrimary: () -> Unit,
     secondaryLabel: String? = null,
     onSecondary: (() -> Unit)? = null,
+    primaryEnabled: Boolean = true,
+    secondaryEnabled: Boolean = true,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Button(
             onClick = onPrimary,
             modifier = Modifier.fillMaxWidth(),
+            enabled = primaryEnabled,
         ) {
             Text(primaryLabel)
         }
@@ -51,6 +54,7 @@ fun DualActionButtons(
             OutlinedButton(
                 onClick = onSecondary,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = secondaryEnabled,
             ) {
                 Text(secondaryLabel)
             }

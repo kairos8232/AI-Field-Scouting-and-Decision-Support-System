@@ -43,8 +43,33 @@ enum class ActionType {
     WATERED,
     IMPROVED_DRAINAGE,
     ADJUSTED_FERTILIZER,
+    APPLIED_PESTICIDE_FUNGICIDE,
+    PRUNED_AFFECTED_LEAVES,
     MONITORED_ONLY,
     REPLANTED,
+}
+
+enum class RecoveryTrend {
+    IMPROVING,
+    STABLE,
+    WORSENING,
+    UNKNOWN,
+}
+
+data class TimelineRecoveryForecast(
+    val sourceDayNumber: Int,
+    val trend: RecoveryTrend,
+    val etaDaysMin: Int,
+    val etaDaysMax: Int,
+    val confidencePercent: Int,
+    val confidenceTier: ForecastConfidenceTier,
+    val isUrgent: Boolean,
+)
+
+enum class ForecastConfidenceTier {
+    LOW,
+    MEDIUM,
+    HIGH,
 }
 
 data class UserProfile(
@@ -110,6 +135,33 @@ data class ChatMessage(
     val timestamp: String,
 )
 
+data class AiChatContext(
+    val farmName: String? = null,
+    val cropName: String? = null,
+    val mode: String? = null,
+    val latestRecommendation: String? = null,
+)
+
+data class AiChatReply(
+    val reply: String,
+    val provider: String,
+)
+
+data class KnowledgeBaseResult(
+    val title: String,
+    val snippet: String,
+    val uri: String?,
+    val sourceId: String,
+    val score: Double,
+)
+
+data class KnowledgeBaseReply(
+    val query: String,
+    val results: List<KnowledgeBaseResult>,
+    val totalResults: Int,
+    val provider: String,
+)
+
 enum class MessageSender {
     USER,
     ASSISTANT,
@@ -152,4 +204,6 @@ data class LotSectionDraft(
     val cropPlan: String,
     val soilType: String,
     val waterAvailability: String,
+    val cropSummary: CropSummary? = null,
+    val plantingDate: String? = null,
 )
