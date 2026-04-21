@@ -48,6 +48,7 @@ import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 @Composable
 fun ActionConfirmationScreen(
     dayNumber: Int,
+    cropName: String,
     latestAction: String,
     primaryRecommendedAction: ActionType,
     alternativeActions: List<ActionType>,
@@ -68,10 +69,14 @@ fun ActionConfirmationScreen(
     }
     val requiresPesticideWarning = selectedAction == ActionType.APPLIED_PESTICIDE_FUNGICIDE
     val canSubmit = !requiresPesticideWarning || pesticideWarningAccepted
-    val aiStarterPrompt = remember(dayNumber, latestAction, recoveryForecast, selectedAction, selectedState) {
+    val aiStarterPrompt = remember(dayNumber, cropName, latestAction, recoveryForecast, selectedAction, selectedState) {
         buildString {
             append("I'm reviewing Day ")
             append(dayNumber)
+            if (cropName.isNotBlank()) {
+                append(" for crop ")
+                append(cropName)
+            }
             append(" action: ")
             append(selectedAction.label())
             append(". Recommendation was: ")

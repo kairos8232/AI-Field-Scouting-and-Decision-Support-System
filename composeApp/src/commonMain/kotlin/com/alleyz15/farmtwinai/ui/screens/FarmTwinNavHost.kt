@@ -226,7 +226,6 @@ fun FarmTwinNavHost(
                     navigator.navigate(AppDestination.Timeline)
                 },
                 onOpenChat = { navigator.navigate(AppDestination.AiChat) },
-                onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
                 latestTimelineHealthScore = appState.timelinePhotoAssessmentByDay
                     .maxByOrNull { it.key }
                     ?.value
@@ -261,7 +260,7 @@ fun FarmTwinNavHost(
             unlockedMaxDayNumber = appState.timelineUnlockedMaxDayNumber(),
             cachedPhotoBase64 = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoBase64,
             cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
-            isFarmConfigSyncing = appState.isFarmConfigSyncing,
+            isFarmConfigCacheReady = appState.isFarmConfigCacheReady,
             actionBannerMessage = appState.timelineActionBannerMessage,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
@@ -296,6 +295,7 @@ fun FarmTwinNavHost(
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
             dayNumber = appState.selectedTimelineDay.dayNumber,
+            cropName = appState.snapshot.farm.cropName,
             latestAction = appState.recommendedActionTextForDay(appState.selectedTimelineDay.dayNumber),
             primaryRecommendedAction = appState.defaultActionTypeForDay(appState.selectedTimelineDay.dayNumber),
             alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
@@ -325,6 +325,10 @@ fun FarmTwinNavHost(
                         val starterPrompt = buildString {
                             append("Day ")
                             append(dayNumber)
+                            if (appState.snapshot.farm.cropName.isNotBlank()) {
+                                append(" for crop ")
+                                append(appState.snapshot.farm.cropName)
+                            }
                             append(" action is not done yet: ")
                             append(actionType.name.lowercase().replace('_', ' '))
                             append(". Give me practical step-by-step instructions and precautions for today.")

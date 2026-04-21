@@ -131,7 +131,7 @@ fun TimelineScreen(
     unlockedMaxDayNumber: Int,
     cachedPhotoBase64: String?,
     cachedPhotoMimeType: String?,
-    isFarmConfigSyncing: Boolean,
+    isFarmConfigCacheReady: Boolean,
     actionBannerMessage: String?,
     onBack: () -> Unit,
     onSelectDay: (Int) -> Unit,
@@ -164,8 +164,8 @@ fun TimelineScreen(
         },
     )
 
-    LaunchedEffect(selectedDay.dayNumber, selectedDay.expectedStage, isFarmConfigSyncing) {
-        if (!isFarmConfigSyncing) {
+    LaunchedEffect(selectedDay.dayNumber, selectedDay.expectedStage, isFarmConfigCacheReady) {
+        if (isFarmConfigCacheReady) {
             onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
         }
     }
@@ -383,6 +383,14 @@ fun TimelineScreen(
                                 }
                             }
                         }
+                    }
+
+                    if (!stageVisualError.isNullOrBlank()) {
+                        Text(
+                            text = stageVisualError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
 
                     if (imagePickerMessage != null && !isAssessingPhoto) {

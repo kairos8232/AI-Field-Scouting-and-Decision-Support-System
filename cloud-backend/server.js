@@ -28,12 +28,18 @@ app.use(
 
 const PORT = Number(process.env.PORT || 8080);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL_CANDIDATES = (process.env.GEMINI_MODEL_CANDIDATES || "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
 const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "live";
 const EARTH_ENGINE_PROJECT_ID = process.env.EARTH_ENGINE_PROJECT_ID || "";
 const EARTH_ENGINE_SERVICE_ACCOUNT_JSON = process.env.EARTH_ENGINE_SERVICE_ACCOUNT_JSON || "";
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
 const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || "";
 const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
+const FIREBASE_HISTORY_COLLECTION = process.env.FIREBASE_HISTORY_COLLECTION || "historyEvents";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
@@ -93,6 +99,7 @@ app.get("/health", async (_req, res) => {
     earthEngineReason: eeStatus.reason,
     firestoreEnabled: firebaseStatus.enabled,
     firestoreReason: firebaseStatus.reason,
+    firebaseStorageBucket: resolveFirebaseStorageBucketName(),
     knowledgeBaseEnabled: VERTEX_SEARCH_ENABLED,
     knowledgeBaseConfigured: isVertexSearchConfigured(),
     knowledgeQueryExpansionEnabled: VERTEX_SEARCH_QUERY_EXPANSION_ENABLED,
@@ -183,7 +190,12 @@ app.post("/api/farm-config", async (req, res) => {
     const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
     const activeFarmId = activeFarm?.id || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
+    const normalizedTimelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizedTimelineStageVisualCache,
+      userId,
+      activeFarmId,
+    });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(req.body?.timelineAssessmentCache);
 
     if (farms.length === 0) {
@@ -362,21 +374,85 @@ app.get("/api/field-insights/history", async (req, res) => {
       ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100)
       : 20;
 
-    const snapshot = await db
-      .collection(FIREBASE_COLLECTION)
-      .orderBy("createdAt", "desc")
-      .limit(limit)
-      .get();
+    const userId = normalizeUserId(req.query?.userId);
 
-    const items = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const [eventsSnapshot, legacySnapshot] = await Promise.all([
+      db
+        .collection(FIREBASE_HISTORY_COLLECTION)
+        .orderBy("createdAt", "desc")
+        .limit(limit * 6)
+        .get(),
+      db
+        .collection(FIREBASE_COLLECTION)
+        .orderBy("createdAt", "desc")
+        .limit(limit * 4)
+        .get(),
+    ]);
+
+    const eventItems = eventsSnapshot.docs
+      .map((doc) => mapEventHistoryItem(doc.id, doc.data()))
+      .filter(Boolean)
+      .filter((item) => !userId || item.userId === userId);
+
+    const legacyItems = legacySnapshot.docs
+      .map((doc) => mapLegacyScanHistoryItem(doc.id, doc.data()))
+      .filter(Boolean)
+      .filter((item) => !userId || item.userId === userId);
+
+    const deduped = new Map();
+    [...eventItems, ...legacyItems].forEach((item) => {
+      const key = `${item.category}:${item.id}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, item);
+      }
+    });
+
+    const items = Array.from(deduped.values())
+      .sort((a, b) => b.createdAtEpochMs - a.createdAtEpochMs)
+      .slice(0, limit)
+      .map(({ createdAtEpochMs, userId: _userId, ...rest }) => rest);
 
     return res.json({ items, count: items.length });
   } catch (error) {
     return res.status(500).json({
       error: "Unable to read field insights history.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/timeline/action-log", async (req, res) => {
+  try {
+    const userId = normalizeUserId(req.body?.userId);
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const actionType = String(req.body?.actionType || "").trim();
+    const actionState = String(req.body?.actionState || "").trim();
+    const summary = String(req.body?.summary || "").trim();
+    const cropName = String(req.body?.cropName || "").trim();
+
+    if (!userId || !actionType || !actionState) {
+      return res.status(400).json({ error: "userId, actionType, and actionState are required." });
+    }
+
+    const label = `${actionType.replace(/_/g, " ")} (${actionState})`;
+    await persistHistoryEvent({
+      userId,
+      category: "action_log",
+      title: `Day ${dayNumber} action update`,
+      summary: summary || label,
+      recommendation: label,
+      payload: {
+        dayNumber,
+        actionType,
+        actionState,
+        cropName,
+      },
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to save action log.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -555,6 +631,26 @@ app.post("/api/timeline/photo-compare", async (req, res) => {
       userMarkedSimilar,
     });
 
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "timeline_comparison",
+        title: `Day ${dayNumber} timeline comparison`,
+        summary: assessment.recommendation,
+        recommendation: `Similarity ${assessment.similarityScore}%`,
+        payload: {
+          dayNumber,
+          expectedStage,
+          cropName,
+          similarityScore: assessment.similarityScore,
+          observedStage: assessment.observedStage,
+          isSimilar: assessment.isSimilar,
+          provider: assessment.provider,
+        },
+      });
+    }
+
     return res.json(assessment);
   } catch (error) {
     return res.status(500).json({
@@ -594,6 +690,23 @@ app.post("/api/chat", async (req, res) => {
       history,
       context,
     });
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "conversation",
+        title: "AI consultation",
+        summary: truncateText(reply.reply, 280),
+        recommendation: context?.cropName || context?.farmName || "Chat",
+        payload: {
+          message,
+          historyCount: history.length,
+          context,
+          provider: reply.provider,
+        },
+      });
+    }
 
     return res.json(reply);
   } catch (error) {
@@ -635,6 +748,22 @@ app.post("/api/knowledge/query", async (req, res) => {
     const mergedResults = ragAnswer
       ? [ragAnswer, ...searchResult.results]
       : searchResult.results;
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "kb_search",
+        title: "Knowledge base search",
+        summary: query,
+        recommendation: mergedResults[0]?.title || "Knowledge query",
+        payload: {
+          query,
+          totalResults: Math.max(searchResult.totalResults, mergedResults.length),
+          provider: ragAnswer ? "vertex-ai-search+gemini-rag" : "vertex-ai-search-live",
+        },
+      });
+    }
 
     return res.json({
       query,
@@ -750,6 +879,11 @@ function getFirestoreDb() {
       ...(FIREBASE_PROJECT_ID ? { projectId: FIREBASE_PROJECT_ID } : {}),
     };
 
+    const storageBucket = resolveFirebaseStorageBucketName();
+    if (storageBucket) {
+      appOptions.storageBucket = storageBucket;
+    }
+
     if (credentialsJson.trim()) {
       const serviceAccount = JSON.parse(credentialsJson);
       appOptions.credential = admin.credential.cert(serviceAccount);
@@ -771,6 +905,121 @@ function getFirestoreDb() {
     };
     return null;
   }
+}
+
+function resolveFirebaseStorageBucketName() {
+  const configured = String(FIREBASE_STORAGE_BUCKET || "").trim();
+  if (configured) return configured;
+  const projectId = String(FIREBASE_PROJECT_ID || "").trim();
+  return projectId ? `${projectId}.appspot.com` : "";
+}
+
+function getFirebaseStorageBucket() {
+  getFirestoreDb();
+  if (admin.apps.length === 0) return null;
+  const bucketName = resolveFirebaseStorageBucketName();
+  if (!bucketName) return null;
+
+  try {
+    return admin.storage().bucket(bucketName);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function materializeTimelineStageVisualCache({ entries, userId, activeFarmId }) {
+  const bucket = getFirebaseStorageBucket();
+  if (!bucket || !Array.isArray(entries) || entries.length === 0) {
+    return entries;
+  }
+
+  const materialized = [];
+  for (const entry of entries) {
+    const imageDataUrl = String(entry?.imageDataUrl || "").trim();
+    if (!imageDataUrl.startsWith("data:")) {
+      materialized.push(entry);
+      continue;
+    }
+
+    const uploaded = await uploadStageVisualDataUrl({
+      bucket,
+      dataUrl: imageDataUrl,
+      userId,
+      activeFarmId,
+      dayNumber: entry.dayNumber,
+      updatedAtEpochMs: entry.updatedAtEpochMs,
+    });
+
+    materialized.push({
+      ...entry,
+      imageDataUrl: uploaded || imageDataUrl,
+    });
+  }
+
+  return materialized;
+}
+
+async function uploadStageVisualDataUrl({ bucket, dataUrl, userId, activeFarmId, dayNumber, updatedAtEpochMs }) {
+  const parsed = parseDataUrlImage(dataUrl);
+  if (!parsed) return "";
+
+  try {
+    const farmKey = String(activeFarmId || "farm-legacy").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const stamp = Number.isFinite(Number(updatedAtEpochMs)) ? Math.trunc(Number(updatedAtEpochMs)) : Date.now();
+    const ext = extensionForMime(parsed.mimeType);
+    const objectPath = [
+      "timeline-stage-visuals",
+      String(userId || "anonymous"),
+      farmKey,
+      `day-${Math.max(1, Math.trunc(Number(dayNumber) || 1))}-${stamp}.${ext}`,
+    ].join("/");
+
+    const file = bucket.file(objectPath);
+    await file.save(parsed.buffer, {
+      resumable: false,
+      metadata: {
+        contentType: parsed.mimeType,
+        cacheControl: "public, max-age=31536000",
+      },
+    });
+
+    const [signedUrl] = await file.getSignedUrl({
+      action: "read",
+      expires: "2100-01-01",
+    });
+    return String(signedUrl || "").trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function parseDataUrlImage(input) {
+  const text = String(input || "").trim();
+  const match = text.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\n\r]+)$/);
+  if (!match) return null;
+
+  const mimeType = String(match[1] || "image/png").trim().toLowerCase();
+  const base64 = String(match[2] || "").replace(/\s+/g, "");
+  if (!base64) return null;
+
+  try {
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length) return null;
+    return {
+      mimeType,
+      buffer,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function extensionForMime(mimeType) {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.includes("png")) return "png";
+  if (value.includes("webp")) return "webp";
+  if (value.includes("gif")) return "gif";
+  return "jpg";
 }
 
 function getFirebaseAuth() {
@@ -837,8 +1086,137 @@ async function persistInsightRecord({ userId = null, requestBody, normalized, re
       },
       response,
     });
+
+    void persistHistoryEvent({
+      userId,
+      category: "scan",
+      title: "Past scanned insight",
+      summary: String(response?.summary?.notes || "").trim(),
+      recommendation: String(response?.recommendations?.[0]?.cropName || "No rec").trim() || "No rec",
+      payload: {
+        provider: String(response?.provider || ""),
+      },
+    });
   } catch (error) {
     console.error("Failed to persist field insight record:", error);
+  }
+}
+
+async function persistHistoryEvent({ userId = null, category, title, summary, recommendation, payload = {} }) {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const normalizedCategory = String(category || "scan").trim().toLowerCase();
+  if (!normalizedCategory) return;
+
+  const normalizedUserId = normalizeUserId(userId);
+
+  try {
+    await db.collection(FIREBASE_HISTORY_COLLECTION).add({
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId: normalizedUserId,
+      category: normalizedCategory,
+      title: safeTrim(title),
+      summary: safeTrim(summary),
+      recommendation: safeTrim(recommendation),
+      payload,
+    });
+  } catch (error) {
+    console.error("Failed to persist history event:", error);
+  }
+}
+
+function mapEventHistoryItem(id, data = {}) {
+  if (!data || typeof data !== "object") return null;
+  const createdAtEpochMs = resolveCreatedAtEpochMs(data.createdAt);
+  const category = safeTrim(data.category).toLowerCase() || "scan";
+  const summary = safeTrim(data.summary);
+  const recommendation = safeTrim(data.recommendation);
+  const title = safeTrim(data.title) || defaultCategoryTitle(category);
+
+  return {
+    id,
+    userId: normalizeUserId(data.userId),
+    category,
+    title,
+    summaryNotes: summary,
+    recommendedCrops: recommendation,
+    hasConversation: category === "conversation",
+    chatMessagesCount: category === "conversation" ? 1 : 0,
+    dateString: `Stored TS: ${Math.floor(createdAtEpochMs / 1000)}`,
+    createdAtEpochMs,
+  };
+}
+
+function mapLegacyScanHistoryItem(id, data = {}) {
+  if (!data || typeof data !== "object") return null;
+  const response = data.response || {};
+  const summary = safeTrim(response?.summary?.notes);
+  const recommendation = safeTrim(response?.recommendations?.[0]?.cropName) || "No rec";
+  const createdAtEpochMs = resolveCreatedAtEpochMs(data.createdAt);
+
+  return {
+    id,
+    userId: normalizeUserId(data.userId),
+    category: "scan",
+    title: "Past scanned insight",
+    summaryNotes: summary,
+    recommendedCrops: recommendation,
+    hasConversation: false,
+    chatMessagesCount: 0,
+    dateString: `Stored TS: ${Math.floor(createdAtEpochMs / 1000)}`,
+    createdAtEpochMs,
+  };
+}
+
+function resolveCreatedAtEpochMs(raw) {
+  if (!raw) return Date.now();
+
+  if (typeof raw?.toMillis === "function") {
+    return raw.toMillis();
+  }
+
+  const seconds = Number(raw?._seconds);
+  const nanos = Number(raw?._nanoseconds);
+  if (Number.isFinite(seconds)) {
+    const millis = seconds * 1000;
+    if (Number.isFinite(nanos)) {
+      return millis + Math.floor(nanos / 1e6);
+    }
+    return millis;
+  }
+
+  const asNumber = Number(raw);
+  if (Number.isFinite(asNumber)) {
+    return asNumber > 1e12 ? Math.trunc(asNumber) : Math.trunc(asNumber * 1000);
+  }
+
+  return Date.now();
+}
+
+function safeTrim(value) {
+  return String(value || "").trim();
+}
+
+function truncateText(input, maxLength = 240) {
+  const text = String(input || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function defaultCategoryTitle(category) {
+  switch (String(category || "").trim().toLowerCase()) {
+    case "conversation":
+      return "AI consultation";
+    case "kb_search":
+      return "Knowledge base search";
+    case "timeline_comparison":
+      return "Timeline comparison";
+    case "action_log":
+      return "Action log";
+    case "scan":
+    default:
+      return "Past scanned insight";
   }
 }
 
@@ -1766,21 +2144,56 @@ async function generateAiChatReply({ message, history, context }) {
     message,
   ].filter(Boolean).join("\n");
 
+  const modelCandidates = [
+    ...new Set([
+      GEMINI_MODEL,
+      ...GEMINI_MODEL_CANDIDATES,
+      "gemini-2.5-flash",
+      "gemini-1.5-flash",
+    ]),
+  ];
+
   let text = "";
-  try {
-    const result = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: prompt,
-    });
-    text = String(result.text || "").trim();
-  } catch (error) {
-    const raw = String(error instanceof Error ? error.message : error || "");
+  let lastError = null;
+
+  for (const modelName of modelCandidates) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+        });
+        text = String(result.text || "").trim();
+        if (text) {
+          break;
+        }
+      } catch (error) {
+        lastError = error;
+        const raw = String(error instanceof Error ? error.message : error || "");
+        const isTransient = /429|500|502|503|504|timed out|deadline|unavailable/i.test(raw);
+        const isModelNotFound = /404|not found|model/i.test(raw);
+        if (isModelNotFound) {
+          break;
+        }
+        if (!isTransient) {
+          break;
+        }
+      }
+    }
+
+    if (text) {
+      break;
+    }
+  }
+
+  if (!text) {
+    const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
     if (raw.includes("API_KEY_IP_ADDRESS_BLOCKED")) {
       throw new Error(
         "Gemini API key is blocked by IP restriction. Update API key restrictions to allow this server IP or remove IP restriction."
       );
     }
-    if (raw.includes("403")) {
+    if (/403|forbidden|permission/i.test(raw)) {
       throw new Error("Gemini request was forbidden. Check API key restrictions and API enablement.");
     }
     throw new Error("Unable to get Gemini response from backend.");

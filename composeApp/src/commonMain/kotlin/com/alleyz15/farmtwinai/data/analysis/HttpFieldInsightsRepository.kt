@@ -2,6 +2,8 @@ package com.alleyz15.farmtwinai.data.analysis
 
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.AiChatReply
+import com.alleyz15.farmtwinai.domain.model.ActionState
+import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
@@ -12,6 +14,7 @@ import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseReply
 import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseResult
 import com.alleyz15.farmtwinai.domain.model.MessageSender
+import com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryCategory
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 import io.ktor.client.HttpClient
@@ -127,6 +130,7 @@ class HttpFieldInsightsRepository(
         photoBase64: String,
         photoMimeType: String,
         userMarkedSimilar: Boolean?,
+        userId: String?,
     ): TimelinePhotoAssessment {
         val cleanBase64 = photoBase64.substringAfter("base64,").trim()
         val payload = buildJsonObject {
@@ -137,6 +141,9 @@ class HttpFieldInsightsRepository(
             put("photoMimeType", photoMimeType)
             if (userMarkedSimilar != null) {
                 put("userMarkedSimilar", userMarkedSimilar)
+            }
+            if (!userId.isNullOrBlank()) {
+                put("userId", userId)
             }
         }
         val configuredBase = baseUrl.trimEnd('/')
@@ -264,13 +271,16 @@ class HttpFieldInsightsRepository(
         )
     }
 
-    override suspend fun queryKnowledgeBase(query: String, pageSize: Int): KnowledgeBaseReply {
+    override suspend fun queryKnowledgeBase(query: String, userId: String?, pageSize: Int): KnowledgeBaseReply {
         val cleanQuery = query.trim()
         require(cleanQuery.isNotEmpty()) { "Query cannot be empty." }
 
         val payload = buildJsonObject {
             put("query", cleanQuery)
             put("pageSize", pageSize.coerceIn(1, 10))
+            if (!userId.isNullOrBlank()) {
+                put("userId", userId)
+            }
         }
 
         val configuredBase = baseUrl.trimEnd('/')
@@ -385,8 +395,13 @@ class HttpFieldInsightsRepository(
         )
     }
 
-    override suspend fun getHistory(): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord> {
-        val url = "$baseUrl/field-insights/history?limit=20"
+    override suspend fun getHistory(userId: String?): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord> {
+        val userParam = userId?.trim().orEmpty()
+        val url = if (userParam.isNotBlank()) {
+            "$baseUrl/field-insights/history?limit=40&userId=$userParam"
+        } else {
+            "$baseUrl/field-insights/history?limit=40"
+        }
         return try {
             val response = client.get(url)
             val bodyText = response.body<String>()
@@ -397,23 +412,39 @@ class HttpFieldInsightsRepository(
                 try {
                     val obj = item.jsonObject
                     val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                    val responseObj = obj["response"]?.jsonObject
-                    val summaryObj = responseObj?.get("summary")?.jsonObject
-                    val summaryNotes = summaryObj?.get("notes")?.jsonPrimitive?.contentOrNull ?: "No notes"
-                    val recsArray = responseObj?.get("recommendations")?.jsonArray
-                    val firstRec = recsArray?.firstOrNull()?.jsonObject?.get("cropName")?.jsonPrimitive?.contentOrNull
+                    val summaryNotes = obj["summaryNotes"]?.jsonPrimitive?.contentOrNull
+                        ?: obj["summary"]?.jsonPrimitive?.contentOrNull
+                        ?: "No notes"
+                    val firstRec = obj["recommendedCrops"]?.jsonPrimitive?.contentOrNull
+                        ?: obj["recommendation"]?.jsonPrimitive?.contentOrNull
+                        ?: "No rec"
+                    val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "History record"
+                    val categoryRaw = obj["category"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    val category = when (categoryRaw.trim().lowercase()) {
+                        "scan" -> FieldInsightHistoryCategory.SCAN
+                        "action_log" -> FieldInsightHistoryCategory.ACTION_LOG
+                        "kb_search" -> FieldInsightHistoryCategory.KB_SEARCH
+                        "timeline_comparison" -> FieldInsightHistoryCategory.TIMELINE_COMPARISON
+                        "conversation" -> FieldInsightHistoryCategory.CONVERSATION
+                        else -> FieldInsightHistoryCategory.UNKNOWN
+                    }
                     
                     val createdObj = obj["createdAt"]?.jsonObject
-                    val seconds = createdObj?.get("_seconds")?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L
-                    
-                    // Simulate conversation history presence for UI demonstration
-                    val hasChat = id.hashCode() % 3 == 0
-                    val chatCount = if (hasChat) (id.hashCode() % 5) + 2 else 0
+                    val seconds = obj["dateString"]?.jsonPrimitive?.contentOrNull
+                        ?.substringAfterLast(" ")
+                        ?.toLongOrNull()
+                        ?: createdObj?.get("_seconds")?.jsonPrimitive?.contentOrNull?.toLongOrNull()
+                        ?: 0L
+                    val chatCount = obj["chatMessagesCount"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                    val hasChat = obj["hasConversation"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+                        ?: (category == FieldInsightHistoryCategory.CONVERSATION)
 
                     com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord(
                         id = id,
+                        category = category,
+                        title = title,
                         summaryNotes = summaryNotes,
-                        recommendedCrops = firstRec ?: "No rec",
+                        recommendedCrops = firstRec,
                         dateString = "Stored TS: $seconds",
                         hasConversation = hasChat,
                         chatMessagesCount = chatCount
@@ -422,6 +453,34 @@ class HttpFieldInsightsRepository(
             }
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    override suspend fun logTimelineAction(
+        userId: String,
+        dayNumber: Int,
+        actionType: ActionType,
+        actionState: ActionState,
+        summary: String,
+        cropName: String,
+    ) {
+        val payload = buildJsonObject {
+            put("userId", userId)
+            put("dayNumber", dayNumber)
+            put("actionType", actionType.name)
+            put("actionState", actionState.name)
+            put("summary", summary)
+            put("cropName", cropName)
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        val response = client.post("$configuredBase/timeline/action-log") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        if (!response.status.isSuccess()) {
+            val message = extractServerErrorMessage(response.body<String>())
+            throw IllegalStateException(message)
         }
     }
 

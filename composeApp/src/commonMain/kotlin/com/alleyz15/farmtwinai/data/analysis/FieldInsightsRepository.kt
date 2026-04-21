@@ -7,6 +7,8 @@ import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseReply
+import com.alleyz15.farmtwinai.domain.model.ActionState
+import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineStageVisual
 
@@ -31,6 +33,7 @@ interface FieldInsightsRepository {
         photoBase64: String,
         photoMimeType: String,
         userMarkedSimilar: Boolean? = null,
+        userId: String? = null,
     ): TimelinePhotoAssessment
 
     suspend fun consultAiChat(
@@ -48,8 +51,18 @@ interface FieldInsightsRepository {
 
     suspend fun queryKnowledgeBase(
         query: String,
+        userId: String? = null,
         pageSize: Int = 5,
     ): KnowledgeBaseReply
 
-    suspend fun getHistory(): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>
+    suspend fun getHistory(userId: String? = null): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord>
+
+    suspend fun logTimelineAction(
+        userId: String,
+        dayNumber: Int,
+        actionType: ActionType,
+        actionState: ActionState,
+        summary: String,
+        cropName: String,
+    )
 }

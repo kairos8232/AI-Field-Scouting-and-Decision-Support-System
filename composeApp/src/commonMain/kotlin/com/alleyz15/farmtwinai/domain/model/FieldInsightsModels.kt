@@ -47,8 +47,19 @@ data class TimelinePhotoAssessment(
     val provider: String,
 )
 
+enum class FieldInsightHistoryCategory {
+    SCAN,
+    ACTION_LOG,
+    KB_SEARCH,
+    TIMELINE_COMPARISON,
+    CONVERSATION,
+    UNKNOWN,
+}
+
 data class FieldInsightHistoryRecord(
     val id: String,
+    val category: FieldInsightHistoryCategory = FieldInsightHistoryCategory.SCAN,
+    val title: String = "",
     val summaryNotes: String,
     val recommendedCrops: String,
     val dateString: String,

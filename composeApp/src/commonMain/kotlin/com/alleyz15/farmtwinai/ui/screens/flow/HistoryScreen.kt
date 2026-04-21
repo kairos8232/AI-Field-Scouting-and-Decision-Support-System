@@ -1,6 +1,7 @@
 package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +42,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryCategory
 import com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
@@ -63,6 +70,15 @@ private val ArrowBackIcon: ImageVector
         }
     }.build()
 
+private enum class HistoryCategory(val label: String) {
+    ALL("All"),
+    SCANS("Scans"),
+    ACTION_LOGS("Action Logs"),
+    KB_SEARCHES("KB Searches"),
+    TIMELINE_COMPARISONS("Timeline Comparisons"),
+    CONVERSATIONS("Conversations"),
+}
+
 @Composable
 fun HistoryScreen(
     historyRecords: List<FieldInsightHistoryRecord>?,
@@ -72,6 +88,7 @@ fun HistoryScreen(
 ) {
     val darkTheme = isAppDarkTheme()
     val historyCardAlpha = if (darkTheme) 0.4f else 0.9f
+    var selectedCategory by remember { mutableStateOf(HistoryCategory.ALL) }
 
     LaunchedEffect(Unit) {
         onLoadHistory()
@@ -125,10 +142,77 @@ fun HistoryScreen(
                 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                val records = historyRecords.orEmpty()
+                val scanRecords = records.filter { it.category == FieldInsightHistoryCategory.SCAN }
+                val actionRecords = records.filter { it.category == FieldInsightHistoryCategory.ACTION_LOG }
+                val kbRecords = records.filter { it.category == FieldInsightHistoryCategory.KB_SEARCH }
+                val comparisonRecords = records.filter { it.category == FieldInsightHistoryCategory.TIMELINE_COMPARISON }
+                val conversationRecords = records.filter {
+                    it.category == FieldInsightHistoryCategory.CONVERSATION || it.hasConversation || it.chatMessagesCount > 0
+                }
+                val visibleRecords = when (selectedCategory) {
+                    HistoryCategory.ALL -> records
+                    HistoryCategory.SCANS -> scanRecords
+                    HistoryCategory.ACTION_LOGS -> actionRecords
+                    HistoryCategory.KB_SEARCHES -> kbRecords
+                    HistoryCategory.TIMELINE_COMPARISONS -> comparisonRecords
+                    HistoryCategory.CONVERSATIONS -> conversationRecords
+                }
+
                 Text(
-                    text = "Past Scanned Insights",
+                    text = "History categories",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HistoryCategory.entries.forEach { category ->
+                        val count = when (category) {
+                            HistoryCategory.ALL -> records.size
+                            HistoryCategory.SCANS -> scanRecords.size
+                            HistoryCategory.ACTION_LOGS -> actionRecords.size
+                            HistoryCategory.KB_SEARCHES -> kbRecords.size
+                            HistoryCategory.TIMELINE_COMPARISONS -> comparisonRecords.size
+                            HistoryCategory.CONVERSATIONS -> conversationRecords.size
+                        }
+                        val selected = category == selectedCategory
+                        val bg = if (selected) Mint200 else MaterialTheme.colorScheme.surface.copy(alpha = historyCardAlpha)
+                        val fg = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground
+
+                        Box(
+                            modifier = Modifier
+                                .background(bg, RoundedCornerShape(999.dp))
+                                .clickable { selectedCategory = category }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "${category.label} ($count)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = fg,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = when (selectedCategory) {
+                        HistoryCategory.ALL -> "All history records"
+                        HistoryCategory.SCANS -> "Past scanned insights"
+                        HistoryCategory.ACTION_LOGS -> "Farmer action logs"
+                        HistoryCategory.KB_SEARCHES -> "Knowledge base query history"
+                        HistoryCategory.TIMELINE_COMPARISONS -> "Expected vs actual timeline comparisons"
+                        HistoryCategory.CONVERSATIONS -> "Entries with saved AI conversations"
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onBackground,
                 )
                 
@@ -136,7 +220,7 @@ fun HistoryScreen(
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Mint200)
                     }
-                } else if (historyRecords.isEmpty()) {
+                } else if (visibleRecords.isEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = historyCardAlpha)),
@@ -146,12 +230,23 @@ fun HistoryScreen(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text("No logs found", style = MaterialTheme.typography.labelLarge, color = Mint200)
-                            Text("Snap some field insights to populate your history.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                            Text("No records in this category", style = MaterialTheme.typography.labelLarge, color = Mint200)
+                            Text(
+                                when (selectedCategory) {
+                                    HistoryCategory.ALL, HistoryCategory.SCANS -> "Scan some field insights to populate your history."
+                                    HistoryCategory.ACTION_LOGS -> "Save action updates from the action plan to build action logs."
+                                    HistoryCategory.KB_SEARCHES -> "Run searches in Knowledge Base to populate this category."
+                                    HistoryCategory.TIMELINE_COMPARISONS -> "Upload and compare timeline photos to populate this category."
+                                    HistoryCategory.CONVERSATIONS -> "Open a history item with chat and continue the conversation to build this category."
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                            )
                         }
                     }
                 } else {
-                    historyRecords.forEach { record ->
+                    visibleRecords.forEach { record ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = historyCardAlpha)),
@@ -167,11 +262,27 @@ fun HistoryScreen(
                                     color = if (darkTheme) Mint200 else MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    text = "Recommendation: " + record.recommendedCrops,
+                                    text = record.title.ifBlank {
+                                        when (record.category) {
+                                            FieldInsightHistoryCategory.SCAN -> "Recommendation: ${record.recommendedCrops}"
+                                            FieldInsightHistoryCategory.ACTION_LOG -> "Action: ${record.recommendedCrops}"
+                                            FieldInsightHistoryCategory.KB_SEARCH -> "KB query"
+                                            FieldInsightHistoryCategory.TIMELINE_COMPARISON -> "Timeline comparison"
+                                            FieldInsightHistoryCategory.CONVERSATION -> "AI consultation"
+                                            FieldInsightHistoryCategory.UNKNOWN -> "History record"
+                                        }
+                                    },
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onBackground
                                 )
+                                if (record.recommendedCrops.isNotBlank()) {
+                                    Text(
+                                        text = record.recommendedCrops,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = Mint200,
+                                    )
+                                }
                                 Text(
                                     text = record.summaryNotes,
                                     style = MaterialTheme.typography.bodyMedium,

@@ -13,6 +13,8 @@ import com.alleyz15.farmtwinai.data.farm.FarmConfigRepository
 import com.alleyz15.farmtwinai.data.farm.TimelinePhotoCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelineStageVisualCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelinePhotoAssessmentCacheEntry
+import com.alleyz15.farmtwinai.data.farm.TimelineCacheStore
+import com.alleyz15.farmtwinai.data.farm.createTimelineCacheStore
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.ActionState
@@ -40,6 +42,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 
 enum class ThemePreference {
     SYSTEM,
@@ -75,8 +88,10 @@ class FarmTwinAppState(
     private val fieldInsightsRepository: FieldInsightsRepository,
     private val authRepository: AuthRepository,
     private val farmConfigRepository: FarmConfigRepository,
+    private val timelineCacheStore: TimelineCacheStore = createTimelineCacheStore(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val cacheJson = Json { ignoreUnknownKeys = true }
     private var cacheUpdateSequence = 1L
     private var lastUpdatedTimelineStageVisualDay: Int? = null
     private var timelineCacheSyncInFlight = false
@@ -91,7 +106,7 @@ class FarmTwinAppState(
     fun loadFieldInsightHistory() {
         scope.launch {
             try {
-                fieldInsightHistory = fieldInsightsRepository.getHistory()
+                fieldInsightHistory = fieldInsightsRepository.getHistory(authenticatedUser?.userId)
             } catch (e: Exception) {
                 fieldInsightHistory = emptyList()
             }
@@ -185,6 +200,9 @@ class FarmTwinAppState(
         private set
 
     var isFarmConfigSyncing by mutableStateOf(false)
+        private set
+
+    var hasLoadedFarmConfigOnce by mutableStateOf(false)
         private set
 
     var farmConfigSyncError by mutableStateOf<String?>(null)
@@ -296,10 +314,14 @@ class FarmTwinAppState(
 
     init {
         authenticatedUser = authRepository.getSavedSession()
+        restoreTimelineCacheFromLocalStore()
     }
 
     val isAuthenticated: Boolean
         get() = authenticatedUser != null
+
+    val isFarmConfigCacheReady: Boolean
+        get() = !isAuthenticated || hasLoadedFarmConfigOnce
 
     fun authenticateUser(user: AuthUser) {
         authenticatedUser = user
@@ -326,6 +348,7 @@ class FarmTwinAppState(
                 applyRemoteFarmConfig(remote)
             }
 
+            hasLoadedFarmConfigOnce = true
             isFarmConfigSyncing = false
             onReady(remote != null)
         }
@@ -336,6 +359,8 @@ class FarmTwinAppState(
         authRepository.clearSession()
         isFarmConfigSyncing = false
         farmConfigSyncError = null
+        hasLoadedFarmConfigOnce = false
+        timelineCacheStore.clearCacheJson()
     }
 
     suspend fun signIn(email: String, password: String): AuthUser {
@@ -395,11 +420,13 @@ class FarmTwinAppState(
 
         scope.launch {
             runCatching {
-                fieldInsightsRepository.generateTimelineStageVisual(
-                    dayNumber = dayNumber,
-                    expectedStage = expectedStage,
-                    cropName = snapshot.farm.cropName,
-                )
+                withTimeout(45000) {
+                    fieldInsightsRepository.generateTimelineStageVisual(
+                        dayNumber = dayNumber,
+                        expectedStage = expectedStage,
+                        cropName = snapshot.farm.cropName,
+                    )
+                }
             }.onSuccess { visual ->
                     timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to visual)
                     lastUpdatedTimelineStageVisualDay = dayNumber
@@ -476,6 +503,7 @@ class FarmTwinAppState(
                     photoBase64 = cleaned,
                     photoMimeType = photoMimeType,
                     userMarkedSimilar = userMarkedSimilar,
+                    userId = authenticatedUser?.userId,
                 )
             }.onSuccess { assessment ->
                     timelinePhotoAssessmentByDay = timelinePhotoAssessmentByDay + (dayNumber to assessment)
@@ -567,6 +595,7 @@ class FarmTwinAppState(
             runCatching {
                 fieldInsightsRepository.queryKnowledgeBase(
                     query = cleanQuery,
+                    userId = authenticatedUser?.userId,
                     pageSize = pageSize,
                 )
             }.onSuccess { reply ->
@@ -795,6 +824,7 @@ class FarmTwinAppState(
         timelineUploadByDay = emptyMap()
         timelineDynamicStatusByDay = emptyMap()
         timelineActionDecisionByDay = emptyMap()
+        persistTimelineCacheToLocal()
 
         val userId = authenticatedUser?.userId
         if (!userId.isNullOrBlank()) {
@@ -1117,6 +1147,7 @@ class FarmTwinAppState(
                 farmConfigSyncError = error.message ?: "Unable to load farm setup from cloud."
             }
 
+            hasLoadedFarmConfigOnce = true
             isFarmConfigSyncing = false
         }
     }
@@ -1194,9 +1225,9 @@ class FarmTwinAppState(
 
     fun recordAction(actionType: ActionType, actionState: ActionState) {
         val summary = when (actionState) {
-            ActionState.DONE -> "Mock result: timeline flagged for follow-up simulation."
-            ActionState.NOT_YET -> "Mock result: reminder state kept pending."
-            ActionState.SKIP -> "Mock result: no re-simulation requested."
+            ActionState.DONE -> "Action marked done; timeline flagged for follow-up simulation."
+            ActionState.NOT_YET -> "Action is still pending; reminder remains active."
+            ActionState.SKIP -> "Action skipped; no re-simulation requested."
         }
         appendActionRecord(
             actionType = actionType,
@@ -1237,6 +1268,22 @@ class FarmTwinAppState(
             dayLabel = "Day $dayNumber",
             summary = summary,
         )
+
+        val userId = authenticatedUser?.userId
+        if (!userId.isNullOrBlank()) {
+            scope.launch {
+                runCatching {
+                    fieldInsightsRepository.logTimelineAction(
+                        userId = userId,
+                        dayNumber = dayNumber,
+                        actionType = actionType,
+                        actionState = actionState,
+                        summary = summary,
+                        cropName = snapshot.farm.cropName,
+                    )
+                }
+            }
+        }
     }
 
     fun setTimelineActionBanner(message: String?) {
@@ -1442,7 +1489,7 @@ class FarmTwinAppState(
             lastUpdatedTimelineStageVisualDay?.let { add(it) }
             add(selectedTimelineDay.dayNumber)
             timelineStageVisualByDay.keys.sortedDescending().forEach { add(it) }
-        }.distinct().take(3)
+        }.distinct().take(14)
 
         val stageCache = prioritizedDays.mapNotNull { dayNumber ->
             val visual = timelineStageVisualByDay[dayNumber] ?: return@mapNotNull null
@@ -1624,6 +1671,7 @@ class FarmTwinAppState(
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
         timelineStageVisualError = timelineStageVisualErrorByDay[selectedDayNumber]
         timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[selectedDayNumber]
+        persistTimelineCacheToLocal()
 
         val activeId = farmIdentity(
             farmName = farmSetupFarmName.ifBlank { snapshot.farm.farmName },
@@ -1636,6 +1684,8 @@ class FarmTwinAppState(
     }
 
     private fun persistTimelineCacheToCloudIfAuthenticated() {
+        persistTimelineCacheToLocal()
+
         val userId = authenticatedUser?.userId ?: return
         val effectiveFarmName = farmSetupFarmName.trim().ifBlank { snapshot.farm.farmName.trim() }
         if (effectiveFarmName.isBlank() || lotSections.isEmpty()) return
@@ -1665,6 +1715,142 @@ class FarmTwinAppState(
         }.onFailure { error ->
             farmConfigSyncError = error.message ?: "Unable to sync timeline media cache to cloud."
         }
+    }
+
+    private fun restoreTimelineCacheFromLocalStore() {
+        val raw = timelineCacheStore.readCacheJson() ?: return
+        val root = runCatching { cacheJson.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return
+
+        val cachedUserId = root["userId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val currentUserId = authenticatedUser?.userId.orEmpty()
+        if (cachedUserId.isNotBlank() && currentUserId.isNotBlank() && cachedUserId != currentUserId) {
+            return
+        }
+
+        val photos = root["timelinePhotoCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val photoBase64 = obj["photoBase64"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (photoBase64.isBlank()) return@mapNotNull null
+            dayNumber to TimelineUploadCache(
+                photoBase64 = photoBase64,
+                photoMimeType = obj["photoMimeType"]?.jsonPrimitive?.contentOrNull ?: "image/jpeg",
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.longOrNull ?: 0L,
+            )
+        }.orEmpty().toMap()
+
+        val visuals = root["timelineStageVisualCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val imageDataUrl = obj["imageDataUrl"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (imageDataUrl.isBlank()) return@mapNotNull null
+            dayNumber to TimelineStageVisual(
+                dayNumber = dayNumber,
+                expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                imageDataUrl = imageDataUrl,
+                prompt = "",
+                provider = obj["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }.orEmpty().toMap()
+
+        val assessments = root["timelineAssessmentCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val recommendation = obj["recommendation"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val rationale = obj["rationale"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (recommendation.isBlank() && rationale.isBlank()) return@mapNotNull null
+            dayNumber to TimelinePhotoAssessment(
+                dayNumber = dayNumber,
+                expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                similarityScore = obj["similarityScore"]?.jsonPrimitive?.intOrNull ?: 0,
+                isSimilar = obj["isSimilar"]?.jsonPrimitive?.booleanOrNull ?: false,
+                observedStage = obj["observedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                recommendation = recommendation,
+                rationale = rationale,
+                provider = obj["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }.orEmpty().toMap()
+
+        if (photos.isNotEmpty()) {
+            timelineUploadByDay = photos
+        }
+        if (visuals.isNotEmpty()) {
+            timelineStageVisualByDay = visuals
+        }
+        if (assessments.isNotEmpty()) {
+            timelinePhotoAssessmentByDay = assessments
+        }
+
+        val selectedDayNumber = selectedTimelineDay.dayNumber
+        timelineStageVisual = timelineStageVisualByDay[selectedDayNumber]
+        timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
+    }
+
+    private fun persistTimelineCacheToLocal() {
+        val prioritizedPhotoDays = buildList {
+            add(selectedTimelineDay.dayNumber)
+            timelinePhotoAssessmentByDay.keys.sortedDescending().forEach { add(it) }
+            timelineUploadByDay.keys.sortedDescending().forEach { add(it) }
+        }.distinct().take(7)
+
+        val prioritizedVisualDays = buildList {
+            lastUpdatedTimelineStageVisualDay?.let { add(it) }
+            add(selectedTimelineDay.dayNumber)
+            timelineStageVisualByDay.keys.sortedDescending().forEach { add(it) }
+        }.distinct().take(14)
+
+        val payload = buildJsonObject {
+            put("userId", authenticatedUser?.userId.orEmpty())
+            put("timelinePhotoCache", buildJsonArray {
+                prioritizedPhotoDays.forEach { dayNumber ->
+                    val upload = timelineUploadByDay[dayNumber] ?: return@forEach
+                    add(buildJsonObject {
+                        put("dayNumber", dayNumber)
+                        put("photoBase64", upload.photoBase64)
+                        put("photoMimeType", upload.photoMimeType)
+                        put("updatedAtEpochMs", upload.updatedAtEpochMs)
+                    })
+                }
+            })
+            put("timelineStageVisualCache", buildJsonArray {
+                prioritizedVisualDays.forEach { dayNumber ->
+                    val visual = timelineStageVisualByDay[dayNumber] ?: return@forEach
+                    add(buildJsonObject {
+                        put("dayNumber", dayNumber)
+                        put("expectedStage", visual.expectedStage)
+                        put("cropName", visual.cropName)
+                        put("title", visual.title)
+                        put("description", visual.description)
+                        put("imageDataUrl", visual.imageDataUrl)
+                        put("provider", visual.provider)
+                    })
+                }
+            })
+            put("timelineAssessmentCache", buildJsonArray {
+                timelinePhotoAssessmentByDay.entries
+                    .sortedByDescending { it.key }
+                    .take(14)
+                    .forEach { (dayNumber, assessment) ->
+                        add(buildJsonObject {
+                            put("dayNumber", dayNumber)
+                            put("expectedStage", assessment.expectedStage)
+                            put("cropName", assessment.cropName)
+                            put("similarityScore", assessment.similarityScore)
+                            put("isSimilar", assessment.isSimilar)
+                            put("observedStage", assessment.observedStage)
+                            put("recommendation", assessment.recommendation)
+                            put("rationale", assessment.rationale)
+                            put("provider", assessment.provider)
+                        })
+                    }
+            })
+        }
+
+        timelineCacheStore.writeCacheJson(payload.toString())
     }
 
     private fun persistFarmConfigSilently() {
