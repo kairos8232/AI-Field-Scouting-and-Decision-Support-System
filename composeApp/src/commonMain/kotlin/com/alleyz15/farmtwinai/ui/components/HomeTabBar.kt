@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
@@ -22,7 +23,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
-import com.alleyz15.farmtwinai.ui.theme.Mint200
 
 enum class HomeTab {
     DASHBOARD,
@@ -39,21 +39,21 @@ fun HomeTabBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .background(Color.Transparent), // The parent box in Dashboard/Me screens handles the actual dark background
+            .background(MaterialTheme.colorScheme.surface),
     ) {
         CustomTabItem(
             modifier = Modifier.weight(1f),
             selected = selectedTab == HomeTab.DASHBOARD,
             onClick = onSelectDashboard,
             label = "Dashboard",
-            icon = HomeIcon,
+            icon = HomeIcon
         )
         CustomTabItem(
             modifier = Modifier.weight(1f),
             selected = selectedTab == HomeTab.ME,
             onClick = onSelectMe,
             label = "Profile",
-            icon = PersonIcon,
+            icon = PersonIcon
         )
     }
 }
@@ -64,54 +64,53 @@ private fun CustomTabItem(
     selected: Boolean,
     onClick: () -> Unit,
     label: String,
-    icon: ImageVector,
+    icon: ImageVector
 ) {
-    val contentColor = if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
-    val indicatorColor = if (selected) Mint200 else Color.Transparent
-    val defaultIconColor = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f)
+    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val indicatorColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
 
     Box(
         modifier = modifier
             .height(56.dp)
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.Center
         ) {
             Box(
                 modifier = Modifier
                     .size(width = 48.dp, height = 28.dp)
                     .clip(CircleShape)
                     .background(indicatorColor),
-                contentAlignment = Alignment.Center,
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = defaultIconColor,
-                    modifier = Modifier.size(24.dp),
+                    tint = contentColor,
+                    modifier = Modifier.size(24.dp)
                 )
             }
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = contentColor,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor
             )
         }
     }
 }
 
-private val HomeIcon: ImageVector
+val HomeIcon: ImageVector
     get() = ImageVector.Builder(
         name = "Home",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 24f,
-        viewportHeight = 24f,
+        viewportHeight = 24f
     ).apply {
-        path(fill = SolidColor(Color.White)) {
+        path(fill = SolidColor(Color.Black)) {
             moveTo(10f, 20f)
             verticalLineTo(14f)
             horizontalLineTo(14f)
@@ -128,15 +127,15 @@ private val HomeIcon: ImageVector
         }
     }.build()
 
-private val PersonIcon: ImageVector
+val PersonIcon: ImageVector
     get() = ImageVector.Builder(
         name = "Person",
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 24f,
-        viewportHeight = 24f,
+        viewportHeight = 24f
     ).apply {
-        path(fill = SolidColor(Color.White)) {
+        path(fill = SolidColor(Color.Black)) {
             moveTo(12f, 12f)
             curveTo(14.21f, 12f, 16f, 10.21f, 16f, 8f)
             curveTo(16f, 5.79f, 14.21f, 4f, 12f, 4f)

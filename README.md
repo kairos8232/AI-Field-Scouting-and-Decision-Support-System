@@ -1,103 +1,35 @@
-# AI Field Scouting and Decision Support System
+This is a Kotlin Multiplatform project targeting Android, iOS.
 
-Kotlin Multiplatform farm management app (Android + iOS) with an AI-assisted cloud backend for:
+* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
+  It contains several subfolders:
+  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
+  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
+    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
+    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
+    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
+    folder is the appropriate location.
 
-- farm setup and lot mapping
-- field insights and crop recommendation
-- daily timeline stage generation and photo comparison
-- action planning and recovery tracking
-- weather-now by farm location
+* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
+  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
 
-## Product Overview
+### Build and Run Android Application
 
-This app helps farmers move from passive record-keeping to active daily decisions.
+To build and run the development version of the Android app, use the run configuration from the run widget
+in your IDE’s toolbar or build it directly from the terminal:
+- on macOS/Linux
+  ```shell
+  ./gradlew :composeApp:assembleDebug
+  ```
+- on Windows
+  ```shell
+  .\gradlew.bat :composeApp:assembleDebug
+  ```
 
-Instead of only showing static farm data, it continuously combines:
+### Build and Run iOS Application
 
-- mapped farm context (boundary, lots, crop plan)
-- daily plant evidence (camera/gallery photos)
-- AI interpretation (growth-stage similarity and action suggestions)
-- lightweight operational tracking (actions taken and follow-up)
+To build and run the development version of the iOS app, use the run configuration from the run widget
+in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
 
-The core goal is simple: keep daily monitoring practical, readable, and actionable.
+---
 
-## Core Functions
-
-### 1) Farm Setup and Lot Management
-
-- capture farm name/location
-- draw farm boundary and split lots
-- assign crop plan, soil, and water availability per lot
-- support multi-farm switching and cloud persistence
-
-### 2) Dashboard Monitoring
-
-- shows lot map and lot-level summary cards
-- weather-now panel from backend geocode + weather endpoint
-- timeline and health entry points
-
-### 3) Daily Timeline (AI)
-
-- generate expected stage image for the selected day
-- upload farmer photo (camera or gallery)
-- compare with AI to get similarity and observed stage
-- show concise next-action suggestion
-- open action plan flow for intervention logging
-
-### 4) Action and Recovery Flow
-
-- action confirmation with recommended and alternative actions
-- pesticide/fungicide safety warning gate
-- recovery forecast shown only when risk warrants it
-- progressive day unlock behavior (next day unlocks after check-in)
-
-### 5) Backend and Cloud
-
-- Cloud Run Node service for:
-- `field insights`
-- `weather-now by location`
-- `auth endpoints`
-- `timeline image/photo endpoints`
-- Firestore-based persistence for farm config + media cache metadata
-
-## App Flow (End-to-End)
-
-### Flow A: Initial Setup
-
-1. User signs in.
-2. User defines farm location and boundary.
-3. User creates lots and assigns crop plans.
-4. App saves farm config to cloud.
-
-### Flow B: Daily Monitoring Loop
-
-1. User opens Timeline for current day.
-2. App shows expected stage visual for that day.
-3. User uploads a real plant photo.
-4. User taps Compare.
-5. AI returns similarity, observed stage, and next action.
-6. User optionally confirms action taken.
-7. Next day unlocks after check-in.
-
-### Flow C: Action and Recovery
-
-1. If condition looks risky, app suggests action options.
-2. User selects what was actually done.
-3. Recovery trend/forecast is shown only when needed.
-4. User repeats check-in daily until condition stabilizes.
-
-## Screen-Level Intent
-
-- Dashboard: quick farm health and navigation hub.
-- Timeline: primary daily check-in workspace.
-- Action Confirmation: operational logging + safety-aware decisions.
-- Me/Profile: farm switching and account controls.
-
-## Design Direction
-
-The UI aims to stay farmer-friendly by prioritizing:
-
-- fewer high-signal actions per screen
-- short and direct AI wording
-- explicit controls (avoid hidden long-press behavior)
-- progressive disclosure (show detail only when needed)
+Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…

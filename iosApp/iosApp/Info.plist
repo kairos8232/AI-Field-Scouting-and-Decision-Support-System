@@ -4,17 +4,5 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	<key>GMSApiKey</key>
-	<string>$(GOOGLE_MAPS_API_KEY)</string>
-	<key>GOOGLE_MAPS_API_KEY</key>
-	<string>$(GOOGLE_MAPS_API_KEY)</string>
-	<key>FieldInsightsBaseUrl</key>
-	<string>$(FIELD_INSIGHTS_BASE_URL)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>FarmTwinAI uses the camera to capture crop photos for growth-stage comparison.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>FarmTwinAI uses your location to center the farm map around your current position.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>FarmTwinAI lets you pick crop photos from your library for AI stage comparison.</string>
 </dict>
 </plist>

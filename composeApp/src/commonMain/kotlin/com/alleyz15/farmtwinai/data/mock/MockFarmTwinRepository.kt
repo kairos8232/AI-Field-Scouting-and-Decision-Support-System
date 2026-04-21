@@ -22,16 +22,16 @@ class MockFarmTwinRepository {
     fun loadSnapshot(): FarmTwinSnapshot {
         return FarmTwinSnapshot(
             user = UserProfile(
-                name = "Farm Owner",
-                region = "",
-                experienceLabel = "",
+                name = "Aisyah Rahman",
+                region = "Kedah, Malaysia",
+                experienceLabel = "Smallholder tomato grower",
             ),
             farm = FarmProfile(
-                farmName = "My Farm",
-                cropName = "",
+                farmName = "Seri Padi Plot A",
+                cropName = "Tomato",
                 plantingDate = "2026-03-20",
-                location = "",
-                fieldSize = "",
+                location = "Pendang, Kedah",
+                fieldSize = "1.8 acres",
                 irrigationSource = "Drip irrigation + rainwater tank",
                 sunlightCondition = "Full sun, slight west-side shade",
                 drainageCondition = "Mixed, lower corner retains water",
@@ -93,12 +93,65 @@ class MockFarmTwinRepository {
                 ),
             ),
             timeline = buildTimeline(),
-            issueLogs = emptyList(),
-            chatMessages = emptyList(),
-            actionRecords = emptyList(),
+            issueLogs = listOf(
+                IssueLog(
+                    id = "issue-1",
+                    title = "Zone 2 drainage concern",
+                    dayLabel = "Day 15",
+                    status = HealthStatus.WATER_ISSUE,
+                    summary = "Actual moisture remained high versus the expected drying curve.",
+                ),
+                IssueLog(
+                    id = "issue-2",
+                    title = "Zone 3 slower leaf expansion",
+                    dayLabel = "Day 12",
+                    status = HealthStatus.MONITOR,
+                    summary = "Leaf spread was 8% below simulation range.",
+                ),
+            ),
+            chatMessages = listOf(
+                ChatMessage(
+                    id = "msg-1",
+                    sender = MessageSender.USER,
+                    content = "Why is Zone 2 growing slower than the expected simulation?",
+                    timestamp = "10:14",
+                ),
+                ChatMessage(
+                    id = "msg-2",
+                    sender = MessageSender.ASSISTANT,
+                    content = "The main deviation is excess moisture after rain. Drainage recovery is slower than the ideal model.",
+                    timestamp = "10:15",
+                ),
+                ChatMessage(
+                    id = "msg-3",
+                    sender = MessageSender.ASSISTANT,
+                    content = "Recommended next step: inspect low spots, improve runoff, then observe leaf firmness for 48 hours.",
+                    timestamp = "10:15",
+                ),
+            ),
+            actionRecords = listOf(
+                ActionRecord(
+                    id = "action-1",
+                    actionType = ActionType.IMPROVED_DRAINAGE,
+                    state = ActionState.DONE,
+                    dayLabel = "Day 15",
+                    resultSummary = "Marked for re-simulation after 48 hours.",
+                ),
+                ActionRecord(
+                    id = "action-2",
+                    actionType = ActionType.MONITORED_ONLY,
+                    state = ActionState.DONE,
+                    dayLabel = "Day 12",
+                    resultSummary = "No escalation needed after follow-up check.",
+                ),
+            ),
             documentSummary = DocumentExtractionSummary(
-                title = "No document uploaded yet",
-                bullets = emptyList(),
+                title = "Mocked AI extracted summary",
+                bullets = listOf(
+                    "Lot sketch suggests four practical monitoring zones.",
+                    "Soil texture appears loam-clay with moderate drainage variability.",
+                    "Tomato is suitable with extra attention to lower-lying sections.",
+                ),
             ),
         )
     }

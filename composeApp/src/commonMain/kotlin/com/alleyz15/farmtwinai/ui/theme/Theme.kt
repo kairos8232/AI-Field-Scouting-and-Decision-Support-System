@@ -5,14 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-
-val LocalAppDarkTheme = staticCompositionLocalOf { true }
-
-@Composable
-fun isAppDarkTheme(): Boolean = LocalAppDarkTheme.current
 
 private val LightColors = lightColorScheme(
     primary = Forest500,
@@ -40,7 +33,7 @@ private val DarkColors = darkColorScheme(
     surface = CardDark,
     onSurface = Fog50,
     surfaceVariant = Forest700,
-    onSurfaceVariant = Leaf400,
+    onSurfaceVariant = Mint200,
     error = AlertRed,
 )
 
@@ -49,11 +42,9 @@ fun FarmTwinTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    CompositionLocalProvider(LocalAppDarkTheme provides darkTheme) {
-        MaterialTheme(
-            colorScheme = if (darkTheme) DarkColors else LightColors,
-            typography = FarmTwinTypography,
-            content = content,
-        )
-    }
+    MaterialTheme(
+        colorScheme = if (darkTheme) DarkColors else LightColors,
+        typography = FarmTwinTypography,
+        content = content,
+    )
 }
