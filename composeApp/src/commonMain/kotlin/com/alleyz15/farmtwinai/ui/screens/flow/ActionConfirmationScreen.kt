@@ -9,7 +9,8 @@ import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
 import com.alleyz15.farmtwinai.domain.model.TimelineRecoveryForecast
-import com.alleyz15.farmtwinai.ui.components.AppScaffold
+import com.alleyz15.farmtwinai.ui.components.AuroraBackground
+import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.components.DualActionButtons
 import com.alleyz15.farmtwinai.ui.components.OptionCard
 import com.alleyz15.farmtwinai.ui.components.ScreenColumn
@@ -21,8 +22,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +40,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -110,13 +120,62 @@ fun ActionConfirmationScreen(
         }
     }
 
-    AppScaffold(title = "Action Summary", subtitle = "Log your final crop action", onBack = onBack) { _ ->
-        ScreenColumn {
+    val darkTheme = isAppDarkTheme()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AuroraBackground()
+        
+        OnboardingAdaptiveWidth { maxContentWidth, _ ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = 18.dp)
+                    .widthIn(max = maxContentWidth),
+            ) {
+                // Header row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), CircleShape),
+                    ) {
+                        Icon(
+                            imageVector = ArrowBackIcon,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Action Summary",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(
+                            text = "Log your final crop action",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
             // 1. AI Recommendation Hero Card
             Card(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (darkTheme) 0.4f else 0.9f))
             ) {
                 Box(
                     modifier = Modifier
@@ -289,6 +348,8 @@ fun ActionConfirmationScreen(
                 onSecondary = onBack,
                 primaryEnabled = canSubmit,
             )
+                }
+            }
         }
     }
 }
@@ -414,6 +475,28 @@ private val KnowledgeHubIcon: ImageVector
             horizontalLineTo(14f)
             verticalLineTo(17f)
             horizontalLineTo(7f)
+            close()
+        }
+    }.build()
+
+private val ArrowBackIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "ArrowBack",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(20f, 11f)
+            lineTo(7.83f, 11f)
+            lineToRelative(5.59f, -5.59f)
+            lineTo(12f, 4f)
+            lineToRelative(-8f, 8f)
+            lineToRelative(8f, 8f)
+            lineToRelative(1.41f, -1.41f)
+            lineTo(7.83f, 13f)
+            lineTo(20f, 13f)
             close()
         }
     }.build()
