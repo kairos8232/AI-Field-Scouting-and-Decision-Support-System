@@ -123,6 +123,7 @@ fun WelcomeScreen(
             }
         }
     }
+    }
 }
 
 @Composable

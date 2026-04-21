@@ -531,3 +531,26 @@ private fun isPointInsidePolygon(point: Offset, polygon: List<com.alleyz15.farmt
     }
     return inside
 }
+
+private fun isPointInsidePolygon(
+    point: Offset,
+    polygon: List<com.alleyz15.farmtwinai.domain.model.FarmPoint>,
+    size: Size,
+): Boolean {
+    var inside = false
+    var j = polygon.size - 1
+
+    for (i in polygon.indices) {
+        val xi = polygon[i].x * size.width
+        val yi = polygon[i].y * size.height
+        val xj = polygon[j].x * size.width
+        val yj = polygon[j].y * size.height
+
+        val intersects = ((yi > point.y) != (yj > point.y)) &&
+            (point.x < (xj - xi) * (point.y - yi) / ((yj - yi).takeIf { it != 0f } ?: 0.0001f) + xi)
+        if (intersects) inside = !inside
+        j = i
+    }
+
+    return inside
+}
