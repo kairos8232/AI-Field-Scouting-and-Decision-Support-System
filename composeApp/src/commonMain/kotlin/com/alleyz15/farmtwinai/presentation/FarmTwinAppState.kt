@@ -38,6 +38,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.launch
 
 enum class ThemePreference {
@@ -248,6 +249,9 @@ class FarmTwinAppState(
     var timelineActionDecisionByDay by mutableStateOf<Map<Int, TimelineActionDecision>>(emptyMap())
         private set
 
+    var timelineActionBannerMessage by mutableStateOf<String?>(null)
+        private set
+
     var storedFarms by mutableStateOf<List<StoredFarm>>(emptyList())
         private set
 
@@ -377,6 +381,10 @@ class FarmTwinAppState(
         timelineStageVisualByDay[dayNumber]?.let {
             timelineStageVisual = it
             timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
+            return
+        }
+
+        if (isFarmConfigSyncing) {
             return
         }
 
@@ -518,17 +526,19 @@ class FarmTwinAppState(
 
         scope.launch {
             runCatching {
-                fieldInsightsRepository.consultAiChat(
-                    message = cleanMessage,
-                    history = historyBeforeSend,
-                    userId = authenticatedUser?.userId,
-                    context = AiChatContext(
-                        farmName = snapshot.farm.farmName,
-                        cropName = snapshot.farm.cropName,
-                        mode = selectedMode.name,
-                        latestRecommendation = snapshot.cropSummary.latestRecommendation,
-                    ),
-                )
+                withTimeout(45000) {
+                    fieldInsightsRepository.consultAiChat(
+                        message = cleanMessage,
+                        history = historyBeforeSend,
+                        userId = authenticatedUser?.userId,
+                        context = AiChatContext(
+                            farmName = snapshot.farm.farmName,
+                            cropName = snapshot.farm.cropName,
+                            mode = selectedMode.name,
+                            latestRecommendation = snapshot.cropSummary.latestRecommendation,
+                        ),
+                    )
+                }
             }.onSuccess { reply ->
                 aiConversationProvider = reply.provider
                 aiConversationMessages = aiConversationMessages +
@@ -539,7 +549,7 @@ class FarmTwinAppState(
                         timestamp = "Now",
                     )
             }.onFailure { error ->
-                aiConversationError = error.message ?: "Unable to get response from Gemini right now."
+                aiConversationError = error.message ?: "Unable to get response from Gemini right now. Please retry."
             }
 
             isSendingAiConversationMessage = false
@@ -1229,6 +1239,14 @@ class FarmTwinAppState(
         )
     }
 
+    fun setTimelineActionBanner(message: String?) {
+        timelineActionBannerMessage = message?.trim().takeUnless { it.isNullOrBlank() }
+    }
+
+    fun consumeTimelineActionBanner() {
+        timelineActionBannerMessage = null
+    }
+
     private fun appendActionRecord(
         actionType: ActionType,
         actionState: ActionState,
@@ -1753,7 +1771,7 @@ class FarmTwinAppState(
         val windowScores = windowDays.mapNotNull { timelinePhotoAssessmentByDay[it]?.similarityScore }
 
         val trend = when {
-            previous == null -> RecoveryTrend.UNKNOWN
+            previous == null -> inferInitialRecoveryTrend(current.similarityScore)
             delta >= 6 -> RecoveryTrend.IMPROVING
             delta <= -6 -> RecoveryTrend.WORSENING
             else -> RecoveryTrend.STABLE
@@ -1829,6 +1847,14 @@ class FarmTwinAppState(
             confidenceTier = confidenceTier,
             isUrgent = isUrgent,
         )
+    }
+
+    private fun inferInitialRecoveryTrend(similarityScore: Int): RecoveryTrend {
+        return when {
+            similarityScore >= 75 -> RecoveryTrend.IMPROVING
+            similarityScore <= 55 -> RecoveryTrend.WORSENING
+            else -> RecoveryTrend.STABLE
+        }
     }
 
     fun openTimelineForDay(dayNumber: Int) {

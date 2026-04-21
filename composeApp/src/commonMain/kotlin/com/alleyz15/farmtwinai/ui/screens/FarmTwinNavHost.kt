@@ -261,6 +261,8 @@ fun FarmTwinNavHost(
             unlockedMaxDayNumber = appState.timelineUnlockedMaxDayNumber(),
             cachedPhotoBase64 = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoBase64,
             cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
+            isFarmConfigSyncing = appState.isFarmConfigSyncing,
+            actionBannerMessage = appState.timelineActionBannerMessage,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
@@ -270,13 +272,13 @@ fun FarmTwinNavHost(
             onClearUploadedPhoto = appState::clearTimelineUploadedPhoto,
             onOpenActionPlan = { navigator.navigate(AppDestination.ActionConfirmation) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
+            onConsumeActionBanner = appState::consumeTimelineActionBanner,
         )
         AppDestination.AiChat -> AiChatScreen(
             messages = if (appState.aiConversationMessages.isEmpty()) appState.snapshot.chatMessages else appState.aiConversationMessages,
             isSending = appState.isSendingAiConversationMessage,
             errorMessage = appState.aiConversationError,
             onBack = { navigator.pop() },
-            onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
             onSend = appState::sendAiConversationMessage,
             onOpenHistory = { navigator.navigate(AppDestination.History) },
             onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
@@ -299,15 +301,42 @@ fun FarmTwinNavHost(
             alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
             recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
             onBack = { navigator.pop() },
-            onOpenAiChat = { navigator.navigate(AppDestination.AiChat) },
-            onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
+            onOpenAiChat = { starterPrompt ->
+                appState.startAiConversation(starterPrompt)
+                navigator.navigate(AppDestination.AiChat)
+            },
+            onOpenKnowledgeBase = { starterQuery ->
+                appState.searchKnowledgeBase(starterQuery)
+                navigator.navigate(AppDestination.KnowledgeBase)
+            },
             onSubmit = { actionType, actionState ->
+                val dayNumber = appState.selectedTimelineDay.dayNumber
                 appState.recordTimelineAction(
-                    dayNumber = appState.selectedTimelineDay.dayNumber,
+                    dayNumber = dayNumber,
                     actionType = actionType,
                     actionState = actionState,
                 )
-                navigator.pop()
+                when (actionState) {
+                    com.alleyz15.farmtwinai.domain.model.ActionState.DONE -> {
+                        appState.setTimelineActionBanner(null)
+                        navigator.pop()
+                    }
+                    com.alleyz15.farmtwinai.domain.model.ActionState.NOT_YET -> {
+                        val starterPrompt = buildString {
+                            append("Day ")
+                            append(dayNumber)
+                            append(" action is not done yet: ")
+                            append(actionType.name.lowercase().replace('_', ' '))
+                            append(". Give me practical step-by-step instructions and precautions for today.")
+                        }
+                        appState.startAiConversation(starterPrompt)
+                        navigator.navigate(AppDestination.AiChat)
+                    }
+                    com.alleyz15.farmtwinai.domain.model.ActionState.SKIP -> {
+                        appState.setTimelineActionBanner("Action skipped for Day $dayNumber. Keep close monitoring and upload next photo to avoid missing deterioration.")
+                        navigator.pop()
+                    }
+                }
             },
         )
         AppDestination.History -> HistoryScreen(

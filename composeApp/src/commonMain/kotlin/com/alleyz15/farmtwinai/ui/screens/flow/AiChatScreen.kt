@@ -61,7 +61,6 @@ fun AiChatScreen(
     isSending: Boolean,
     errorMessage: String?,
     onBack: () -> Unit,
-    onConfirmAction: () -> Unit,
     onSend: (String) -> Unit,
     onOpenHistory: () -> Unit,
     onOpenKnowledgeBase: () -> Unit,
@@ -184,6 +183,14 @@ fun AiChatScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    if (!errorMessage.isNullOrBlank()) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
                     OutlinedTextField(
                         value = draft,
                         onValueChange = { draft = it },
@@ -213,14 +220,6 @@ fun AiChatScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = onConfirmAction,
-                            modifier = Modifier.weight(1f).height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, inputBorder),
-                        ) {
-                            Text("Confirm Action", color = MaterialTheme.colorScheme.onBackground)
-                        }
                         Button(
                             onClick = {
                                 val prompt = draft.trim()
@@ -230,11 +229,15 @@ fun AiChatScreen(
                                 }
                             },
                             enabled = !isSending,
-                            modifier = Modifier.weight(1f).height(48.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
                         ) {
-                            Text("Send")
+                            if (isSending) {
+                                Text("Sending...")
+                            } else {
+                                Text("Send")
+                            }
                         }
                     }
                 }

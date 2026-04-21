@@ -131,6 +131,8 @@ fun TimelineScreen(
     unlockedMaxDayNumber: Int,
     cachedPhotoBase64: String?,
     cachedPhotoMimeType: String?,
+    isFarmConfigSyncing: Boolean,
+    actionBannerMessage: String?,
     onBack: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onLoadStageVisual: (Int, String) -> Unit,
@@ -140,6 +142,7 @@ fun TimelineScreen(
     onClearUploadedPhoto: (Int) -> Unit,
     onOpenActionPlan: () -> Unit,
     onOpenChat: () -> Unit,
+    onConsumeActionBanner: () -> Unit,
 ) {
     var imagePickerMessage by remember(selectedDay.dayNumber) { mutableStateOf<String?>(null) }
     val visibleDays = remember(days, unlockedMaxDayNumber) {
@@ -161,8 +164,16 @@ fun TimelineScreen(
         },
     )
 
-    LaunchedEffect(selectedDay.dayNumber, selectedDay.expectedStage) {
-        onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
+    LaunchedEffect(selectedDay.dayNumber, selectedDay.expectedStage, isFarmConfigSyncing) {
+        if (!isFarmConfigSyncing) {
+            onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
+        }
+    }
+
+    LaunchedEffect(actionBannerMessage) {
+        if (!actionBannerMessage.isNullOrBlank()) {
+            onConsumeActionBanner()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -247,6 +258,22 @@ fun TimelineScreen(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
+                if (!actionBannerMessage.isNullOrBlank()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.88f)),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text(
+                            text = actionBannerMessage,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
 
                 Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -340,12 +367,20 @@ fun TimelineScreen(
                                     modifier = Modifier.clickable { imagePickerController.launchGallery() }
                                 )
                             } else {
-                                Text(
-                                    text = "Retake Photo", 
-                                    style = MaterialTheme.typography.labelSmall, 
-                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                                    modifier = Modifier.clickable { imagePickerController.launchCamera() }
-                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        text = "Retake Photo", 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                                        modifier = Modifier.clickable { imagePickerController.launchCamera() }
+                                    )
+                                    Text(
+                                        text = "Reupload", 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        color = Mint200,
+                                        modifier = Modifier.clickable { imagePickerController.launchGallery() }
+                                    )
+                                }
                             }
                         }
                     }

@@ -53,8 +53,8 @@ fun ActionConfirmationScreen(
     alternativeActions: List<ActionType>,
     recoveryForecast: TimelineRecoveryForecast?,
     onBack: () -> Unit,
-    onOpenAiChat: () -> Unit,
-    onOpenKnowledgeBase: () -> Unit,
+    onOpenAiChat: (String) -> Unit,
+    onOpenKnowledgeBase: (String) -> Unit,
     onSubmit: (ActionType, ActionState) -> Unit,
 ) {
     var selectedAction by remember(dayNumber, primaryRecommendedAction) { mutableStateOf(primaryRecommendedAction) }
@@ -68,6 +68,42 @@ fun ActionConfirmationScreen(
     }
     val requiresPesticideWarning = selectedAction == ActionType.APPLIED_PESTICIDE_FUNGICIDE
     val canSubmit = !requiresPesticideWarning || pesticideWarningAccepted
+    val aiStarterPrompt = remember(dayNumber, latestAction, recoveryForecast, selectedAction, selectedState) {
+        buildString {
+            append("I'm reviewing Day ")
+            append(dayNumber)
+            append(" action: ")
+            append(selectedAction.label())
+            append(". Recommendation was: ")
+            append(latestAction)
+            append(". Current status is ")
+            append(selectedState.name.lowercase())
+            append(". ")
+            if (recoveryForecast != null) {
+                append("Forecast trend is ")
+                append(recoveryForecast.trend.name.lowercase())
+                append(" with ETA ")
+                append(recoveryForecast.etaDaysMin)
+                append("-")
+                append(recoveryForecast.etaDaysMax)
+                append(" days.")
+            } else {
+                append("No forecast yet.")
+            }
+            append(" Give me exact next steps for the next 48 hours.")
+        }
+    }
+    val kbStarterQuery = remember(selectedAction, latestAction) {
+        when (selectedAction) {
+            ActionType.WATERED -> "watering schedule and soil moisture checks"
+            ActionType.IMPROVED_DRAINAGE -> "field drainage improvement and waterlogging prevention"
+            ActionType.ADJUSTED_FERTILIZER -> "fertilizer adjustment for weak growth"
+            ActionType.APPLIED_PESTICIDE_FUNGICIDE -> "safe pesticide and fungicide timing with PPE"
+            ActionType.PRUNED_AFFECTED_LEAVES -> "pruning diseased leaves and post-pruning care"
+            ActionType.MONITORED_ONLY -> "crop monitoring checklist after stress symptoms"
+            ActionType.REPLANTED -> "replanting best practices and early establishment"
+        }
+    }
 
     AppScaffold(title = "Action Summary", subtitle = "Log your final crop action", onBack = onBack) { _ ->
         ScreenColumn {
@@ -126,14 +162,14 @@ fun ActionConfirmationScreen(
                     title = "AI Chat",
                     description = "Ask questions",
                     icon = AiSparkHubIcon,
-                    onClick = onOpenAiChat,
+                    onClick = { onOpenAiChat(aiStarterPrompt) },
                     modifier = Modifier.weight(1f)
                 )
                 AssistanceShortcutCard(
                     title = "KB Search",
                     description = "Find manuals",
                     icon = KnowledgeHubIcon,
-                    onClick = onOpenKnowledgeBase,
+                    onClick = { onOpenKnowledgeBase(kbStarterQuery.ifBlank { latestAction }) },
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -227,6 +263,18 @@ fun ActionConfirmationScreen(
                     }
                 }
             }
+
+            val statusGuide = when (selectedState) {
+                ActionState.DONE -> "DONE: Action applied now. Next step: upload the next photo to verify recovery trend update."
+                ActionState.NOT_YET -> "NOT YET: Action is pending. Next step: ask AI or KB for exact method, then apply and update status."
+                ActionState.SKIP -> "SKIP: Action intentionally skipped. Next step: monitor symptoms closely and upload the next photo."
+            }
+            Text(
+                text = statusGuide,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
+                modifier = Modifier.padding(bottom = 18.dp),
+            )
 
             // 5. Bottom Save Buttons
             DualActionButtons(
