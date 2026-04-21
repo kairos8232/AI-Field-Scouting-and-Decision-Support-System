@@ -20,8 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.lazy.LazyRow
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -151,7 +150,6 @@ fun TimelineScreen(
     val pickedPhotoDataUrl = cachedPhotoBase64?.let { base64 ->
         if (base64.startsWith("data:")) base64 else "data:$resolvedPhotoMimeType;base64,$base64"
     }
-    val dayPagerState = rememberPagerState(initialPage = selectedIndex, pageCount = { visibleDays.size })
 
     val imagePickerController: ImagePickerController = rememberImagePickerController(
         onImagePicked = { base64, mimeType ->
@@ -165,19 +163,6 @@ fun TimelineScreen(
 
     LaunchedEffect(selectedDay.dayNumber, selectedDay.expectedStage) {
         onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage)
-    }
-
-    LaunchedEffect(selectedIndex) {
-        if (dayPagerState.currentPage != selectedIndex && selectedIndex in visibleDays.indices) {
-            dayPagerState.animateScrollToPage(selectedIndex)
-        }
-    }
-
-    LaunchedEffect(dayPagerState.currentPage) {
-        val day = visibleDays.getOrNull(dayPagerState.currentPage) ?: return@LaunchedEffect
-        if (day.dayNumber != selectedDay.dayNumber) {
-            onSelectDay(day.dayNumber)
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -231,9 +216,39 @@ fun TimelineScreen(
                     }
                 }
                 
-                    Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(visibleDays.size) { index ->
+                        val day = visibleDays[index]
+                        val isSelected = day.dayNumber == selectedDay.dayNumber
+                        val bgColor = if (isSelected) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        val textColor = if (isSelected) Color.Black else MaterialTheme.colorScheme.onBackground
+                        
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(bgColor)
+                                .clickable { onSelectDay(day.dayNumber) }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Day ${day.dayNumber}", 
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, 
+                                color = textColor
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
@@ -377,98 +392,91 @@ fun TimelineScreen(
                         }
                     }
 
-                
                     if (photoAssessment != null) {
-                    AuroraInfoCard(
-                        title = "AI photo comparison",
-                        value = "Similarity ${photoAssessment.similarityScore}% (${if (photoAssessment.isSimilar) "Similar" else "Not similar"})",
-                    )
+                        val darkTheme = isAppDarkTheme()
+                        val cardAlpha = if (darkTheme) 0.4f else 0.9f
+                        val containerColor = MaterialTheme.colorScheme.surface.copy(alpha = cardAlpha)
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = containerColor),
+                            shape = RoundedCornerShape(20.dp),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("Similarity", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                        Text("${photoAssessment.similarityScore}%", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Health", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                        Text("${photoAssessment.similarityScore}/100", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.End) {
+                                        Text("Growth", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                        Text(selectedDay.expectedGrowthRange, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                                    }
+                                }
+
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("Observed Stage", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                    Text(photoAssessment.observedStage, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                                }
+
+                                val currentNotes = listOf(photoAssessment.recommendation, photoAssessment.rationale).filter { it.isNotBlank() }.joinToString("\n\n")
+                                if (currentNotes.isNotBlank()) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("AI Notes", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                        Text(currentNotes, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f))
+                                    }
+                                }
+                            }
+                        }
                     } else if (photoAssessmentError != null) {
-                    AuroraInfoCard(
-                        title = "AI photo comparison",
-                        value = "Comparison unavailable",
-                        supporting = photoAssessmentError,
-                    )
-                }
-
-                    if (photoAssessment != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        AuroraInfoCard(
-                            title = "Health",
-                            value = "${photoAssessment.similarityScore}/100",
-                            modifier = Modifier.weight(1f)
-                        )
-                        AuroraInfoCard(
-                            title = "Growth",
-                            value = selectedDay.expectedGrowthRange,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    AuroraInfoCard(
-                        title = "Observed Stage",
-                        value = photoAssessment.observedStage
-                    )
-
-                    val currentNotes = listOf(photoAssessment.recommendation, photoAssessment.rationale).filter { it.isNotBlank() }.joinToString("\n\n")
-                    if (currentNotes.isNotBlank()) {
-                        AuroraInfoCard("Notes", currentNotes)
-                    }
+                        AuroraInfoCard("AI comparison error", "Unable to compare", photoAssessmentError)
                     } else {
-                    AuroraInfoCard(
-                        title = "Comparison pending",
-                        value = "Upload a farmer photo and tap Compare with AI to unlock Health, Growth, and Observed Stage.",
-                    )
+                        AuroraInfoCard("Comparison pending", "Upload photo and compare", "Unlocks Health, Growth, and Stage data.")
                     }
 
                     val recovery = recoveryForecast
-                    val showRecoveryForecast = recovery != null && (
-                        resolvedStatus == TimelineStatus.WARNING ||
-                            resolvedStatus == TimelineStatus.ACTION_TAKEN ||
-                            recovery.isUrgent
-                        )
-
-                    if (showRecoveryForecast) {
-                        val trendLabel = when (recovery.trend) {
-                            com.alleyz15.farmtwinai.domain.model.RecoveryTrend.IMPROVING -> "Improving"
-                            com.alleyz15.farmtwinai.domain.model.RecoveryTrend.STABLE -> "Stable"
-                            com.alleyz15.farmtwinai.domain.model.RecoveryTrend.WORSENING -> "Worsening"
-                            com.alleyz15.farmtwinai.domain.model.RecoveryTrend.UNKNOWN -> "Unknown"
-                        }
-                        val confidenceTierLabel = when (recovery.confidenceTier) {
-                            com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier.LOW -> "low"
-                            com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier.MEDIUM -> "medium"
-                            com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier.HIGH -> "high"
-                        }
-                        val sourceLabel = if (recovery.sourceDayNumber == selectedDay.dayNumber) {
-                            "Based on Day ${recovery.sourceDayNumber}"
-                        } else {
-                            "No upload for this day. Keeping previous trend from Day ${recovery.sourceDayNumber}."
-                        }
-
-                        AuroraInfoCard(
-                            title = "Recovery forecast",
-                            value = "ETA ${recovery.etaDaysMin}-${recovery.etaDaysMax} days • Confidence ${recovery.confidencePercent}% ($confidenceTierLabel)",
-                            supporting = "Trend: $trendLabel. $sourceLabel",
-                        )
-                    }
-
-                    if (resolvedStatus == TimelineStatus.WARNING || resolvedStatus == TimelineStatus.ACTION_TAKEN || recoveryForecast?.isUrgent == true) {
-                        AuroraInfoCard(
-                            title = if (recoveryForecast?.isUrgent == true) "Urgent treatment needed" else "Suggested action",
-                            value = recommendedActionText,
-                            supporting = "Confirm what you actually did so AI can track recovery accurately.",
-                        )
-                        Button(
-                            onClick = onOpenActionPlan,
+                    val showForecastOrAction = (recovery != null && (resolvedStatus == TimelineStatus.WARNING || resolvedStatus == TimelineStatus.ACTION_TAKEN || recovery.isUrgent)) || 
+                                              (resolvedStatus == TimelineStatus.WARNING || resolvedStatus == TimelineStatus.ACTION_TAKEN || recoveryForecast?.isUrgent == true)
+                    
+                    if (showForecastOrAction) {
+                        Card(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Mint200, contentColor = Color.Black),
-                            enabled = hasAssessmentForSelectedDay,
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (isAppDarkTheme()) 0.4f else 0.9f)),
+                            shape = RoundedCornerShape(20.dp),
                         ) {
-                            Text("Open action plan")
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                if (recovery != null) {
+                                    val trendLabel = when (recovery.trend) {
+                                        com.alleyz15.farmtwinai.domain.model.RecoveryTrend.IMPROVING -> "Improving"
+                                        com.alleyz15.farmtwinai.domain.model.RecoveryTrend.STABLE -> "Stable"
+                                        com.alleyz15.farmtwinai.domain.model.RecoveryTrend.WORSENING -> "Worsening"
+                                        com.alleyz15.farmtwinai.domain.model.RecoveryTrend.UNKNOWN -> "Unknown"
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text("Recovery Forecast (Trend: $trendLabel)", style = MaterialTheme.typography.labelSmall, color = Mint200)
+                                        Text("ETA ${recovery.etaDaysMin}-${recovery.etaDaysMax} days • Confidence ${recovery.confidencePercent}%", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                                    }
+                                }
+
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(if (recovery?.isUrgent == true) "Urgent action required" else "Suggested action", style = MaterialTheme.typography.labelSmall, color = if (recovery?.isUrgent == true) MaterialTheme.colorScheme.error else Mint200)
+                                    Text(recommendedActionText, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                                    Text("Confirm what you actually did so AI can track recovery accurately.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                                }
+
+                                Button(
+                                    onClick = onOpenActionPlan,
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Mint200, contentColor = Color.Black),
+                                    enabled = hasAssessmentForSelectedDay,
+                                ) {
+                                    Text("Open action plan", fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
 
@@ -477,80 +485,6 @@ fun TimelineScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
                     )
-                }
-
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (isAppDarkTheme()) 0.45f else 0.88f)
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            text = "Expected daily journey",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                        )
-                        HorizontalPager(
-                            state = dayPagerState,
-                            pageSpacing = 12.dp,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { page ->
-                            val day = visibleDays[page]
-                            val selected = day.dayNumber == selectedDay.dayNumber
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelectDay(day.dayNumber) },
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (selected) Mint200 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                                ),
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(14.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Text(
-                                        text = "Day ${day.dayNumber}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (selected) Color.Black else MaterialTheme.colorScheme.onBackground,
-                                    )
-                                    Text(
-                                        text = day.expectedStage,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (selected) Color.Black.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = "Growth ${day.expectedGrowthRange}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (selected) Color.Black.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f),
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = "Slide cards left/right to switch days",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
-                        )
-                        Text(
-                            text = "Next day unlocks after check-in.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
-                        )
-                    }
                 }
             }
         }

@@ -299,6 +299,8 @@ fun FarmTwinNavHost(
             alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
             recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
             onBack = { navigator.pop() },
+            onOpenAiChat = { navigator.navigate(AppDestination.AiChat) },
+            onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
             onSubmit = { actionType, actionState ->
                 appState.recordTimelineAction(
                     dayNumber = appState.selectedTimelineDay.dayNumber,
