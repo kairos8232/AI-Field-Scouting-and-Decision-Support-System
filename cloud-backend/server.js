@@ -2409,11 +2409,35 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
           error instanceof Error ? error.message : String(error)
         }`
       );
-      throw new Error("photorealistic_image_unavailable");
+      const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+      return {
+        dayNumber,
+        expectedStage,
+        cropName,
+        title,
+        description,
+        imageDataUrl: svgToDataUrl(svg),
+        prompt,
+        provider: "vertex-imagen-fallback-svg",
+      };
     }
   }
 
-  throw new Error("photorealistic_image_unavailable");
+  const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+  return {
+    dayNumber,
+    expectedStage,
+    cropName,
+    title,
+    description,
+    imageDataUrl: svgToDataUrl(svg),
+    prompt,
+    provider: "timeline-fallback-svg",
+  };
+}
+
+function svgToDataUrl(svgText) {
+  return `data:image/svg+xml;base64,${Buffer.from(String(svgText || ""), "utf8").toString("base64")}`;
 }
 
 function isVertexConfigured() {
@@ -2576,7 +2600,16 @@ async function assessTimelinePhoto({
 
 async function generateAiChatReply({ message, history, context }) {
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return {
+      reply: [
+        "Gemini is temporarily unavailable.",
+        "Immediate next step:",
+        "1) Inspect leaves and stem base for new spots, wilting, or pest signs.",
+        "2) Check soil moisture at root depth before watering.",
+        "3) Upload a new photo in Timeline after 24 hours for re-check.",
+      ].join("\n"),
+      provider: "gemini-fallback-unavailable",
+    };
   }
 
   const contextLines = context
@@ -2648,15 +2681,19 @@ async function generateAiChatReply({ message, history, context }) {
 
   if (!text) {
     const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
-    if (raw.includes("API_KEY_IP_ADDRESS_BLOCKED")) {
-      throw new Error(
-        "Gemini API key is blocked by IP restriction. Update API key restrictions to allow this server IP or remove IP restriction."
-      );
-    }
-    if (/403|forbidden|permission/i.test(raw)) {
-      throw new Error("Gemini request was forbidden. Check API key restrictions and API enablement.");
-    }
-    throw new Error("Unable to get Gemini response from backend.");
+    const issue = raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
+      ? "API key restriction"
+      : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
+    return {
+      reply: [
+        `Gemini is not reachable right now (${issue}).`,
+        "Quick fallback guidance:",
+        "1) Follow the latest recommended action from Timeline.",
+        "2) Re-check crop symptoms in 24 hours.",
+        "3) If symptoms worsen, open Knowledge Base for crop-specific control steps.",
+      ].join("\n"),
+      provider: "gemini-fallback-runtime",
+    };
   }
 
   if (!text) {

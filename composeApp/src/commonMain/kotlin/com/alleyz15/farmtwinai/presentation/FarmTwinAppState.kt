@@ -595,7 +595,15 @@ class FarmTwinAppState(
                         timestamp = "Now",
                     )
             }.onFailure { error ->
-                aiConversationError = error.message ?: "Unable to get response from Gemini right now. Please retry."
+                aiConversationError = null
+                aiConversationProvider = "gemini-offline-fallback"
+                aiConversationMessages = aiConversationMessages +
+                    ChatMessage(
+                        id = nextAiConversationMessageId(),
+                        sender = MessageSender.ASSISTANT,
+                        content = buildAiUnavailableFallbackReply(cleanMessage),
+                        timestamp = "Now",
+                    )
             }
 
             isSendingAiConversationMessage = false
@@ -1205,13 +1213,10 @@ class FarmTwinAppState(
         val seed = (lot.cropPlan.hashCode() + lot.id.hashCode()).let { kotlin.math.abs(it) }
         
         val exactDays = calculateMockDaysPassed(lot.plantingDate)
-        val mockDay = if (selectedMode == AppMode.PLANNING) {
-            0
-        } else if (lot.plantingDate?.isNotBlank() == true) {
+        val mockDay = if (lot.plantingDate?.isNotBlank() == true) {
             exactDays.coerceAtLeast(0)
         } else {
-            val dayOffset = (seed % 20) - 5
-            (base.currentDay + dayOffset).coerceAtLeast(1)
+            timelineUnlockedMaxDayNumber().coerceAtLeast(1)
         }
         
         val scoreOffset = (seed % 15) - 7
@@ -1619,18 +1624,32 @@ class FarmTwinAppState(
             )
         }
 
-        val timelineInsightCache = timelineSuggestedActionByDay.mapNotNull { (dayNumber, recommendation) ->
-            val forecast = timelineRecoveryForecastByDay[dayNumber] ?: return@mapNotNull null
+        val timelineInsightCache = (timelineSuggestedActionByDay.keys + timelineRecoveryForecastByDay.keys)
+            .sortedDescending()
+            .mapNotNull { dayNumber ->
+            val recommendation = timelineSuggestedActionByDay[dayNumber].orEmpty()
+            val forecast = timelineRecoveryForecastByDay[dayNumber]
+            if (recommendation.isBlank() && forecast == null) return@mapNotNull null
+
+            val effectiveForecast = forecast ?: TimelineRecoveryForecast(
+                sourceDayNumber = dayNumber,
+                trend = RecoveryTrend.UNKNOWN,
+                etaDaysMin = 1,
+                etaDaysMax = 1,
+                confidencePercent = 0,
+                confidenceTier = ForecastConfidenceTier.LOW,
+                isUrgent = false,
+            )
             TimelineInsightCacheEntry(
                 dayNumber = dayNumber,
                 recommendedActionText = recommendation,
-                sourceDayNumber = forecast.sourceDayNumber,
-                trend = forecast.trend,
-                etaDaysMin = forecast.etaDaysMin,
-                etaDaysMax = forecast.etaDaysMax,
-                confidencePercent = forecast.confidencePercent,
-                confidenceTier = forecast.confidenceTier,
-                isUrgent = forecast.isUrgent,
+                sourceDayNumber = effectiveForecast.sourceDayNumber,
+                trend = effectiveForecast.trend,
+                etaDaysMin = effectiveForecast.etaDaysMin,
+                etaDaysMax = effectiveForecast.etaDaysMax,
+                confidencePercent = effectiveForecast.confidencePercent,
+                confidenceTier = effectiveForecast.confidenceTier,
+                isUrgent = effectiveForecast.isUrgent,
                 updatedAtEpochMs = currentEpochMs(),
             )
         }
@@ -1743,13 +1762,17 @@ class FarmTwinAppState(
         )
 
         if (remote.timelinePhotoCache.isNotEmpty()) {
-            timelineUploadByDay = remote.timelinePhotoCache.associate { entry ->
+            val remoteUploads = remote.timelinePhotoCache.associate { entry ->
                 entry.dayNumber to TimelineUploadCache(
                     photoBase64 = entry.photoBase64,
                     photoMimeType = entry.photoMimeType,
                     updatedAtEpochMs = entry.updatedAtEpochMs,
                 )
             }
+            timelineUploadByDay = mergeUploadsByRecency(
+                local = timelineUploadByDay,
+                remote = remoteUploads,
+            )
         }
 
         if (remote.timelineStageVisualCache.isNotEmpty()) {
@@ -1765,7 +1788,7 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
-            timelineStageVisualByDay = remoteStages.toMutableMap()
+            timelineStageVisualByDay = remoteStages + timelineStageVisualByDay
         }
 
         if (remote.timelineAssessmentCache.isNotEmpty()) {
@@ -1782,7 +1805,7 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
-            timelinePhotoAssessmentByDay = remoteAssessments.toMutableMap()
+            timelinePhotoAssessmentByDay = remoteAssessments + timelinePhotoAssessmentByDay
         }
 
         if (remote.timelineActionDecisionCache.isNotEmpty()) {
@@ -1800,14 +1823,17 @@ class FarmTwinAppState(
                     ),
                 )
             }
-            timelineActionDecisionByDay = remoteDecisions.toMutableMap()
+            timelineActionDecisionByDay = mergeActionDecisionsByRecency(
+                local = timelineActionDecisionByDay,
+                remote = remoteDecisions,
+            )
         }
 
         if (remote.timelineInsightCache.isNotEmpty()) {
-            timelineSuggestedActionByDay = remote.timelineInsightCache.associate { entry ->
+            val remoteSuggested = remote.timelineInsightCache.associate { entry ->
                 entry.dayNumber to entry.recommendedActionText
             }
-            timelineRecoveryForecastByDay = remote.timelineInsightCache.associate { entry ->
+            val remoteForecasts = remote.timelineInsightCache.associate { entry ->
                 entry.dayNumber to TimelineRecoveryForecast(
                     sourceDayNumber = entry.sourceDayNumber,
                     trend = entry.trend,
@@ -1818,6 +1844,8 @@ class FarmTwinAppState(
                     isUrgent = entry.isUrgent,
                 )
             }
+            timelineSuggestedActionByDay = remoteSuggested + timelineSuggestedActionByDay
+            timelineRecoveryForecastByDay = remoteForecasts + timelineRecoveryForecastByDay
         }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber
@@ -1825,6 +1853,7 @@ class FarmTwinAppState(
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
         timelineStageVisualError = timelineStageVisualErrorByDay[selectedDayNumber]
         timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[selectedDayNumber]
+        refreshSnapshotCurrentDayFromTimeline()
         persistTimelineCacheToLocal()
 
         val activeId = farmIdentity(
@@ -1955,6 +1984,36 @@ class FarmTwinAppState(
             )
         }.orEmpty().toMap()
 
+        val insights = root["timelineInsightCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val recommendedAction = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty()
+
+            val trend = obj["trend"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { RecoveryTrend.valueOf(it) }.getOrNull() }
+            val confidenceTier = obj["confidenceTier"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { ForecastConfidenceTier.valueOf(it) }.getOrNull() }
+            val forecast = if (trend != null && confidenceTier != null) {
+                TimelineRecoveryForecast(
+                    sourceDayNumber = obj["sourceDayNumber"]?.jsonPrimitive?.intOrNull ?: dayNumber,
+                    trend = trend,
+                    etaDaysMin = obj["etaDaysMin"]?.jsonPrimitive?.intOrNull ?: 1,
+                    etaDaysMax = obj["etaDaysMax"]?.jsonPrimitive?.intOrNull ?: 1,
+                    confidencePercent = obj["confidencePercent"]?.jsonPrimitive?.intOrNull ?: 0,
+                    confidenceTier = confidenceTier,
+                    isUrgent = obj["isUrgent"]?.jsonPrimitive?.booleanOrNull ?: false,
+                )
+            } else {
+                null
+            }
+
+            if (recommendedAction.isBlank() && forecast == null) {
+                null
+            } else {
+                dayNumber to Pair(recommendedAction, forecast)
+            }
+        }.orEmpty().toMap()
+
         if (photos.isNotEmpty()) {
             timelineUploadByDay = photos
         }
@@ -1967,10 +2026,24 @@ class FarmTwinAppState(
         if (decisions.isNotEmpty()) {
             timelineActionDecisionByDay = decisions
         }
+        if (insights.isNotEmpty()) {
+            val suggestedActions = insights
+                .mapValuesNotNull { (_, value) -> value.first.takeIf { it.isNotBlank() } }
+            val forecasts = insights
+                .mapValuesNotNull { (_, value) -> value.second }
+
+            if (suggestedActions.isNotEmpty()) {
+                timelineSuggestedActionByDay = suggestedActions
+            }
+            if (forecasts.isNotEmpty()) {
+                timelineRecoveryForecastByDay = forecasts
+            }
+        }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber
         timelineStageVisual = timelineStageVisualByDay[selectedDayNumber]
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
+        refreshSnapshotCurrentDayFromTimeline()
     }
 
     private fun persistTimelineCacheToLocal() {
@@ -2053,6 +2126,32 @@ class FarmTwinAppState(
                         })
                     }
             })
+            put("timelineInsightCache", buildJsonArray {
+                (timelineSuggestedActionByDay.keys + timelineRecoveryForecastByDay.keys)
+                    .sortedDescending()
+                    .take(21)
+                    .forEach { dayNumber ->
+                        val recommendation = timelineSuggestedActionByDay[dayNumber].orEmpty()
+                        val forecast = timelineRecoveryForecastByDay[dayNumber]
+                        if (recommendation.isBlank() && forecast == null) return@forEach
+
+                        add(buildJsonObject {
+                            put("dayNumber", dayNumber)
+                            if (recommendation.isNotBlank()) {
+                                put("recommendedActionText", recommendation)
+                            }
+                            if (forecast != null) {
+                                put("sourceDayNumber", forecast.sourceDayNumber)
+                                put("trend", forecast.trend.name)
+                                put("etaDaysMin", forecast.etaDaysMin)
+                                put("etaDaysMax", forecast.etaDaysMax)
+                                put("confidencePercent", forecast.confidencePercent)
+                                put("confidenceTier", forecast.confidenceTier.name)
+                                put("isUrgent", forecast.isUrgent)
+                            }
+                        })
+                    }
+            })
         }
 
         timelineCacheStore.writeCacheJson(payload.toString())
@@ -2070,6 +2169,78 @@ class FarmTwinAppState(
     private fun currentEpochMs(): Long {
         cacheUpdateSequence += 1L
         return cacheUpdateSequence
+    }
+
+    private fun refreshSnapshotCurrentDayFromTimeline() {
+        val derivedDay = timelineUnlockedMaxDayNumber().coerceAtLeast(1)
+        if (snapshot.cropSummary.currentDay != derivedDay) {
+            snapshot = snapshot.copy(
+                cropSummary = snapshot.cropSummary.copy(currentDay = derivedDay)
+            )
+        }
+    }
+
+    private fun mergeUploadsByRecency(
+        local: Map<Int, TimelineUploadCache>,
+        remote: Map<Int, TimelineUploadCache>,
+    ): Map<Int, TimelineUploadCache> {
+        if (local.isEmpty()) return remote
+        if (remote.isEmpty()) return local
+        val merged = remote.toMutableMap()
+        local.forEach { (day, localValue) ->
+            val remoteValue = merged[day]
+            if (remoteValue == null || localValue.updatedAtEpochMs >= remoteValue.updatedAtEpochMs) {
+                merged[day] = localValue
+            }
+        }
+        return merged
+    }
+
+    private fun mergeActionDecisionsByRecency(
+        local: Map<Int, TimelineActionDecision>,
+        remote: Map<Int, TimelineActionDecision>,
+    ): Map<Int, TimelineActionDecision> {
+        if (local.isEmpty()) return remote
+        if (remote.isEmpty()) return local
+        val merged = remote.toMutableMap()
+        local.forEach { (day, localValue) ->
+            val remoteValue = merged[day]
+            if (remoteValue == null || localValue.updatedAtEpochMs >= remoteValue.updatedAtEpochMs) {
+                merged[day] = localValue
+            }
+        }
+        return merged
+    }
+
+    private fun buildAiUnavailableFallbackReply(latestMessage: String): String {
+        val normalized = latestMessage.lowercase()
+        val hint = when {
+            "pest" in normalized || "insect" in normalized || "worm" in normalized ->
+                "Inspect 10 random plants now, isolate hotspots, and prepare targeted control instead of blanket spraying."
+            "water" in normalized || "irrig" in normalized || "dry" in normalized ->
+                "Check root-zone moisture first. Water only if topsoil is dry at 5-8 cm depth to avoid overwatering stress."
+            "disease" in normalized || "fung" in normalized || "blight" in normalized ->
+                "Remove heavily affected leaves, improve airflow, and avoid late-evening overhead watering today."
+            else ->
+                "Follow the latest timeline recommendation, then upload a new crop photo after 24 hours for re-evaluation."
+        }
+
+        return buildString {
+            append("I could not reach Gemini right now, so here is safe fallback guidance.\n")
+            append("1) ")
+            append(hint)
+            append("\n2) Document what you observe (leaf color, spots, wilting, soil moisture).")
+            append("\n3) Re-open AI Chat shortly, or use Knowledge Base for source-backed references.")
+        }
+    }
+
+    private inline fun <K, V, R : Any> Map<K, V>.mapValuesNotNull(transform: (Map.Entry<K, V>) -> R?): Map<K, R> {
+        val result = LinkedHashMap<K, R>()
+        for (entry in entries) {
+            val mapped = transform(entry) ?: continue
+            result[entry.key] = mapped
+        }
+        return result
     }
 
     private fun clearLotRecommendationState() {

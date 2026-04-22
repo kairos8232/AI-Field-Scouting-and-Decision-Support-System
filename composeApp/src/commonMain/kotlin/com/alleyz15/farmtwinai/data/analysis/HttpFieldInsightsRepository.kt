@@ -307,10 +307,13 @@ class HttpFieldInsightsRepository(
         val root = json.parseToJsonElement(response.body<String>()).jsonObject
         val results = root["results"]?.jsonArray.orEmpty().map { item ->
             val obj = item.jsonObject
+            val rawUri = obj["uri"]?.jsonPrimitive?.contentOrNull
+                ?: obj["url"]?.jsonPrimitive?.contentOrNull
+                ?: obj["link"]?.jsonPrimitive?.contentOrNull
             KnowledgeBaseResult(
                 title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "Knowledge Result",
                 snippet = obj["snippet"]?.jsonPrimitive?.contentOrNull ?: "",
-                uri = obj["uri"]?.jsonPrimitive?.contentOrNull,
+                uri = normalizeKnowledgeUri(rawUri),
                 sourceId = obj["sourceId"]?.jsonPrimitive?.contentOrNull ?: "knowledge-doc",
                 score = obj["score"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
             )
@@ -438,6 +441,19 @@ class HttpFieldInsightsRepository(
                 ?: assessment["provider"]?.jsonPrimitive?.contentOrNull
                 ?: "agent-scouting-loop-v1",
         )
+    }
+
+    private fun normalizeKnowledgeUri(raw: String?): String? {
+        val clean = raw?.trim().orEmpty()
+        if (clean.isBlank()) return null
+        val lower = clean.lowercase()
+        return when {
+            lower.startsWith("http://") || lower.startsWith("https://") -> clean
+            lower.startsWith("www.") -> "https://$clean"
+            lower.startsWith("mailto:") || lower.startsWith("tel:") -> clean
+            clean.contains('.') && !clean.contains(' ') -> "https://$clean"
+            else -> null
+        }
     }
 
     override suspend fun getHistory(userId: String?): List<com.alleyz15.farmtwinai.domain.model.FieldInsightHistoryRecord> {
