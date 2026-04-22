@@ -1,103 +1,120 @@
 # AI Field Scouting and Decision Support System
 
-Kotlin Multiplatform farm management app (Android + iOS) with an AI-assisted cloud backend for:
+Kotlin Multiplatform farm management app (Android + iOS) with a Cloud Run backend for AI-assisted field scouting, daily crop monitoring, and farm decision support.
 
-- farm setup and lot mapping
-- field insights and crop recommendation
-- daily timeline stage generation and photo comparison
-- action planning and recovery tracking
-- weather-now by farm location
+## What This Project Does
 
-## Product Overview
+This project helps farmers move from static records to daily action loops:
 
-This app helps farmers move from passive record-keeping to active daily decisions.
+- map farm context (address, boundary, lots)
+- monitor growth progress day by day
+- compare real crop photos with expected stage
+- suggest next action and track intervention outcomes
+- persist farm data and timeline caches in the cloud
 
-Instead of only showing static farm data, it continuously combines:
+## Feature Highlights
 
-- mapped farm context (boundary, lots, crop plan)
-- daily plant evidence (camera/gallery photos)
-- AI interpretation (growth-stage similarity and action suggestions)
-- lightweight operational tracking (actions taken and follow-up)
+### Authentication
 
-The core goal is simple: keep daily monitoring practical, readable, and actionable.
+- Email/password sign-up and sign-in
+- Google sign-in via browser OAuth code flow
+- Backend token exchange and Firebase user provisioning/merge
 
-## Core Functions
+### Farm Setup and Multi-Farm Management
 
-### 1) Farm Setup and Lot Management
+- Step-based setup: address -> boundary -> lot sections
+- Lot-level crop plan, soil, and water metadata
+- Multi-farm switching with cloud sync
+- Per-farm location persistence (address + map query stored independently)
 
-- capture farm name/location
-- draw farm boundary and split lots
-- assign crop plan, soil, and water availability per lot
-- support multi-farm switching and cloud persistence
+### Dashboard
 
-### 2) Dashboard Monitoring
+- Farm lot map preview with lot overlays
+- Lot summary cards (crop, soil, water)
+- Current day and latest health score shortcuts
+- Weather-now summary by active farm location
 
-- shows lot map and lot-level summary cards
-- weather-now panel from backend geocode + weather endpoint
-- timeline and health entry points
+### Timeline and AI Comparison
 
-### 3) Daily Timeline (AI)
+- AI stage visual generation for selected timeline day
+- Photo upload (camera/gallery)
+- AI similarity scoring and observed stage output
+- Recommendation and rationale for follow-up action
 
-- generate expected stage image for the selected day
-- upload farmer photo (camera or gallery)
-- compare with AI to get similarity and observed stage
-- show concise next-action suggestion
-- open action plan flow for intervention logging
+### Action and Recovery Tracking
 
-### 4) Action and Recovery Flow
+- Action confirmation and intervention logging
+- Risk-aware suggestions and progressive follow-up
+- Recovery forecast visibility when relevant
 
-- action confirmation with recommended and alternative actions
-- pesticide/fungicide safety warning gate
-- recovery forecast shown only when risk warrants it
-- progressive day unlock behavior (next day unlocks after check-in)
+### Cloud and Data Layer
 
-### 5) Backend and Cloud
+- Node.js backend on Cloud Run
+- Firestore persistence for farm config, timeline photo cache, stage visual cache, and assessment cache
+- History/event endpoints for action logs, knowledge lookups, and timeline comparisons
 
-- Cloud Run Node service for:
-- `field insights`
-- `weather-now by location`
-- `auth endpoints`
-- `timeline image/photo endpoints`
-- Firestore-based persistence for farm config + media cache metadata
+## End-to-End User Flow
 
-## App Flow (End-to-End)
+### 1. Authentication Flow
 
-### Flow A: Initial Setup
+1. User opens Auth screen.
+2. User signs in using Email/Password or Google.
+3. For Google sign-in, app opens Google OAuth in browser.
+4. OAuth callback is handled by backend callback endpoint, then relayed into app deep link.
+5. App sends authorization code to backend `/api/auth/google-signin`.
+6. Backend exchanges code, verifies ID token, creates/merges Firebase user, returns app auth session.
 
-1. User signs in.
-2. User defines farm location and boundary.
-3. User creates lots and assigns crop plans.
-4. App saves farm config to cloud.
+### 2. First-Time Farm Setup Flow
 
-### Flow B: Daily Monitoring Loop
+1. User enters farm address or uses current location.
+2. User confirms boundary area on map.
+3. User divides farm into lots and assigns lot details.
+4. User completes recommendation/persistence step.
+5. App syncs active farm and stored farms to cloud.
 
-1. User opens Timeline for current day.
-2. App shows expected stage visual for that day.
-3. User uploads a real plant photo.
-4. User taps Compare.
-5. AI returns similarity, observed stage, and next action.
-6. User optionally confirms action taken.
-7. Next day unlocks after check-in.
+### 3. Daily Monitoring Flow
 
-### Flow C: Action and Recovery
+1. User opens Dashboard and picks active farm.
+2. User opens Timeline for current day.
+3. App loads expected stage visual.
+4. User uploads a real crop photo and runs comparison.
+5. AI returns similarity, observed stage, and recommendation.
+6. User logs action decision and continues to next day loop.
 
-1. If condition looks risky, app suggests action options.
-2. User selects what was actually done.
-3. Recovery trend/forecast is shown only when needed.
-4. User repeats check-in daily until condition stabilizes.
+## Data and Sync Model
 
-## Screen-Level Intent
+Farm config sync stores:
 
-- Dashboard: quick farm health and navigation hub.
-- Timeline: primary daily check-in workspace.
-- Action Confirmation: operational logging + safety-aware decisions.
-- Me/Profile: farm switching and account controls.
+- active farm ID
+- farms array (each farm has independent address/map query/boundary/lots)
+- active farm legacy fields for backward compatibility
+- timeline caches (photo uploads, stage visuals, assessments)
 
-## Design Direction
+This design keeps active farm UX simple while preserving multi-farm history and compatibility with older payloads.
 
-The UI aims to stay farmer-friendly by prioritizing:
+## Technical Architecture
 
-- fewer high-signal actions per screen
-- short and direct AI wording
-- explicit controls (avoid hidden long-press behavior)
-- progressive disclosure (show detail only when needed)
+### Mobile App
+
+- Kotlin Multiplatform shared domain/state/UI logic in `composeApp`
+- Platform implementations for maps, image picking, auth/session bridges, and storage
+
+### Backend
+
+- Express service in `cloud-backend`
+- Firebase Admin for auth and Firestore
+- Google OAuth and AI integrations
+
+### Platforms
+
+- Android: Compose + WebView-based map integration
+- iOS: Compose Multiplatform host with native platform bridges
+
+## Current Product Intent
+
+The product is optimized for practical field usage:
+
+- fast setup and clear map workflows
+- concise, actionable AI output
+- explicit controls over hidden complexity
+- incremental decision support instead of one-time reports

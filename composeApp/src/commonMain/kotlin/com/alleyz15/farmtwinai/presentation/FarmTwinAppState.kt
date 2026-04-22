@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.auth.AuthUser
+import com.alleyz15.farmtwinai.auth.GoogleAuthProvider
 import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
 import com.alleyz15.farmtwinai.data.auth.AuthRepository
 import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
@@ -88,6 +89,7 @@ class FarmTwinAppState(
     private val fieldInsightsRepository: FieldInsightsRepository,
     private val authRepository: AuthRepository,
     private val farmConfigRepository: FarmConfigRepository,
+    private val googleAuthProvider: GoogleAuthProvider,
     private val timelineCacheStore: TimelineCacheStore = createTimelineCacheStore(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -373,6 +375,12 @@ class FarmTwinAppState(
             password = password,
             displayName = displayName,
         )
+    }
+
+    suspend fun signInWithGoogle(): AuthUser {
+        val authorizationCode = googleAuthProvider.signIn()
+            ?: throw IllegalStateException("Google Sign-In was cancelled or did not return a code.")
+        return authRepository.signInWithGoogle(authorizationCode)
     }
 
     fun setMode(mode: AppMode) {
@@ -1351,8 +1359,8 @@ class FarmTwinAppState(
 
     private fun currentFarmAsStored(): StoredFarm? {
         val farmName = farmSetupFarmName.trim().ifBlank { snapshot.farm.farmName.trim() }
-        val address = farmSetupAddress.trim().ifBlank { snapshot.farm.location.trim() }
-        val mapQuery = farmSetupMapQuery.trim().ifBlank { address }
+        val mapQuery = farmSetupMapQuery.trim()
+        val address = farmSetupAddress.trim().ifBlank { mapQuery }
         val totalArea = lotTotalAreaInput.trim().ifBlank { snapshot.farm.fieldSize.trim() }
         val boundary = if (farmBoundaryPoints.size >= 3) farmBoundaryPoints else lotSections.firstOrNull()?.points.orEmpty()
         val lotsCopy = lotSections.map { lot -> lot.copy(points = lot.points.toList()) }
@@ -1360,7 +1368,7 @@ class FarmTwinAppState(
         if (farmName.isBlank() || lotsCopy.isEmpty()) return null
 
         return StoredFarm(
-            id = farmIdentity(farmName = farmName, address = address, lots = lotsCopy),
+            id = farmIdentity(farmName = farmName, address = address, mapQuery = mapQuery, lots = lotsCopy),
             farmName = farmName,
             address = address,
             mapQuery = mapQuery,
@@ -1390,13 +1398,14 @@ class FarmTwinAppState(
     private fun farmIdentity(
         farmName: String,
         address: String,
+        mapQuery: String,
         lots: List<LotSectionDraft>,
     ): String {
         val cropFingerprint = lots
             .map { lot -> "${lot.name.trim().lowercase()}:${lot.cropPlan.trim().lowercase()}" }
             .sorted()
             .joinToString("|")
-        return "${farmName.trim().lowercase()}::${address.trim().lowercase()}::${lots.size}::${cropFingerprint}"
+        return "${farmName.trim().lowercase()}::${address.trim().lowercase()}::${mapQuery.trim().lowercase()}::${lots.size}::${cropFingerprint}"
     }
 
     private fun keepPointInsideBoundary(candidate: FarmPoint, boundaryPoints: List<FarmPoint>): FarmPoint {
@@ -1676,6 +1685,7 @@ class FarmTwinAppState(
         val activeId = farmIdentity(
             farmName = farmSetupFarmName.ifBlank { snapshot.farm.farmName },
             address = farmSetupAddress.ifBlank { snapshot.farm.location },
+            mapQuery = farmSetupMapQuery.ifBlank { farmSetupAddress.ifBlank { snapshot.farm.location } },
             lots = lotSections,
         )
         if (previousFarm != null && previousFarm.id != activeId) {

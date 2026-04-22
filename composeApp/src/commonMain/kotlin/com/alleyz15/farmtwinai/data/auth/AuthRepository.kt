@@ -11,5 +11,7 @@ interface AuthRepository {
 
     suspend fun signIn(email: String, password: String): AuthUser
 
+    suspend fun signInWithGoogle(authorizationCode: String): AuthUser
+
     suspend fun signUp(email: String, password: String, displayName: String): AuthUser
 }

@@ -62,6 +62,15 @@ class HttpAuthRepository(
         )
     }
 
+    override suspend fun signInWithGoogle(authorizationCode: String): AuthUser {
+        return requestAuth(
+            path = "auth/google-signin",
+            body = buildJsonObject {
+                put("code", authorizationCode)
+            }.toString(),
+        )
+    }
+
     override suspend fun signUp(email: String, password: String, displayName: String): AuthUser {
         return requestAuth(
             path = "auth/signup",
