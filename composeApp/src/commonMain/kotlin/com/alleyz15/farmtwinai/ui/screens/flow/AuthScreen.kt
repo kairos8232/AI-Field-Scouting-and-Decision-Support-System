@@ -334,10 +334,12 @@ fun AuthScreen(
                                 modifier = Modifier.size(56.dp),
                                 enabled = !isSubmitting,
                                 shape = RoundedCornerShape(14.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                             ) {
                                 Icon(
                                     imageVector = GoogleGlyphIcon,
                                     contentDescription = "Google Sign-In",
+                                    modifier = Modifier.size(32.dp),
                                     tint = MaterialTheme.colorScheme.onBackground,
                                 )
                             }
