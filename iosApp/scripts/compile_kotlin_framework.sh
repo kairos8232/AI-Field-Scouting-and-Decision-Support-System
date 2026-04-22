@@ -36,8 +36,13 @@ IOS_SECRETS_FILE="$SRCROOT/Configuration/Secrets.xcconfig"
 if [ -f "$ENV_FILE" ]; then
   IOS_KEY=$(awk -F= '/^GOOGLE_MAPS_API_KEY=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
   BACKEND_BASE_URL=$(awk -F= '/^FIELD_INSIGHTS_BASE_URL=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
+  GOOGLE_OAUTH_CLIENT_ID=$(awk -F= '/^GOOGLE_OAUTH_CLIENT_ID=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
+  GOOGLE_OAUTH_REDIRECT_URI=$(awk -F= '/^GOOGLE_OAUTH_REDIRECT_URI=/{sub(/^[^=]*=/,""); val=$0} END{print val}' "$ENV_FILE" | tr -d '\r')
+  if [ -z "$GOOGLE_OAUTH_REDIRECT_URI" ]; then
+    GOOGLE_OAUTH_REDIRECT_URI="farmtwinai://oauth2redirect/google"
+  fi
 
-  if [ -n "$IOS_KEY" ] || [ -n "$BACKEND_BASE_URL" ]; then
+  if [ -n "$IOS_KEY" ] || [ -n "$BACKEND_BASE_URL" ] || [ -n "$GOOGLE_OAUTH_CLIENT_ID" ] || [ -n "$GOOGLE_OAUTH_REDIRECT_URI" ]; then
     : > "$IOS_SECRETS_FILE"
     if [ -n "$IOS_KEY" ]; then
       printf 'GOOGLE_MAPS_API_KEY=%s\n' "$IOS_KEY" >> "$IOS_SECRETS_FILE"
@@ -46,6 +51,13 @@ if [ -f "$ENV_FILE" ]; then
       # xcconfig treats // as comments; rewrite :// to :/$()/ so Xcode reconstructs it.
       SAFE_BACKEND_URL=$(printf '%s' "$BACKEND_BASE_URL" | sed 's#://#:/$()/#')
       printf 'FIELD_INSIGHTS_BASE_URL=%s\n' "$SAFE_BACKEND_URL" >> "$IOS_SECRETS_FILE"
+    fi
+    if [ -n "$GOOGLE_OAUTH_CLIENT_ID" ]; then
+      printf 'GOOGLE_OAUTH_CLIENT_ID=%s\n' "$GOOGLE_OAUTH_CLIENT_ID" >> "$IOS_SECRETS_FILE"
+    fi
+    if [ -n "$GOOGLE_OAUTH_REDIRECT_URI" ]; then
+      SAFE_GOOGLE_REDIRECT_URI=$(printf '%s' "$GOOGLE_OAUTH_REDIRECT_URI" | sed 's#://#:/$()/#')
+      printf 'GOOGLE_OAUTH_REDIRECT_URI=%s\n' "$SAFE_GOOGLE_REDIRECT_URI" >> "$IOS_SECRETS_FILE"
     fi
   else
     rm -f "$IOS_SECRETS_FILE"

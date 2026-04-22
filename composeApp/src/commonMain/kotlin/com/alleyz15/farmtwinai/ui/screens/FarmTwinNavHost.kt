@@ -62,7 +62,7 @@ fun FarmTwinNavHost(
                     )
                 }
             },
-            onGoogleAuth = null,
+            onGoogleAuth = { appState.signInWithGoogle() },
             onAuthenticated = { user ->
                 appState.authenticateAndHydrate(user) { hasSavedFarmConfig ->
                     if (hasSavedFarmConfig) {

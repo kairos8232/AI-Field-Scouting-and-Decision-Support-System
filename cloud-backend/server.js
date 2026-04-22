@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import admin from "firebase-admin";
 import { GoogleGenAI } from "@google/genai";
-import { GoogleAuth } from "google-auth-library";
+import { GoogleAuth, OAuth2Client } from "google-auth-library";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +41,10 @@ const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || "";
 const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
 const FIREBASE_HISTORY_COLLECTION = process.env.FIREBASE_HISTORY_COLLECTION || "historyEvents";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
+const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "";
+const GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || "";
+const GOOGLE_OAUTH_REDIRECT_URI = process.env.GOOGLE_OAUTH_REDIRECT_URI || "";
+const GOOGLE_OAUTH_APP_REDIRECT_URI = process.env.GOOGLE_OAUTH_APP_REDIRECT_URI || "farmtwinai://oauth2redirect/google";
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
@@ -593,6 +597,100 @@ app.post("/api/auth/signin", async (req, res) => {
   }
 });
 
+app.post("/api/auth/google-signin", async (req, res) => {
+  try {
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({
+        error: "Firebase Auth is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const code = String(req.body?.code || "").trim();
+    if (!code) {
+      return res.status(400).json({ error: "code is required." });
+    }
+
+    if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET || !GOOGLE_OAUTH_REDIRECT_URI) {
+      return res.status(503).json({
+        error: "Google OAuth is not configured.",
+        detail: "Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REDIRECT_URI.",
+      });
+    }
+
+    const tokenResponse = await exchangeGoogleAuthorizationCode(code);
+    const idToken = String(tokenResponse.id_token || "").trim();
+    if (!idToken) {
+      return res.status(401).json({ error: "Google did not return an id_token." });
+    }
+
+    const oauthClient = new OAuth2Client(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI);
+    const ticket = await oauthClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_OAUTH_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const email = String(payload?.email || "").trim().toLowerCase();
+    if (!email) {
+      return res.status(401).json({ error: "Google account email is missing." });
+    }
+
+    const displayName = String(payload?.name || payload?.given_name || "").trim() || null;
+    const userRecord = await findOrCreateFirebaseUserByEmail(firebaseAuth, email, displayName);
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection("users").doc(userRecord.uid).set(
+        {
+          email,
+          displayName: displayName || userRecord.displayName || null,
+          provider: "google",
+          lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    return res.json({
+      userId: userRecord.uid,
+      email: userRecord.email || email,
+      displayName: userRecord.displayName || displayName,
+      idToken,
+      refreshToken: String(tokenResponse.refresh_token || "").trim() || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to sign in with Google.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/api/auth/google-callback", async (req, res) => {
+  const code = String(req.query?.code || "").trim();
+  const error = String(req.query?.error || "").trim();
+  const errorDescription = String(req.query?.error_description || "").trim();
+
+  if (error || errorDescription) {
+    const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+    if (error) target.searchParams.set("error", error);
+    if (errorDescription) target.searchParams.set("error_description", errorDescription);
+    return res.redirect(302, target.toString());
+  }
+
+  if (!code) {
+    const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+    target.searchParams.set("error", "missing_code");
+    target.searchParams.set("error_description", "Google callback did not include an authorization code.");
+    return res.redirect(302, target.toString());
+  }
+
+  const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+  target.searchParams.set("code", code);
+  return res.redirect(302, target.toString());
+});
+
 app.post("/api/timeline/stage-visual", async (req, res) => {
   try {
     const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
@@ -1070,6 +1168,48 @@ async function signInWithPassword(email, password) {
     idToken: payload.idToken || null,
     refreshToken: payload.refreshToken || null,
   };
+}
+
+async function exchangeGoogleAuthorizationCode(code) {
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      code,
+      client_id: GOOGLE_OAUTH_CLIENT_ID,
+      client_secret: GOOGLE_OAUTH_CLIENT_SECRET,
+      redirect_uri: GOOGLE_OAUTH_REDIRECT_URI,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`google_oauth_exchange_failed:${payload?.error || response.status}`);
+  }
+
+  return payload;
+}
+
+async function findOrCreateFirebaseUserByEmail(firebaseAuth, email, displayName) {
+  try {
+    const existing = await firebaseAuth.getUserByEmail(email);
+    if (displayName && !existing.displayName) {
+      return await firebaseAuth.updateUser(existing.uid, { displayName });
+    }
+    return existing;
+  } catch (error) {
+    const code = String(error?.code || error?.errorInfo?.code || "").toLowerCase();
+    if (code.includes("auth/user-not-found")) {
+      return await firebaseAuth.createUser({
+        email,
+        displayName: displayName || undefined,
+      });
+    }
+    throw error;
+  }
 }
 
 async function persistInsightRecord({ userId = null, requestBody, normalized, response }) {

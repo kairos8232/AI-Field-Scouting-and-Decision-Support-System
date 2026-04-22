@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.auth.AuthUser
+import com.alleyz15.farmtwinai.auth.GoogleAuthProvider
 import com.alleyz15.farmtwinai.data.analysis.FieldInsightsRepository
 import com.alleyz15.farmtwinai.data.auth.AuthRepository
 import com.alleyz15.farmtwinai.data.farm.FarmConfigDraft
@@ -88,6 +89,7 @@ class FarmTwinAppState(
     private val fieldInsightsRepository: FieldInsightsRepository,
     private val authRepository: AuthRepository,
     private val farmConfigRepository: FarmConfigRepository,
+    private val googleAuthProvider: GoogleAuthProvider,
     private val timelineCacheStore: TimelineCacheStore = createTimelineCacheStore(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -373,6 +375,12 @@ class FarmTwinAppState(
             password = password,
             displayName = displayName,
         )
+    }
+
+    suspend fun signInWithGoogle(): AuthUser {
+        val authorizationCode = googleAuthProvider.signIn()
+            ?: throw IllegalStateException("Google Sign-In was cancelled or did not return a code.")
+        return authRepository.signInWithGoogle(authorizationCode)
     }
 
     fun setMode(mode: AppMode) {
