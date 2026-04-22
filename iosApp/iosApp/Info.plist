@@ -4,5 +4,32 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>GMSApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
+	<key>GOOGLE_MAPS_API_KEY</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
+	<key>FieldInsightsBaseUrl</key>
+	<string>$(FIELD_INSIGHTS_BASE_URL)</string>
+	<key>GoogleOAuthClientId</key>
+	<string>$(GOOGLE_OAUTH_CLIENT_ID)</string>
+	<key>GoogleOAuthRedirectUri</key>
+	<string>$(GOOGLE_OAUTH_REDIRECT_URI)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>FarmTwinAI uses the camera to capture crop photos for growth-stage comparison.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>FarmTwinAI uses your location to center the farm map around your current position.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FarmTwinAI lets you pick crop photos from your library for AI stage comparison.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.alleyz15.farmtwinai.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>farmtwinai</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
