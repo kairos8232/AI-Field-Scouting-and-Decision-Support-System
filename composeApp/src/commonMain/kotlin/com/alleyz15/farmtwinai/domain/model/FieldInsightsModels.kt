@@ -75,3 +75,11 @@ data class CurrentWeatherNow(
     val icon: String,
     val provider: String,
 )
+
+data class ActionTrackerFollowUp(
+    val nextBestAction: String,
+    val followUpQuestion: String,
+    val confidence: Double,
+    val riskLevel: String,
+    val provider: String,
+)

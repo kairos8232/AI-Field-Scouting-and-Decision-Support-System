@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
+import com.alleyz15.farmtwinai.domain.model.ActionTrackerFollowUp
 import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
 import com.alleyz15.farmtwinai.domain.model.TimelineRecoveryForecast
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
@@ -63,6 +64,7 @@ fun ActionConfirmationScreen(
     primaryRecommendedAction: ActionType,
     alternativeActions: List<ActionType>,
     recoveryForecast: TimelineRecoveryForecast?,
+    followUp: ActionTrackerFollowUp?,
     onBack: () -> Unit,
     onOpenAiChat: (String) -> Unit,
     onOpenKnowledgeBase: (String) -> Unit,

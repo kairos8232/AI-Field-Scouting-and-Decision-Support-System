@@ -258,6 +258,107 @@ VERTEX_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 
 The script first tries `PATCH .../branches/default_branch/documents/{id}` and, if missing, falls back to `POST .../branches/default_branch/documents?documentId={id}`.
 
+## 2.3) Autonomous Agent APIs
+
+These APIs implement code-first orchestration loops in the existing backend.
+
+### A) Scouting Agent Loop
+
+Endpoint:
+
+```bash
+POST /api/agents/scouting-loop
+```
+
+Purpose:
+
+- Analyze uploaded crop photo
+- Decide whether to call knowledge base and weather tools
+- Generate a structured action recommendation
+- Optionally log event to Firestore history
+
+Request (minimum):
+
+```json
+{
+  "dayNumber": 3,
+  "expectedStage": "Vegetative",
+  "cropName": "Corn",
+  "photoMimeType": "image/jpeg",
+  "photoBase64": "..."
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `userMarkedSimilar`
+- `location` or `latitude`/`longitude`
+- `polygon`
+
+### B) Field Insights Orchestrator
+
+Endpoint:
+
+```bash
+POST /api/agents/field-insights-orchestrator
+```
+
+Purpose:
+
+- Sample Earth Engine summary
+- Generate crop recommendations
+- Query knowledge base
+- Include weather context
+- Return structured action brief
+
+Request (minimum):
+
+```json
+{
+  "polygon": [
+    { "x": 0.2, "y": 0.2 },
+    { "x": 0.8, "y": 0.2 },
+    { "x": 0.8, "y": 0.8 }
+  ]
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `targetCrops`
+- `totalFarmAreaHectares`
+- `lotAreaHectares`
+- `location`
+
+### C) Action Tracker Agent
+
+Endpoint:
+
+```bash
+POST /api/agents/action-tracker
+```
+
+Purpose:
+
+- Read recent history events for user
+- Generate follow-up recommendation and question
+- Log follow-up event to Firestore
+
+Request:
+
+```json
+{
+  "userId": "USER_UID",
+  "dayNumber": 3,
+  "cropName": "Corn",
+  "issueType": "leaf blight",
+  "actionTaken": "Applied fungicide",
+  "note": "Sprayed in the evening"
+}
+```
+
 ## 3) Firebase Storage Endpoints
 
 When Firebase is configured, each `POST /api/field-insights` call is stored in Firestore.

@@ -230,6 +230,23 @@ fun FarmTwinNavHost(
                     .maxByOrNull { it.key }
                     ?.value
                     ?.similarityScore,
+                pendingFollowUpDayNumber = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.key,
+                pendingFollowUpQuestion = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.followUp
+                    ?.followUpQuestion,
+                pendingFollowUpNextAction = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.followUp
+                    ?.nextBestAction,
+                onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
                 isTabBarVisible = true,
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
@@ -262,6 +279,7 @@ fun FarmTwinNavHost(
             cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
             isFarmConfigCacheReady = appState.isFarmConfigCacheReady,
             actionBannerMessage = appState.timelineActionBannerMessage,
+            persistentFollowUp = appState.timelineActionDecisionByDay[appState.selectedTimelineDay.dayNumber]?.followUp,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
@@ -272,6 +290,7 @@ fun FarmTwinNavHost(
             onOpenActionPlan = { navigator.navigate(AppDestination.ActionConfirmation) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onConsumeActionBanner = appState::consumeTimelineActionBanner,
+            onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
         )
         AppDestination.AiChat -> AiChatScreen(
             messages = if (appState.aiConversationMessages.isEmpty()) appState.snapshot.chatMessages else appState.aiConversationMessages,
@@ -300,6 +319,7 @@ fun FarmTwinNavHost(
             primaryRecommendedAction = appState.defaultActionTypeForDay(appState.selectedTimelineDay.dayNumber),
             alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
             recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
+            followUp = appState.timelineActionDecisionByDay[appState.selectedTimelineDay.dayNumber]?.followUp,
             onBack = { navigator.pop() },
             onOpenAiChat = { starterPrompt ->
                 appState.startAiConversation(starterPrompt)
@@ -318,7 +338,6 @@ fun FarmTwinNavHost(
                 )
                 when (actionState) {
                     com.alleyz15.farmtwinai.domain.model.ActionState.DONE -> {
-                        appState.setTimelineActionBanner(null)
                         navigator.pop()
                     }
                     com.alleyz15.farmtwinai.domain.model.ActionState.NOT_YET -> {

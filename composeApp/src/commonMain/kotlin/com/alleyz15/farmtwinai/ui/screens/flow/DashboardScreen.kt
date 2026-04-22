@@ -71,6 +71,10 @@ fun DashboardScreen(
     onOpenTimeline: (Int) -> Unit,
     onOpenChat: () -> Unit,
     latestTimelineHealthScore: Int?,
+    pendingFollowUpDayNumber: Int? = null,
+    pendingFollowUpQuestion: String? = null,
+    pendingFollowUpNextAction: String? = null,
+    onAcknowledgeFollowUp: ((Int) -> Unit)? = null,
     isTabBarVisible: Boolean = false,
     onSelectDashboardTab: (() -> Unit)? = null,
     onSelectMeTab: (() -> Unit)? = null,
@@ -289,6 +293,58 @@ fun DashboardScreen(
                                             color = MaterialTheme.colorScheme.onBackground,
                                             fontWeight = FontWeight.SemiBold,
                                         )
+                                }
+                            }
+                        }
+
+                        if (pendingFollowUpDayNumber != null &&
+                            (!pendingFollowUpQuestion.isNullOrBlank() || !pendingFollowUpNextAction.isNullOrBlank())
+                        ) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, Color(0xFFFBBF24), RoundedCornerShape(14.dp))
+                                    .background(Color(0xFFFEF3C7).copy(alpha = if (darkTheme) 0.28f else 0.9f), RoundedCornerShape(14.dp))
+                                    .padding(14.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Pending Follow-up • Day $pendingFollowUpDayNumber",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                    )
+                                    if (!pendingFollowUpQuestion.isNullOrBlank()) {
+                                        Text(
+                                            text = "Q: $pendingFollowUpQuestion",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                        )
+                                    }
+                                    if (!pendingFollowUpNextAction.isNullOrBlank()) {
+                                        Text(
+                                            text = "Next: $pendingFollowUpNextAction",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = { onOpenTimeline(pendingFollowUpDayNumber) },
+                                            shape = RoundedCornerShape(999.dp),
+                                        ) {
+                                            Text("Open in Timeline")
+                                        }
+                                        if (onAcknowledgeFollowUp != null) {
+                                            OutlinedButton(
+                                                onClick = { onAcknowledgeFollowUp(pendingFollowUpDayNumber) },
+                                                shape = RoundedCornerShape(999.dp),
+                                            ) {
+                                                Text("Acknowledge")
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

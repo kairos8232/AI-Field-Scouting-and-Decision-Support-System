@@ -4,6 +4,7 @@ import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.AiChatReply
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
+import com.alleyz15.farmtwinai.domain.model.ActionTrackerFollowUp
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
@@ -89,7 +90,7 @@ class HttpFieldInsightsRepository(
 
         val configuredBase = baseUrl.trimEnd('/')
         return runCatching {
-            requestInsights(configuredBase, payload.toString())
+            requestInsightsViaOrchestrator(configuredBase, payload.toString())
         }.getOrElse { cause ->
             if (cause is IllegalStateException) {
                 throw cause
@@ -147,15 +148,24 @@ class HttpFieldInsightsRepository(
             }
         }
         val configuredBase = baseUrl.trimEnd('/')
-        val response = client.post("$configuredBase/timeline/photo-compare") {
+        val primaryResponse = client.post("$configuredBase/agents/scouting-loop") {
             contentType(ContentType.Application.Json)
             setBody(payload.toString())
         }
-        if (!response.status.isSuccess()) {
-            val message = extractServerErrorMessage(response.body<String>())
+
+        if (primaryResponse.status.isSuccess()) {
+            return parseTimelinePhotoAssessmentFromScoutingLoop(primaryResponse.body<String>())
+        }
+
+        val fallbackResponse = client.post("$configuredBase/timeline/photo-compare") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+        if (!fallbackResponse.status.isSuccess()) {
+            val message = extractServerErrorMessage(fallbackResponse.body<String>())
             throw IllegalStateException(message)
         }
-        return parseTimelinePhotoAssessment(response.body<String>())
+        return parseTimelinePhotoAssessment(fallbackResponse.body<String>())
     }
 
     override suspend fun consultAiChat(
@@ -326,6 +336,18 @@ class HttpFieldInsightsRepository(
         return parseReport(response.body<String>())
     }
 
+    private suspend fun requestInsightsViaOrchestrator(base: String, body: String): FieldInsightReport {
+        val response = client.post("$base/agents/field-insights-orchestrator") {
+            contentType(ContentType.Application.Json)
+            setBody(body)
+        }
+        if (response.status.isSuccess()) {
+            return parseReport(response.body<String>())
+        }
+        // Backward compatibility for environments not yet deployed with agent endpoints.
+        return requestInsights(base, body)
+    }
+
     private fun extractServerErrorMessage(raw: String): String {
         return runCatching {
             val root = json.parseToJsonElement(raw).jsonObject
@@ -392,6 +414,29 @@ class HttpFieldInsightsRepository(
             recommendation = root["recommendation"]?.jsonPrimitive?.contentOrNull ?: "Retake photo with clearer lighting.",
             rationale = root["rationale"]?.jsonPrimitive?.contentOrNull ?: "Insufficient detail for robust stage matching.",
             provider = root["provider"]?.jsonPrimitive?.contentOrNull ?: "gemini-mock",
+        )
+    }
+
+    private fun parseTimelinePhotoAssessmentFromScoutingLoop(raw: String): TimelinePhotoAssessment {
+        val root = json.parseToJsonElement(raw).jsonObject
+        val assessment = root["assessment"]?.jsonObject ?: root
+        val recommendation = root["recommendation"]?.jsonObject
+        return TimelinePhotoAssessment(
+            dayNumber = assessment["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1,
+            expectedStage = assessment["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            cropName = assessment["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            similarityScore = assessment["similarityScore"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+            isSimilar = assessment["isSimilar"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
+            observedStage = assessment["observedStage"]?.jsonPrimitive?.contentOrNull ?: "Unknown",
+            recommendation = recommendation?.get("primaryAction")?.jsonPrimitive?.contentOrNull
+                ?: assessment["recommendation"]?.jsonPrimitive?.contentOrNull
+                ?: "Retake photo with clearer lighting.",
+            rationale = recommendation?.get("issueSummary")?.jsonPrimitive?.contentOrNull
+                ?: assessment["rationale"]?.jsonPrimitive?.contentOrNull
+                ?: "Insufficient detail for robust stage matching.",
+            provider = root["provider"]?.jsonPrimitive?.contentOrNull
+                ?: assessment["provider"]?.jsonPrimitive?.contentOrNull
+                ?: "agent-scouting-loop-v1",
         )
     }
 
@@ -482,6 +527,49 @@ class HttpFieldInsightsRepository(
             val message = extractServerErrorMessage(response.body<String>())
             throw IllegalStateException(message)
         }
+    }
+
+    override suspend fun trackActionFollowUp(
+        userId: String,
+        dayNumber: Int,
+        cropName: String,
+        issueType: String,
+        actionTaken: String,
+        note: String,
+    ): ActionTrackerFollowUp {
+        val payload = buildJsonObject {
+            put("userId", userId)
+            put("dayNumber", dayNumber)
+            put("cropName", cropName)
+            put("issueType", issueType)
+            put("actionTaken", actionTaken)
+            if (note.isNotBlank()) {
+                put("note", note)
+            }
+        }
+
+        val configuredBase = baseUrl.trimEnd('/')
+        val response = client.post("$configuredBase/agents/action-tracker") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+
+        if (!response.status.isSuccess()) {
+            val message = extractServerErrorMessage(response.body<String>())
+            throw IllegalStateException(message)
+        }
+
+        val root = json.parseToJsonElement(response.body<String>()).jsonObject
+        val followUp = root["followUp"]?.jsonObject ?: root
+        return ActionTrackerFollowUp(
+            nextBestAction = followUp["nextBestAction"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            followUpQuestion = followUp["followUpQuestion"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            confidence = followUp["confidence"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
+            riskLevel = followUp["riskLevel"]?.jsonPrimitive?.contentOrNull ?: "unknown",
+            provider = followUp["provider"]?.jsonPrimitive?.contentOrNull
+                ?: root["provider"]?.jsonPrimitive?.contentOrNull
+                ?: "agent-action-tracker-v1",
+        )
     }
 
     private fun centroid(points: List<FarmPoint>): FarmPoint {

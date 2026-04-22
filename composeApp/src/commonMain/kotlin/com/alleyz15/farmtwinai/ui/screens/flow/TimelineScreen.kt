@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alleyz15.farmtwinai.domain.model.ActionTrackerFollowUp
 import com.alleyz15.farmtwinai.domain.model.TimelineDay
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
 import com.alleyz15.farmtwinai.domain.model.TimelineRecoveryForecast
@@ -133,6 +134,7 @@ fun TimelineScreen(
     cachedPhotoMimeType: String?,
     isFarmConfigCacheReady: Boolean,
     actionBannerMessage: String?,
+    persistentFollowUp: ActionTrackerFollowUp?,
     onBack: () -> Unit,
     onSelectDay: (Int) -> Unit,
     onLoadStageVisual: (Int, String) -> Unit,
@@ -143,6 +145,7 @@ fun TimelineScreen(
     onOpenActionPlan: () -> Unit,
     onOpenChat: () -> Unit,
     onConsumeActionBanner: () -> Unit,
+    onAcknowledgeFollowUp: (Int) -> Unit,
 ) {
     var imagePickerMessage by remember(selectedDay.dayNumber) { mutableStateOf<String?>(null) }
     val visibleDays = remember(days, unlockedMaxDayNumber) {
@@ -172,6 +175,8 @@ fun TimelineScreen(
 
     LaunchedEffect(actionBannerMessage) {
         if (!actionBannerMessage.isNullOrBlank()) {
+            // Auto-dismiss after 5 seconds
+            kotlinx.coroutines.delay(5000)
             onConsumeActionBanner()
         }
     }
@@ -259,7 +264,7 @@ fun TimelineScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                if (!actionBannerMessage.isNullOrBlank()) {
+                if (!actionBannerMessage.isNullOrBlank() && persistentFollowUp == null) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.88f)),
@@ -272,6 +277,46 @@ fun TimelineScreen(
                             color = MaterialTheme.colorScheme.onErrorContainer,
                             fontWeight = FontWeight.Medium,
                         )
+                    }
+                }
+
+                if (persistentFollowUp != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF3C7).copy(alpha = 0.92f)),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = "Follow-up for Day ${selectedDay.dayNumber}",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF92400E),
+                            )
+                            if (persistentFollowUp.followUpQuestion.isNotBlank()) {
+                                Text(
+                                    text = "Q: ${persistentFollowUp.followUpQuestion}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF78350F),
+                                )
+                            }
+                            if (persistentFollowUp.nextBestAction.isNotBlank()) {
+                                Text(
+                                    text = "Next: ${persistentFollowUp.nextBestAction}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFF78350F),
+                                )
+                            }
+                            TextButton(
+                                onClick = { onAcknowledgeFollowUp(selectedDay.dayNumber) },
+                                modifier = Modifier.align(Alignment.End),
+                            ) {
+                                Text("Acknowledge")
+                            }
+                        }
                     }
                 }
 
