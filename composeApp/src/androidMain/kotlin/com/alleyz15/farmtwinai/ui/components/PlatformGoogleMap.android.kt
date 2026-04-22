@@ -32,6 +32,8 @@ import org.json.JSONObject
 private const val MAP_WEBVIEW_TAG = "FarmMapWebView"
 private var sharedMapWebView: WebView? = null
 private var sharedMapApiKey: String? = null
+private var sharedPendingLocationQuery: String? = null
+private var sharedPendingUseCurrentLocation: Boolean = false
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -97,6 +99,13 @@ actual fun PlatformGoogleMap(
                 "WebView HTTP error: status=${errorResponse?.statusCode} reason=${errorResponse?.reasonPhrase} url=${request?.url}",
               )
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+              super.onPageFinished(view, url)
+              val loadedView = view ?: return
+              val appContext = loadedView.context.applicationContext
+              applyPendingMapActions(loadedView, appContext)
+            }
           }
           webChromeClient = object : WebChromeClient() {
             override fun onGeolocationPermissionsShowPrompt(
@@ -133,6 +142,7 @@ actual fun PlatformGoogleMap(
 
     LaunchedEffect(searchTrigger) {
       if (searchTrigger > 0 && locationQuery.isNotBlank()) {
+            sharedPendingLocationQuery = locationQuery
             val quoted = JSONObject.quote(locationQuery)
             webView.evaluateJavascript("window.updateLocation($quoted);", null)
         }
@@ -140,11 +150,13 @@ actual fun PlatformGoogleMap(
 
     LaunchedEffect(useCurrentLocationTrigger) {
       if (useCurrentLocationTrigger > 0) {
+        sharedPendingUseCurrentLocation = true
         if (ensureLocationPermission(context)) {
           val nativeLocation = readBestLastKnownLocation(context)
           if (nativeLocation != null) {
             val script = "window.centerToLocation(${nativeLocation.latitude}, ${nativeLocation.longitude});"
             webView.evaluateJavascript(script, null)
+            sharedPendingUseCurrentLocation = false
           } else {
             webView.evaluateJavascript("window.useCurrentLocation();", null)
           }
@@ -190,6 +202,27 @@ actual fun PlatformGoogleMap(
         }
         },
     )
+}
+
+private fun applyPendingMapActions(webView: WebView, context: Context) {
+  val pendingQuery = sharedPendingLocationQuery?.trim().orEmpty()
+  if (pendingQuery.isNotBlank()) {
+    val quoted = JSONObject.quote(pendingQuery)
+    webView.evaluateJavascript("window.updateLocation($quoted);", null)
+  }
+
+  if (!sharedPendingUseCurrentLocation) return
+
+  if (ensureLocationPermission(context)) {
+    val nativeLocation = readBestLastKnownLocation(context)
+    if (nativeLocation != null) {
+      val script = "window.centerToLocation(${nativeLocation.latitude}, ${nativeLocation.longitude});"
+      webView.evaluateJavascript(script, null)
+      sharedPendingUseCurrentLocation = false
+    } else {
+      webView.evaluateJavascript("window.useCurrentLocation();", null)
+    }
+  }
 }
 
 private fun buildGoogleMapHtml(apiKey: String): String {
