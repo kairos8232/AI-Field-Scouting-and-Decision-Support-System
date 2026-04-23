@@ -8,6 +8,13 @@ Node.js backend for polygon analysis prototype:
 - Supports farmer knowledge-base search with Vertex AI Search (Discovery Engine)
 - Optionally stores each analysis result in Firebase Firestore
 
+## Latest Backend Updates (Apr 2026)
+
+- AI chat fallback now classifies runtime errors from all model attempts (not only the last error), so quota errors are surfaced correctly.
+- Gemini quota fallback message is explicit: daily quota reached, reset after midnight UTC, or upgrade to paid tier.
+- Request parsing now supports both JSON and URL-encoded payloads with `15mb` limit.
+- Large request handling was improved to reduce request-entity-too-large incidents.
+
 ## 1) Deploy To Cloud Run
 
 ### One Source of Truth (Recommended)
@@ -207,6 +214,30 @@ Quick test:
 curl -X POST "https://YOUR_CLOUD_RUN_URL/api/knowledge/query" \
   -H "Content-Type: application/json" \
   -d '{"query":"best practices for corn pest scouting","pageSize":5}'
+```
+
+## 2.3) AI Chat Fallback Behavior
+
+Endpoint:
+
+```bash
+POST /api/chat
+```
+
+Fallback classification includes:
+
+- Gemini daily quota reached (429 / quota exceeded)
+- API key issues (invalid/expired)
+- Permission restrictions (403)
+- Temporary service overload (503/high demand)
+
+Quota fallback example:
+
+```text
+Gemini daily quota reached.
+Free tier: 20 requests/day for gemini-2.5-flash
+Try again after midnight UTC (quota resets daily)
+Or upgrade to Gemini API paid tier for unlimited requests
 ```
 
 ## 2.2) Bulk Add Knowledge Documents (Vertex AI Search)

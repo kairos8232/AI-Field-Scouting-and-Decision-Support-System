@@ -14,6 +14,15 @@ This project helps farmers move from static records to daily action loops:
 
 ## Feature Highlights
 
+### Latest Updates (Apr 2026)
+
+- Farm creation timestamp is now immutable per farm (`createdAtEpochMs`) and preserved across syncs.
+- Timeline progression is calendar-aware from planting date, so future days cannot be unlocked early by repeated uploads.
+- Timeline day cards show expected calendar date (for example, Day 5 from 2026-04-23 -> 2026-04-27).
+- Dashboard `Current day` now follows actual farm progression and no longer follows whichever timeline day was last clicked.
+- Day calculation now uses local device timezone instead of UTC-only date math to avoid midnight off-by-one behavior.
+- AI consultation fallback now detects Gemini quota exhaustion and shows explicit reset guidance.
+
 ### Authentication
 
 - Email/password sign-up and sign-in
@@ -32,6 +41,7 @@ This project helps farmers move from static records to daily action loops:
 - Farm lot map preview with lot overlays
 - Lot summary cards (crop, soil, water)
 - Current day and latest health score shortcuts
+- `Current day` opens Timeline at the actual progression day (not last selected timeline page)
 - Weather-now summary by active farm location
 
 ### Timeline and AI Comparison
@@ -40,6 +50,8 @@ This project helps farmers move from static records to daily action loops:
 - Photo upload (camera/gallery)
 - AI similarity scoring and observed stage output
 - Recommendation and rationale for follow-up action
+- Calendar-date-based day unlock from planting date
+- Expected date display per timeline day
 
 ### Action and Recovery Tracking
 
@@ -75,11 +87,13 @@ This project helps farmers move from static records to daily action loops:
 ### 3. Daily Monitoring Flow
 
 1. User opens Dashboard and picks active farm.
-2. User opens Timeline for current day.
-3. App loads expected stage visual.
-4. User uploads a real crop photo and runs comparison.
-5. AI returns similarity, observed stage, and recommendation.
-6. User logs action decision and continues to next day loop.
+2. Dashboard shows current progression day derived from planting date and local timezone.
+3. User opens Timeline for the current progression day.
+4. Timeline only allows days that are already reached by calendar date.
+5. App loads expected stage visual and expected calendar date for selected day.
+6. User uploads a real crop photo and runs comparison.
+7. AI returns similarity, observed stage, and recommendation.
+8. User logs action decision and continues to next day loop.
 
 ## Data and Sync Model
 
@@ -89,6 +103,7 @@ Farm config sync stores:
 - farms array (each farm has independent address/map query/boundary/lots)
 - active farm legacy fields for backward compatibility
 - timeline caches (photo uploads, stage visuals, assessments)
+- per-farm immutable creation timestamp (`createdAtEpochMs`)
 
 This design keeps active farm UX simple while preserving multi-farm history and compatibility with older payloads.
 
