@@ -24,7 +24,6 @@ actual fun PlatformDataUrlImage(
             backgroundColor = null
         }
     }
-
     UIKitView(
         modifier = modifier,
         factory = { webView },

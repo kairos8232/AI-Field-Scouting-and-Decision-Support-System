@@ -1,6 +1,6 @@
 TEAM_ID=
 
-GOOGLE_MAPS_API_KEY_IOS=
+GOOGLE_MAPS_API_KEY=
 // Auto-generated from ../.env by the Xcode build phase; do not edit manually.
 #include? "Secrets.xcconfig"
 

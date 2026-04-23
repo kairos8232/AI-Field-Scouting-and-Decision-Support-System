@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import admin from "firebase-admin";
 import { GoogleGenAI } from "@google/genai";
-import { GoogleAuth } from "google-auth-library";
+import { GoogleAuth, OAuth2Client } from "google-auth-library";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,13 +28,24 @@ app.use(
 
 const PORT = Number(process.env.PORT || 8080);
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "mock";
+const GEMINI_MODEL_CANDIDATES = (process.env.GEMINI_MODEL_CANDIDATES || "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+const EARTH_ENGINE_MODE = process.env.EARTH_ENGINE_MODE || "live";
 const EARTH_ENGINE_PROJECT_ID = process.env.EARTH_ENGINE_PROJECT_ID || "";
 const EARTH_ENGINE_SERVICE_ACCOUNT_JSON = process.env.EARTH_ENGINE_SERVICE_ACCOUNT_JSON || "";
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "";
 const FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || "";
 const FIREBASE_COLLECTION = process.env.FIREBASE_COLLECTION || "fieldInsights";
+const FIREBASE_HISTORY_COLLECTION = process.env.FIREBASE_HISTORY_COLLECTION || "historyEvents";
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || "";
+const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "";
+const GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || "";
+const GOOGLE_OAUTH_REDIRECT_URI = process.env.GOOGLE_OAUTH_REDIRECT_URI || "";
+const GOOGLE_OAUTH_APP_REDIRECT_URI = process.env.GOOGLE_OAUTH_APP_REDIRECT_URI || "farmtwinai://oauth2redirect/google";
+const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
 const VERTEX_IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL || "imagen-4.0-fast-generate-001";
@@ -44,6 +55,18 @@ const VERTEX_IMAGE_MODEL_CANDIDATES = (process.env.VERTEX_IMAGE_MODEL_CANDIDATES
   .filter(Boolean);
 const VERTEX_SERVICE_ACCOUNT_JSON = process.env.VERTEX_SERVICE_ACCOUNT_JSON || "";
 const VERTEX_IMAGE_ENABLED = String(process.env.VERTEX_IMAGE_ENABLED || "true").toLowerCase() !== "false";
+const VERTEX_SEARCH_ENABLED = String(process.env.VERTEX_SEARCH_ENABLED || "false").toLowerCase() === "true";
+const VERTEX_SEARCH_LOCATION = process.env.VERTEX_SEARCH_LOCATION || "global";
+const VERTEX_SEARCH_COLLECTION = process.env.VERTEX_SEARCH_COLLECTION || "default_collection";
+const VERTEX_SEARCH_DATA_STORE = process.env.VERTEX_SEARCH_DATA_STORE || "";
+const VERTEX_SEARCH_SERVING_CONFIG = process.env.VERTEX_SEARCH_SERVING_CONFIG || "default_search";
+const VERTEX_SEARCH_QUERY_EXPANSION_ENABLED = String(process.env.VERTEX_SEARCH_QUERY_EXPANSION_ENABLED || "true").toLowerCase() !== "false";
+const VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS = Number.isFinite(Number(process.env.VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS))
+  ? Math.min(Math.max(Math.trunc(Number(process.env.VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS)), 0), 8)
+  : 3;
+const VERTEX_SEARCH_EXPANSION_PAGE_SIZE = Number.isFinite(Number(process.env.VERTEX_SEARCH_EXPANSION_PAGE_SIZE))
+  ? Math.min(Math.max(Math.trunc(Number(process.env.VERTEX_SEARCH_EXPANSION_PAGE_SIZE)), 1), 10)
+  : 4;
 
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
@@ -80,6 +103,11 @@ app.get("/health", async (_req, res) => {
     earthEngineReason: eeStatus.reason,
     firestoreEnabled: firebaseStatus.enabled,
     firestoreReason: firebaseStatus.reason,
+    firebaseStorageBucket: resolveFirebaseStorageBucketName(),
+    knowledgeBaseEnabled: VERTEX_SEARCH_ENABLED,
+    knowledgeBaseConfigured: isVertexSearchConfigured(),
+    knowledgeQueryExpansionEnabled: VERTEX_SEARCH_QUERY_EXPANSION_ENABLED,
+    knowledgeQueryExpansionVariants: VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS,
   });
 });
 
@@ -146,31 +174,57 @@ app.post("/api/farm-config", async (req, res) => {
       return res.status(400).json({ error: "userId is required." });
     }
 
-    const farmName = String(req.body?.farmName || "").trim();
-    const address = String(req.body?.address || "").trim();
-    const mapQuery = String(req.body?.mapQuery || "").trim();
-    const totalAreaInput = String(req.body?.totalAreaInput || "").trim();
-    const mode = String(req.body?.mode || "").trim();
-    const boundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
-    const lots = normalizeLots(req.body?.lots);
+    const legacyFarmName = String(req.body?.farmName || "").trim();
+    const legacyAddress = String(req.body?.address || "").trim();
+    const legacyMapQuery = String(req.body?.mapQuery || "").trim();
+    const legacyTotalAreaInput = String(req.body?.totalAreaInput || "").trim();
+    const legacyMode = String(req.body?.mode || "").trim();
+    const legacyBoundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
+    const legacyLots = normalizeLots(req.body?.lots);
+    const farms = normalizeFarms(req.body?.farms, {
+      farmName: legacyFarmName,
+      address: legacyAddress,
+      mapQuery: legacyMapQuery,
+      totalAreaInput: legacyTotalAreaInput,
+      mode: legacyMode,
+      boundaryPoints: legacyBoundaryPoints,
+      lots: legacyLots,
+    });
+    const requestedActiveFarmId = String(req.body?.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
+    const activeFarmId = activeFarm?.id || null;
+    const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
+    const normalizedTimelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizedTimelineStageVisualCache,
+      userId,
+      activeFarmId,
+    });
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(req.body?.timelineAssessmentCache);
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(req.body?.timelineActionDecisionCache);
+    const timelineInsightCache = normalizeTimelineInsightCache(req.body?.timelineInsightCache);
 
-    if (!farmName) {
-      return res.status(400).json({ error: "farmName is required." });
-    }
-
-    if (lots.length === 0) {
-      return res.status(400).json({ error: "At least one lot is required." });
+    if (farms.length === 0) {
+      return res.status(400).json({ error: "At least one farm is required." });
     }
 
     const payload = {
       userId,
-      farmName,
-      address,
-      mapQuery,
-      totalAreaInput,
-      mode,
-      boundaryPoints,
-      lots,
+      activeFarmId,
+      farms,
+      // Keep legacy single-farm fields for backward compatibility.
+      farmName: activeFarm?.farmName || "",
+      address: activeFarm?.address || "",
+      mapQuery: activeFarm?.mapQuery || "",
+      totalAreaInput: activeFarm?.totalAreaInput || "",
+      mode: activeFarm?.mode || "PLANNING",
+      boundaryPoints: activeFarm?.boundaryPoints || [],
+      lots: activeFarm?.lots || [],
+      timelinePhotoCache,
+      timelineStageVisualCache,
+      timelineAssessmentCache,
+      timelineActionDecisionCache,
+      timelineInsightCache,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -209,10 +263,42 @@ app.get("/api/farm-config", async (req, res) => {
       return res.json({ item: null });
     }
 
+    const data = doc.data() || {};
+    const farms = normalizeFarms(data.farms, {
+      farmName: String(data.farmName || "").trim(),
+      address: String(data.address || "").trim(),
+      mapQuery: String(data.mapQuery || "").trim(),
+      totalAreaInput: String(data.totalAreaInput || "").trim(),
+      mode: String(data.mode || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
+      lots: normalizeLots(data.lots),
+    });
+    const activeFarmId = String(data.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(data.timelineActionDecisionCache);
+    const timelineInsightCache = normalizeTimelineInsightCache(data.timelineInsightCache);
+
     return res.json({
       item: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
+        activeFarmId: activeFarm?.id || null,
+        farms,
+        farmName: activeFarm?.farmName || "",
+        address: activeFarm?.address || "",
+        mapQuery: activeFarm?.mapQuery || "",
+        totalAreaInput: activeFarm?.totalAreaInput || "",
+        mode: activeFarm?.mode || "PLANNING",
+        boundaryPoints: activeFarm?.boundaryPoints || [],
+        lots: activeFarm?.lots || [],
+        timelinePhotoCache,
+        timelineStageVisualCache,
+        timelineAssessmentCache,
+        timelineActionDecisionCache,
+        timelineInsightCache,
       },
     });
   } catch (error) {
@@ -243,10 +329,42 @@ app.get("/api/farm-config/latest", async (req, res) => {
       return res.json({ item: null });
     }
 
+    const data = doc.data() || {};
+    const farms = normalizeFarms(data.farms, {
+      farmName: String(data.farmName || "").trim(),
+      address: String(data.address || "").trim(),
+      mapQuery: String(data.mapQuery || "").trim(),
+      totalAreaInput: String(data.totalAreaInput || "").trim(),
+      mode: String(data.mode || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
+      lots: normalizeLots(data.lots),
+    });
+    const activeFarmId = String(data.activeFarmId || "").trim();
+    const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
+    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(data.timelineActionDecisionCache);
+    const timelineInsightCache = normalizeTimelineInsightCache(data.timelineInsightCache);
+
     return res.json({
       item: {
         id: doc.id,
-        ...doc.data(),
+        ...data,
+        activeFarmId: activeFarm?.id || null,
+        farms,
+        farmName: activeFarm?.farmName || "",
+        address: activeFarm?.address || "",
+        mapQuery: activeFarm?.mapQuery || "",
+        totalAreaInput: activeFarm?.totalAreaInput || "",
+        mode: activeFarm?.mode || "PLANNING",
+        boundaryPoints: activeFarm?.boundaryPoints || [],
+        lots: activeFarm?.lots || [],
+        timelinePhotoCache,
+        timelineStageVisualCache,
+        timelineAssessmentCache,
+        timelineActionDecisionCache,
+        timelineInsightCache,
       },
     });
   } catch (error) {
@@ -272,21 +390,85 @@ app.get("/api/field-insights/history", async (req, res) => {
       ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 100)
       : 20;
 
-    const snapshot = await db
-      .collection(FIREBASE_COLLECTION)
-      .orderBy("createdAt", "desc")
-      .limit(limit)
-      .get();
+    const userId = normalizeUserId(req.query?.userId);
 
-    const items = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const [eventsSnapshot, legacySnapshot] = await Promise.all([
+      db
+        .collection(FIREBASE_HISTORY_COLLECTION)
+        .orderBy("createdAt", "desc")
+        .limit(limit * 6)
+        .get(),
+      db
+        .collection(FIREBASE_COLLECTION)
+        .orderBy("createdAt", "desc")
+        .limit(limit * 4)
+        .get(),
+    ]);
+
+    const eventItems = eventsSnapshot.docs
+      .map((doc) => mapEventHistoryItem(doc.id, doc.data()))
+      .filter(Boolean)
+      .filter((item) => !userId || item.userId === userId);
+
+    const legacyItems = legacySnapshot.docs
+      .map((doc) => mapLegacyScanHistoryItem(doc.id, doc.data()))
+      .filter(Boolean)
+      .filter((item) => !userId || item.userId === userId);
+
+    const deduped = new Map();
+    [...eventItems, ...legacyItems].forEach((item) => {
+      const key = `${item.category}:${item.id}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, item);
+      }
+    });
+
+    const items = Array.from(deduped.values())
+      .sort((a, b) => b.createdAtEpochMs - a.createdAtEpochMs)
+      .slice(0, limit)
+      .map(({ createdAtEpochMs, userId: _userId, ...rest }) => rest);
 
     return res.json({ items, count: items.length });
   } catch (error) {
     return res.status(500).json({
       error: "Unable to read field insights history.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/timeline/action-log", async (req, res) => {
+  try {
+    const userId = normalizeUserId(req.body?.userId);
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const actionType = String(req.body?.actionType || "").trim();
+    const actionState = String(req.body?.actionState || "").trim();
+    const summary = String(req.body?.summary || "").trim();
+    const cropName = String(req.body?.cropName || "").trim();
+
+    if (!userId || !actionType || !actionState) {
+      return res.status(400).json({ error: "userId, actionType, and actionState are required." });
+    }
+
+    const label = `${actionType.replace(/_/g, " ")} (${actionState})`;
+    await persistHistoryEvent({
+      userId,
+      category: "action_log",
+      title: `Day ${dayNumber} action update`,
+      summary: summary || label,
+      recommendation: label,
+      payload: {
+        dayNumber,
+        actionType,
+        actionState,
+        cropName,
+      },
+    });
+
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to save action log.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -427,6 +609,100 @@ app.post("/api/auth/signin", async (req, res) => {
   }
 });
 
+app.post("/api/auth/google-signin", async (req, res) => {
+  try {
+    const firebaseAuth = getFirebaseAuth();
+    if (!firebaseAuth) {
+      return res.status(503).json({
+        error: "Firebase Auth is not configured.",
+        detail: "Set FIREBASE_PROJECT_ID and/or FIREBASE_SERVICE_ACCOUNT_JSON, then redeploy.",
+      });
+    }
+
+    const code = String(req.body?.code || "").trim();
+    if (!code) {
+      return res.status(400).json({ error: "code is required." });
+    }
+
+    if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET || !GOOGLE_OAUTH_REDIRECT_URI) {
+      return res.status(503).json({
+        error: "Google OAuth is not configured.",
+        detail: "Set GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, and GOOGLE_OAUTH_REDIRECT_URI.",
+      });
+    }
+
+    const tokenResponse = await exchangeGoogleAuthorizationCode(code);
+    const idToken = String(tokenResponse.id_token || "").trim();
+    if (!idToken) {
+      return res.status(401).json({ error: "Google did not return an id_token." });
+    }
+
+    const oauthClient = new OAuth2Client(GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI);
+    const ticket = await oauthClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_OAUTH_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const email = String(payload?.email || "").trim().toLowerCase();
+    if (!email) {
+      return res.status(401).json({ error: "Google account email is missing." });
+    }
+
+    const displayName = String(payload?.name || payload?.given_name || "").trim() || null;
+    const userRecord = await findOrCreateFirebaseUserByEmail(firebaseAuth, email, displayName);
+    const db = getFirestoreDb();
+    if (db) {
+      await db.collection("users").doc(userRecord.uid).set(
+        {
+          email,
+          displayName: displayName || userRecord.displayName || null,
+          provider: "google",
+          lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    return res.json({
+      userId: userRecord.uid,
+      email: userRecord.email || email,
+      displayName: userRecord.displayName || displayName,
+      idToken,
+      refreshToken: String(tokenResponse.refresh_token || "").trim() || null,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to sign in with Google.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.get("/api/auth/google-callback", async (req, res) => {
+  const code = String(req.query?.code || "").trim();
+  const error = String(req.query?.error || "").trim();
+  const errorDescription = String(req.query?.error_description || "").trim();
+
+  if (error || errorDescription) {
+    const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+    if (error) target.searchParams.set("error", error);
+    if (errorDescription) target.searchParams.set("error_description", errorDescription);
+    return res.redirect(302, target.toString());
+  }
+
+  if (!code) {
+    const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+    target.searchParams.set("error", "missing_code");
+    target.searchParams.set("error_description", "Google callback did not include an authorization code.");
+    return res.redirect(302, target.toString());
+  }
+
+  const target = new URL(GOOGLE_OAUTH_APP_REDIRECT_URI);
+  target.searchParams.set("code", code);
+  return res.redirect(302, target.toString());
+});
+
 app.post("/api/timeline/stage-visual", async (req, res) => {
   try {
     const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
@@ -464,6 +740,26 @@ app.post("/api/timeline/photo-compare", async (req, res) => {
       photoBase64,
       userMarkedSimilar,
     });
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "timeline_comparison",
+        title: `Day ${dayNumber} timeline comparison`,
+        summary: assessment.recommendation,
+        recommendation: `Similarity ${assessment.similarityScore}%`,
+        payload: {
+          dayNumber,
+          expectedStage,
+          cropName,
+          similarityScore: assessment.similarityScore,
+          observedStage: assessment.observedStage,
+          isSimilar: assessment.isSimilar,
+          provider: assessment.provider,
+        },
+      });
+    }
 
     return res.json(assessment);
   } catch (error) {
@@ -505,10 +801,382 @@ app.post("/api/chat", async (req, res) => {
       context,
     });
 
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "conversation",
+        title: "AI consultation",
+        summary: truncateText(reply.reply, 280),
+        recommendation: context?.cropName || context?.farmName || "Chat",
+        payload: {
+          message,
+          historyCount: history.length,
+          context,
+          provider: reply.provider,
+        },
+      });
+    }
+
     return res.json(reply);
   } catch (error) {
     return res.status(500).json({
       error: "Unable to generate AI chat response.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/knowledge/query", async (req, res) => {
+  try {
+    if (!isVertexSearchConfigured()) {
+      return res.status(503).json({
+        error: "Knowledge base is not configured.",
+        detail: "Set VERTEX_SEARCH_ENABLED=true and provide VERTEX_SEARCH_DATA_STORE before querying.",
+      });
+    }
+
+    const query = String(req.body?.query || "").trim();
+    if (!query) {
+      return res.status(400).json({ error: "query is required." });
+    }
+
+    const requestedPageSize = Number(req.body?.pageSize);
+    const pageSize = Number.isFinite(requestedPageSize)
+      ? Math.min(Math.max(Math.trunc(requestedPageSize), 1), 10)
+      : 5;
+    const requestedExpand = req.body?.expandQuery;
+    const expandQuery = typeof requestedExpand === "boolean"
+      ? requestedExpand
+      : VERTEX_SEARCH_QUERY_EXPANSION_ENABLED;
+
+    const searchResult = await queryKnowledgeBase({ query, pageSize, expandQuery });
+    const ragAnswer = await buildKnowledgeRagAnswer({
+      query,
+      results: searchResult.results,
+    });
+    const mergedResults = ragAnswer
+      ? [ragAnswer, ...searchResult.results]
+      : searchResult.results;
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "kb_search",
+        title: "Knowledge base search",
+        summary: query,
+        recommendation: mergedResults[0]?.title || "Knowledge query",
+        payload: {
+          query,
+          totalResults: Math.max(searchResult.totalResults, mergedResults.length),
+          provider: ragAnswer ? "vertex-ai-search+gemini-rag" : "vertex-ai-search-live",
+        },
+      });
+    }
+
+    return res.json({
+      query,
+      results: mergedResults,
+      totalResults: Math.max(searchResult.totalResults, mergedResults.length),
+      provider: ragAnswer ? "vertex-ai-search+gemini-rag" : "vertex-ai-search-live",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to query knowledge base.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/weather-now", async (req, res) => {
+  try {
+    const location = String(req.body?.location || "").trim();
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+    if (!location && !hasCoordinates) {
+      return res.status(400).json({ error: "location or coordinates are required." });
+    }
+
+    if (!hasCoordinates && !GOOGLE_MAPS_API_KEY) {
+      return res.status(503).json({
+        error: "GOOGLE_MAPS_API_KEY is not configured.",
+        detail: "Set GOOGLE_MAPS_API_KEY in backend environment and redeploy.",
+      });
+    }
+
+    const geocoded = hasCoordinates
+      ? {
+          lat: latitude,
+          lng: longitude,
+          resolvedAddress: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+        }
+      : await geocodeWithGoogleMaps(location);
+
+    const weather = await fetchCurrentWeather(geocoded.lat, geocoded.lng);
+    return res.json({
+      location: location || geocoded.resolvedAddress,
+      resolvedAddress: geocoded.resolvedAddress,
+      latitude: geocoded.lat,
+      longitude: geocoded.lng,
+      condition: weather.condition,
+      temperatureC: weather.temperatureC,
+      icon: weather.icon,
+      rainfallMm: weather.rainfallMm,
+      windKmh: weather.windKmh,
+      provider: hasCoordinates ? "open-meteo-coordinates" : "google-geocode+open-meteo",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to fetch current weather.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/agents/scouting-loop", async (req, res) => {
+  try {
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const expectedStage = String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression";
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+    const photoMimeType = String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
+    const photoBase64 = String(req.body?.photoBase64 || "").trim();
+    const userMarkedSimilar = typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : null;
+
+    if (!photoBase64) {
+      return res.status(400).json({ error: "photoBase64 is required." });
+    }
+
+    const location = String(req.body?.location || "").trim();
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const polygon = normalizePolygon(req.body?.polygon);
+    const centroid = polygon.length >= 3
+      ? computeCentroid(polygon)
+      : (Number.isFinite(latitude) && Number.isFinite(longitude) ? { lat: latitude, lng: longitude } : null);
+
+    const assessment = await assessTimelinePhoto({
+      dayNumber,
+      expectedStage,
+      cropName,
+      photoMimeType,
+      photoBase64,
+      userMarkedSimilar,
+    });
+
+    const toolPlan = await planScoutingToolSequence({
+      cropName,
+      expectedStage,
+      dayNumber,
+      recommendation: assessment.recommendation,
+      rationale: assessment.rationale,
+      location,
+      hasCoordinates: Number.isFinite(latitude) && Number.isFinite(longitude),
+      hasPolygon: polygon.length >= 3,
+    });
+
+    const knowledgeQuery = toolPlan.knowledgeQuery
+      || `${cropName} ${assessment.observedStage} ${assessment.recommendation}`.trim();
+    const shouldUseKnowledge = toolPlan.steps.includes("knowledge_base");
+    const shouldUseWeather = toolPlan.steps.includes("weather_now");
+
+    const kbReply = shouldUseKnowledge
+      ? await queryKnowledgeBase({ query: knowledgeQuery, pageSize: 4, expandQuery: true })
+      : { results: [], totalResults: 0 };
+
+    const weather = shouldUseWeather
+      ? await resolveWeatherForAgent({ location, latitude, longitude, centroid })
+      : null;
+
+    const finalAction = await synthesizeScoutingAction({
+      cropName,
+      expectedStage,
+      dayNumber,
+      assessment,
+      weather,
+      knowledgeResults: kbReply.results,
+    });
+
+    const toolTrace = [
+      { step: "photo_assessment", provider: assessment.provider, used: true },
+      { step: "knowledge_base", used: shouldUseKnowledge, query: shouldUseKnowledge ? knowledgeQuery : null, totalResults: kbReply.totalResults || 0 },
+      { step: "weather_now", used: shouldUseWeather, condition: weather?.condition || null },
+      { step: "final_recommendation", provider: finalAction.provider },
+    ];
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "action_log",
+        title: `Scouting loop - Day ${dayNumber}`,
+        summary: finalAction.issueSummary,
+        recommendation: finalAction.primaryAction,
+        payload: {
+          cropName,
+          expectedStage,
+          dayNumber,
+          similarityScore: assessment.similarityScore,
+          observedStage: assessment.observedStage,
+          weatherCondition: weather?.condition || null,
+          toolTrace,
+        },
+      });
+    }
+
+    return res.json({
+      dayNumber,
+      cropName,
+      expectedStage,
+      assessment,
+      weather,
+      knowledge: {
+        query: shouldUseKnowledge ? knowledgeQuery : null,
+        results: kbReply.results,
+        totalResults: kbReply.totalResults,
+      },
+      recommendation: finalAction,
+      toolPlan,
+      toolTrace,
+      provider: "agent-scouting-loop-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run scouting loop.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/agents/field-insights-orchestrator", async (req, res) => {
+  try {
+    const polygon = normalizePolygon(req.body?.polygon);
+    if (polygon.length < 3) {
+      return res.status(400).json({ error: "Polygon must have at least 3 points." });
+    }
+
+    const targetCrops = normalizeTargetCrops(req.body?.targetCrops);
+    const totalFarmAreaHectares = normalizeOptionalNumber(req.body?.totalFarmAreaHectares);
+    const lotAreaHectares = normalizeOptionalNumber(req.body?.lotAreaHectares);
+    const centroid = req.body?.centroid ? toLatLngPoint(req.body.centroid) : computeCentroid(polygon);
+    const location = String(req.body?.location || "").trim();
+
+    const earthSummary = await getEarthSummary({ polygon, centroid });
+    const recommendations = await getCropRecommendations(earthSummary, targetCrops, {
+      totalFarmAreaHectares,
+      lotAreaHectares,
+    });
+
+    const kbQuery = buildInsightsKnowledgeQuery({ recommendations, summary: earthSummary, targetCrops });
+    const kbReply = await queryKnowledgeBase({ query: kbQuery, pageSize: 4, expandQuery: true });
+    const weather = await resolveWeatherForAgent({
+      location,
+      latitude: Number(centroid.lat),
+      longitude: Number(centroid.lng),
+      centroid,
+    });
+
+    const actionBrief = await synthesizeFieldInsightsActionBrief({
+      summary: earthSummary,
+      recommendations,
+      weather,
+      knowledgeResults: kbReply.results,
+      targetCrops,
+    });
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "action_log",
+        title: "Field insights orchestrator run",
+        summary: actionBrief.overview,
+        recommendation: actionBrief.topAction,
+        payload: {
+          centroid,
+          targetCrops,
+          kbQuery,
+          weatherCondition: weather?.condition || null,
+        },
+      });
+    }
+
+    return res.json({
+      summary: earthSummary,
+      recommendations,
+      weather,
+      knowledge: {
+        query: kbQuery,
+        results: kbReply.results,
+        totalResults: kbReply.totalResults,
+      },
+      actionBrief,
+      toolTrace: ["earth_engine", "gemini_recommendation", "vertex_search", "weather_now", "final_brief"],
+      provider: "agent-field-insights-orchestrator-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run field insights orchestrator.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/agents/action-tracker", async (req, res) => {
+  try {
+    const userId = normalizeUserId(req.body?.userId);
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+    const issueType = String(req.body?.issueType || "crop health issue").trim() || "crop health issue";
+    const actionTaken = String(req.body?.actionTaken || "").trim();
+    const note = String(req.body?.note || "").trim();
+
+    const recentEvents = await readRecentHistoryEvents(userId, 25);
+    const followUp = await synthesizeActionTrackerFollowUp({
+      userId,
+      dayNumber,
+      cropName,
+      issueType,
+      actionTaken,
+      note,
+      recentEvents,
+    });
+
+    await persistHistoryEvent({
+      userId,
+      category: "action_log",
+      title: `Action tracker follow-up - Day ${dayNumber}`,
+      summary: `${issueType} (${cropName})`,
+      recommendation: followUp.nextBestAction,
+      payload: {
+        dayNumber,
+        cropName,
+        issueType,
+        actionTaken,
+        note,
+        confidence: followUp.confidence,
+      },
+    });
+
+    return res.json({
+      dayNumber,
+      cropName,
+      issueType,
+      actionTaken,
+      note,
+      recentEventsUsed: recentEvents.length,
+      followUp,
+      provider: "agent-action-tracker-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run action tracker agent.",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -567,6 +1235,11 @@ function getFirestoreDb() {
       ...(FIREBASE_PROJECT_ID ? { projectId: FIREBASE_PROJECT_ID } : {}),
     };
 
+    const storageBucket = resolveFirebaseStorageBucketName();
+    if (storageBucket) {
+      appOptions.storageBucket = storageBucket;
+    }
+
     if (credentialsJson.trim()) {
       const serviceAccount = JSON.parse(credentialsJson);
       appOptions.credential = admin.credential.cert(serviceAccount);
@@ -588,6 +1261,121 @@ function getFirestoreDb() {
     };
     return null;
   }
+}
+
+function resolveFirebaseStorageBucketName() {
+  const configured = String(FIREBASE_STORAGE_BUCKET || "").trim();
+  if (configured) return configured;
+  const projectId = String(FIREBASE_PROJECT_ID || "").trim();
+  return projectId ? `${projectId}.appspot.com` : "";
+}
+
+function getFirebaseStorageBucket() {
+  getFirestoreDb();
+  if (admin.apps.length === 0) return null;
+  const bucketName = resolveFirebaseStorageBucketName();
+  if (!bucketName) return null;
+
+  try {
+    return admin.storage().bucket(bucketName);
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function materializeTimelineStageVisualCache({ entries, userId, activeFarmId }) {
+  const bucket = getFirebaseStorageBucket();
+  if (!bucket || !Array.isArray(entries) || entries.length === 0) {
+    return entries;
+  }
+
+  const materialized = [];
+  for (const entry of entries) {
+    const imageDataUrl = String(entry?.imageDataUrl || "").trim();
+    if (!imageDataUrl.startsWith("data:")) {
+      materialized.push(entry);
+      continue;
+    }
+
+    const uploaded = await uploadStageVisualDataUrl({
+      bucket,
+      dataUrl: imageDataUrl,
+      userId,
+      activeFarmId,
+      dayNumber: entry.dayNumber,
+      updatedAtEpochMs: entry.updatedAtEpochMs,
+    });
+
+    materialized.push({
+      ...entry,
+      imageDataUrl: uploaded || imageDataUrl,
+    });
+  }
+
+  return materialized;
+}
+
+async function uploadStageVisualDataUrl({ bucket, dataUrl, userId, activeFarmId, dayNumber, updatedAtEpochMs }) {
+  const parsed = parseDataUrlImage(dataUrl);
+  if (!parsed) return "";
+
+  try {
+    const farmKey = String(activeFarmId || "farm-legacy").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const stamp = Number.isFinite(Number(updatedAtEpochMs)) ? Math.trunc(Number(updatedAtEpochMs)) : Date.now();
+    const ext = extensionForMime(parsed.mimeType);
+    const objectPath = [
+      "timeline-stage-visuals",
+      String(userId || "anonymous"),
+      farmKey,
+      `day-${Math.max(1, Math.trunc(Number(dayNumber) || 1))}-${stamp}.${ext}`,
+    ].join("/");
+
+    const file = bucket.file(objectPath);
+    await file.save(parsed.buffer, {
+      resumable: false,
+      metadata: {
+        contentType: parsed.mimeType,
+        cacheControl: "public, max-age=31536000",
+      },
+    });
+
+    const [signedUrl] = await file.getSignedUrl({
+      action: "read",
+      expires: "2100-01-01",
+    });
+    return String(signedUrl || "").trim();
+  } catch (_error) {
+    return "";
+  }
+}
+
+function parseDataUrlImage(input) {
+  const text = String(input || "").trim();
+  const match = text.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\n\r]+)$/);
+  if (!match) return null;
+
+  const mimeType = String(match[1] || "image/png").trim().toLowerCase();
+  const base64 = String(match[2] || "").replace(/\s+/g, "");
+  if (!base64) return null;
+
+  try {
+    const buffer = Buffer.from(base64, "base64");
+    if (!buffer.length) return null;
+    return {
+      mimeType,
+      buffer,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function extensionForMime(mimeType) {
+  const value = String(mimeType || "").toLowerCase();
+  if (value.includes("png")) return "png";
+  if (value.includes("webp")) return "webp";
+  if (value.includes("gif")) return "gif";
+  return "jpg";
 }
 
 function getFirebaseAuth() {
@@ -640,6 +1428,48 @@ async function signInWithPassword(email, password) {
   };
 }
 
+async function exchangeGoogleAuthorizationCode(code) {
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      code,
+      client_id: GOOGLE_OAUTH_CLIENT_ID,
+      client_secret: GOOGLE_OAUTH_CLIENT_SECRET,
+      redirect_uri: GOOGLE_OAUTH_REDIRECT_URI,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`google_oauth_exchange_failed:${payload?.error || response.status}`);
+  }
+
+  return payload;
+}
+
+async function findOrCreateFirebaseUserByEmail(firebaseAuth, email, displayName) {
+  try {
+    const existing = await firebaseAuth.getUserByEmail(email);
+    if (displayName && !existing.displayName) {
+      return await firebaseAuth.updateUser(existing.uid, { displayName });
+    }
+    return existing;
+  } catch (error) {
+    const code = String(error?.code || error?.errorInfo?.code || "").toLowerCase();
+    if (code.includes("auth/user-not-found")) {
+      return await firebaseAuth.createUser({
+        email,
+        displayName: displayName || undefined,
+      });
+    }
+    throw error;
+  }
+}
+
 async function persistInsightRecord({ userId = null, requestBody, normalized, response }) {
   const db = getFirestoreDb();
   if (!db) return;
@@ -654,9 +1484,210 @@ async function persistInsightRecord({ userId = null, requestBody, normalized, re
       },
       response,
     });
+
+    void persistHistoryEvent({
+      userId,
+      category: "scan",
+      title: "Past scanned insight",
+      summary: String(response?.summary?.notes || "").trim(),
+      recommendation: String(response?.recommendations?.[0]?.cropName || "No rec").trim() || "No rec",
+      payload: {
+        provider: String(response?.provider || ""),
+      },
+    });
   } catch (error) {
     console.error("Failed to persist field insight record:", error);
   }
+}
+
+async function persistHistoryEvent({ userId = null, category, title, summary, recommendation, payload = {} }) {
+  const db = getFirestoreDb();
+  if (!db) return;
+
+  const normalizedCategory = String(category || "scan").trim().toLowerCase();
+  if (!normalizedCategory) return;
+
+  const normalizedUserId = normalizeUserId(userId);
+
+  try {
+    await db.collection(FIREBASE_HISTORY_COLLECTION).add({
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId: normalizedUserId,
+      category: normalizedCategory,
+      title: safeTrim(title),
+      summary: safeTrim(summary),
+      recommendation: safeTrim(recommendation),
+      payload,
+    });
+  } catch (error) {
+    console.error("Failed to persist history event:", error);
+  }
+}
+
+function mapEventHistoryItem(id, data = {}) {
+  if (!data || typeof data !== "object") return null;
+  const createdAtEpochMs = resolveCreatedAtEpochMs(data.createdAt);
+  const category = safeTrim(data.category).toLowerCase() || "scan";
+  const summary = safeTrim(data.summary);
+  const recommendation = safeTrim(data.recommendation);
+  const title = safeTrim(data.title) || defaultCategoryTitle(category);
+
+  return {
+    id,
+    userId: normalizeUserId(data.userId),
+    category,
+    title,
+    summaryNotes: summary,
+    recommendedCrops: recommendation,
+    hasConversation: category === "conversation",
+    chatMessagesCount: category === "conversation" ? 1 : 0,
+    dateString: `Stored TS: ${Math.floor(createdAtEpochMs / 1000)}`,
+    createdAtEpochMs,
+  };
+}
+
+function mapLegacyScanHistoryItem(id, data = {}) {
+  if (!data || typeof data !== "object") return null;
+  const response = data.response || {};
+  const summary = safeTrim(response?.summary?.notes);
+  const recommendation = safeTrim(response?.recommendations?.[0]?.cropName) || "No rec";
+  const createdAtEpochMs = resolveCreatedAtEpochMs(data.createdAt);
+
+  return {
+    id,
+    userId: normalizeUserId(data.userId),
+    category: "scan",
+    title: "Past scanned insight",
+    summaryNotes: summary,
+    recommendedCrops: recommendation,
+    hasConversation: false,
+    chatMessagesCount: 0,
+    dateString: `Stored TS: ${Math.floor(createdAtEpochMs / 1000)}`,
+    createdAtEpochMs,
+  };
+}
+
+function resolveCreatedAtEpochMs(raw) {
+  if (!raw) return Date.now();
+
+  if (typeof raw?.toMillis === "function") {
+    return raw.toMillis();
+  }
+
+  const seconds = Number(raw?._seconds);
+  const nanos = Number(raw?._nanoseconds);
+  if (Number.isFinite(seconds)) {
+    const millis = seconds * 1000;
+    if (Number.isFinite(nanos)) {
+      return millis + Math.floor(nanos / 1e6);
+    }
+    return millis;
+  }
+
+  const asNumber = Number(raw);
+  if (Number.isFinite(asNumber)) {
+    return asNumber > 1e12 ? Math.trunc(asNumber) : Math.trunc(asNumber * 1000);
+  }
+
+  return Date.now();
+}
+
+function safeTrim(value) {
+  return String(value || "").trim();
+}
+
+function truncateText(input, maxLength = 240) {
+  const text = String(input || "").trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function defaultCategoryTitle(category) {
+  switch (String(category || "").trim().toLowerCase()) {
+    case "conversation":
+      return "AI consultation";
+    case "kb_search":
+      return "Knowledge base search";
+    case "timeline_comparison":
+      return "Timeline comparison";
+    case "action_log":
+      return "Action log";
+    case "scan":
+    default:
+      return "Past scanned insight";
+  }
+}
+
+async function geocodeWithGoogleMaps(location) {
+  const response = await fetch(
+    `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${GOOGLE_MAPS_API_KEY}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`google_geocode_http_${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (payload.status !== "OK" || !Array.isArray(payload.results) || payload.results.length === 0) {
+    throw new Error(`google_geocode_status_${payload.status || "UNKNOWN"}`);
+  }
+
+  const first = payload.results[0];
+  const lat = Number(first?.geometry?.location?.lat);
+  const lng = Number(first?.geometry?.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error("google_geocode_invalid_latlng");
+  }
+
+  return {
+    lat,
+    lng,
+    resolvedAddress: String(first?.formatted_address || location),
+  };
+}
+
+async function fetchCurrentWeather(lat, lng) {
+  const response = await fetch(
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code,precipitation,wind_speed_10m&timezone=auto`
+  );
+
+  if (!response.ok) {
+    throw new Error(`open_meteo_http_${response.status}`);
+  }
+
+  const payload = await response.json();
+  const current = payload?.current || {};
+  const weatherCode = Number(current.weather_code);
+  const temperatureC = Number(current.temperature_2m);
+  const rainfallMm = Number(current.precipitation);
+  const windKmh = Number(current.wind_speed_10m);
+
+  const { condition, icon } = describeWeatherCode(weatherCode);
+
+  return {
+    condition,
+    icon,
+    temperatureC: Number.isFinite(temperatureC) ? round(temperatureC, 1) : 0,
+    rainfallMm: Number.isFinite(rainfallMm) ? round(rainfallMm, 1) : 0,
+    windKmh: Number.isFinite(windKmh) ? round(windKmh, 1) : 0,
+  };
+}
+
+function describeWeatherCode(code) {
+  if (!Number.isFinite(code)) {
+    return { condition: "Clear", icon: "sun" };
+  }
+
+  if (code === 0) return { condition: "Clear", icon: "sun" };
+  if ([1, 2].includes(code)) return { condition: "Partly cloudy", icon: "cloud-sun" };
+  if (code === 3) return { condition: "Cloudy", icon: "cloud" };
+  if ([45, 48].includes(code)) return { condition: "Foggy", icon: "cloud-fog" };
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    return { condition: "Rainy", icon: "rain" };
+  }
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return { condition: "Snow", icon: "snow" };
+  if ([95, 96, 99].includes(code)) return { condition: "Thunderstorm", icon: "storm" };
+  return { condition: "Clear", icon: "sun" };
 }
 
 function normalizeUserId(input) {
@@ -698,6 +1729,194 @@ function normalizeLots(input) {
       };
     })
     .filter(Boolean);
+}
+
+function normalizeFarms(input, fallback = null) {
+  const farms = Array.isArray(input)
+    ? input
+        .map((raw, index) => {
+          const lots = normalizeLots(raw?.lots);
+          if (lots.length === 0) return null;
+
+          const boundaryPoints = normalizeNormalizedPoints(raw?.boundaryPoints);
+          return {
+            id: String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`,
+            farmName: String(raw?.farmName || "").trim(),
+            address: String(raw?.address || "").trim(),
+            mapQuery: String(raw?.mapQuery || "").trim(),
+            totalAreaInput: String(raw?.totalAreaInput || "").trim(),
+            mode: String(raw?.mode || "PLANNING").trim() || "PLANNING",
+            boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
+            lots,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  if (farms.length > 0) {
+    return farms.slice(0, 20);
+  }
+
+  if (!fallback) {
+    return [];
+  }
+
+  const lots = Array.isArray(fallback.lots) ? fallback.lots : [];
+  if (lots.length === 0) {
+    return [];
+  }
+
+  const boundaryPoints = Array.isArray(fallback.boundaryPoints) ? fallback.boundaryPoints : [];
+
+  return [
+    {
+      id: "farm-legacy",
+      farmName: String(fallback.farmName || "").trim(),
+      address: String(fallback.address || "").trim(),
+      mapQuery: String(fallback.mapQuery || "").trim(),
+      totalAreaInput: String(fallback.totalAreaInput || "").trim(),
+      mode: String(fallback.mode || "PLANNING").trim() || "PLANNING",
+      boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
+      lots,
+    },
+  ];
+}
+
+function normalizeTimelinePhotoCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      const photoBase64 = String(raw?.photoBase64 || "").trim();
+      const photoMimeType = String(raw?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !photoBase64) return null;
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        photoBase64,
+        photoMimeType,
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineStageVisualCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      const imageDataUrl = String(raw?.imageDataUrl || "").trim();
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageDataUrl) return null;
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        title: String(raw?.title || "").trim(),
+        description: String(raw?.description || "").trim(),
+        imageDataUrl,
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineAssessmentCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const similarityScore = Number(raw?.similarityScore);
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        expectedStage: String(raw?.expectedStage || "").trim(),
+        cropName: String(raw?.cropName || "").trim(),
+        similarityScore: Number.isFinite(similarityScore) ? similarityScore : 0,
+        isSimilar: Boolean(raw?.isSimilar),
+        observedStage: String(raw?.observedStage || "").trim(),
+        recommendation: String(raw?.recommendation || "").trim(),
+        rationale: String(raw?.rationale || "").trim(),
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineActionDecisionCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const actionType = String(raw?.actionType || "").trim().toUpperCase();
+      const state = String(raw?.state || "").trim().toUpperCase();
+      if (!actionType || !state) return null;
+
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      const confidence = Number(raw?.confidence);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        actionType,
+        state,
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+        nextBestAction: String(raw?.nextBestAction || "").trim(),
+        followUpQuestion: String(raw?.followUpQuestion || "").trim(),
+        confidence: Number.isFinite(confidence) ? confidence : 0,
+        riskLevel: String(raw?.riskLevel || "unknown").trim() || "unknown",
+        provider: String(raw?.provider || "agent-action-tracker-v1").trim() || "agent-action-tracker-v1",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineInsightCache(input) {
+  if (!Array.isArray(input)) return [];
+  const allowedStatuses = new Set(["NORMAL", "WARNING", "ACTION_TAKEN", "UPDATED"]);
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const sourceDayNumber = Number(raw?.sourceDayNumber);
+      const etaDaysMin = Number(raw?.etaDaysMin);
+      const etaDaysMax = Number(raw?.etaDaysMax);
+      const confidencePercent = Number(raw?.confidencePercent);
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      const timelineStatusRaw = String(raw?.timelineStatus || "").trim().toUpperCase();
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        recommendedActionText: String(raw?.recommendedActionText || "").trim(),
+        timelineStatus: allowedStatuses.has(timelineStatusRaw) ? timelineStatusRaw : null,
+        sourceDayNumber: Number.isFinite(sourceDayNumber) ? Math.trunc(sourceDayNumber) : Math.trunc(dayNumber),
+        trend: String(raw?.trend || "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
+        etaDaysMin: Number.isFinite(etaDaysMin) ? Math.max(1, Math.trunc(etaDaysMin)) : 1,
+        etaDaysMax: Number.isFinite(etaDaysMax) ? Math.max(1, Math.trunc(etaDaysMax)) : 1,
+        confidencePercent: Number.isFinite(confidencePercent) ? Math.max(0, Math.min(100, Math.trunc(confidencePercent))) : 0,
+        confidenceTier: String(raw?.confidenceTier || "LOW").trim().toUpperCase() || "LOW",
+        isUrgent: Boolean(raw?.isUrgent),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
 }
 
 function toLatLngPoint(raw) {
@@ -751,41 +1970,29 @@ function polygonArea(points) {
 }
 
 async function getEarthSummary({ polygon, centroid }) {
-  const baseSummary = buildGeometrySummary({ polygon, centroid });
-
-  if (EARTH_ENGINE_MODE !== "mock") {
-    const eeStatus = await resolveEarthEngineStatus();
-    if (eeStatus.linked) {
-      try {
-        const sampled = await sampleEarthEngineSummary(polygon, centroid);
-        if (isSparseEarthSummary(sampled)) {
-          return {
-            ...baseSummary,
-            notes: "Earth Engine returned sparse metrics for this polygon; using geometry fallback summary.",
-          };
-        }
-        return {
-          ...sampled,
-          notes: "Real Earth Engine datasets sampled (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature).",
-        };
-      } catch (error) {
-        return {
-          ...baseSummary,
-          notes: `Earth Engine linked but sampling failed (${error instanceof Error ? error.message : String(error)}); using geometry fallback summary.`,
-        };
-      }
-    }
-
-    return {
-      ...baseSummary,
-      notes: `Earth Engine live mode requested but unavailable (${eeStatus.reason}); using geometry fallback summary.`,
-    };
+  if (EARTH_ENGINE_MODE === "mock") {
+    throw new Error("EARTH_ENGINE_MODE=mock is disabled. Set EARTH_ENGINE_MODE=live.");
   }
 
-  return {
-    ...baseSummary,
-    notes: "Mock Earth summary. Set EARTH_ENGINE_MODE=live and add Earth Engine credentials to verify the link.",
-  };
+  const eeStatus = await resolveEarthEngineStatus();
+  if (!eeStatus.linked) {
+    throw new Error(`Earth Engine live mode unavailable (${eeStatus.reason}).`);
+  }
+
+  try {
+    const sampled = await sampleEarthEngineSummary(polygon, centroid);
+    const sparse = isSparseEarthSummary(sampled);
+    return {
+      ...sampled,
+      source: "earth-engine-live",
+      sourceVerified: true,
+      notes: sparse
+        ? "Real Earth Engine datasets sampled, but metrics are sparse for this polygon/time window (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature)."
+        : "Real Earth Engine datasets sampled (Sentinel-2 NDVI, SMAP soil moisture, CHIRPS rainfall, ERA5 temperature).",
+    };
+  } catch (error) {
+    throw new Error(`Earth Engine sampling failed (${error instanceof Error ? error.message : String(error)}).`);
+  }
 }
 
 function buildGeometrySummary({ polygon, centroid }) {
@@ -1025,7 +2232,7 @@ function eeEvaluate(obj) {
 
 async function getCropRecommendations(summary, targetCrops = [], areaContext = {}) {
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return fallbackRecommendations(summary, targetCrops);
   }
 
   const cropHint = targetCrops.length
@@ -1060,7 +2267,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
     const text = result.text || "";
     const parsed = safeParseJsonArray(text);
     if (!parsed.length) {
-      throw new Error("wrong connection to server");
+      return fallbackRecommendations(summary, targetCrops);
     }
 
     const normalized = parsed.map((item) => ({
@@ -1071,7 +2278,7 @@ async function getCropRecommendations(summary, targetCrops = [], areaContext = {
 
     return ensureTargetCropCoverage(summary, targetCrops, normalized).slice(0, Math.max(3, targetCrops.length));
   } catch (_error) {
-    throw new Error("wrong connection to server");
+    return fallbackRecommendations(summary, targetCrops);
   }
 }
 
@@ -1171,12 +2378,13 @@ function safeParseJsonObject(text) {
 
 async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName }) {
   const prompt = [
-    "Generate a realistic close-up crop growth image for stage monitoring.",
+    "Generate a photorealistic close-up crop growth photo for stage monitoring.",
     `Crop: ${cropName}`,
     `Expected stage: ${expectedStage}`,
     `Day number: ${dayNumber}`,
     "Focus on realistic morphology: leaf count, leaf shape, vein structure, stem thickness, and stage-specific traits.",
     "Image style: natural daylight farm photo, close-up framing of the plant, soft background blur.",
+    "Photorealistic image only. No illustration, no icon, no cartoon, no vector, no CGI, no drawing, no painting.",
     "The image must show the crop plant itself as the main subject.",
     "Do NOT generate maps, field layout plans, charts, tables, legends, labels, text, logos, or UI screens.",
     "Do NOT generate satellite views, top-down parcel diagrams, or infographic posters.",
@@ -1201,56 +2409,39 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
       };
     } catch (error) {
       console.warn(
-        `[timeline-stage-visual] Vertex fallback to Gemini: ${
+        `[timeline-stage-visual] Vertex photorealistic generation failed: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
-      // Fall through to Gemini SVG generation as secondary strategy.
+      const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+      return {
+        dayNumber,
+        expectedStage,
+        cropName,
+        title,
+        description,
+        imageDataUrl: svgToDataUrl(svg),
+        prompt,
+        provider: "vertex-imagen-fallback-svg",
+      };
     }
   }
 
-  if (!ai) {
-    throw new Error("wrong connection to server");
-  }
-
-  let svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
-
-  try {
-    const svgPrompt = [
-      "Generate a clean SVG illustration for crop growth monitoring UI.",
-      `Crop: ${cropName}`,
-      `Expected stage: ${expectedStage}`,
-      `Day number: ${dayNumber}`,
-      "Output ONLY raw SVG markup, no markdown, no explanation.",
-      "Add clear morphology detail: multiple leaves, visible veins, stem texture, and stage-specific structures.",
-      "Use transparent/very light background and no text labels.",
-    ].join("\n");
-
-    const result = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: svgPrompt,
-    });
-    const text = (result.text || "").trim();
-    const maybeSvg = extractSvg(text);
-    if (!maybeSvg) {
-      throw new Error("wrong connection to server");
-    }
-    svg = maybeSvg;
-  } catch (_error) {
-    throw new Error("wrong connection to server");
-  }
-
-  const imageDataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
   return {
     dayNumber,
     expectedStage,
     cropName,
     title,
     description,
-    imageDataUrl,
+    imageDataUrl: svgToDataUrl(svg),
     prompt,
-    provider: "gemini-live",
+    provider: "timeline-fallback-svg",
   };
+}
+
+function svgToDataUrl(svgText) {
+  return `data:image/svg+xml;base64,${Buffer.from(String(svgText || ""), "utf8").toString("base64")}`;
 }
 
 function isVertexConfigured() {
@@ -1352,7 +2543,7 @@ async function assessTimelinePhoto({
 }) {
   const fallback = fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarkedSimilar, seedText: photoBase64 });
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return { ...fallback, provider: "fallback (no connection)" };
   }
 
   const prompt = [
@@ -1362,7 +2553,7 @@ async function assessTimelinePhoto({
     userMarkedSimilar == null ? "User similarity feedback: not provided" : `User similarity feedback: ${userMarkedSimilar ? "similar" : "not similar"}`,
     "Analyze the uploaded crop photo and return STRICT JSON with keys:",
     "similarityScore (0-100 integer), isSimilar (boolean), observedStage (string), recommendation (string), rationale (string)",
-    "Keep recommendation practical for farmers.",
+    "Keep recommendation and rationale extremely short (max 1 sentence each) and direct.",
   ].join("\n");
 
   try {
@@ -1386,7 +2577,7 @@ async function assessTimelinePhoto({
 
     const parsed = safeParseJsonObject(result.text || "");
     if (!parsed) {
-      throw new Error("wrong connection to server");
+      return { ...fallback, provider: "fallback (parse error)" };
     }
 
     const similarityScore = clamp(Number(parsed.similarityScore ?? fallback.similarityScore), 0, 100);
@@ -1405,14 +2596,24 @@ async function assessTimelinePhoto({
       rationale: String(parsed.rationale || fallback.rationale),
       provider: "gemini-live",
     };
-  } catch (_error) {
-    throw new Error("wrong connection to server");
+  } catch (error) {
+    console.error("Gemini assessment error:", error);
+    return { ...fallback, provider: "fallback (api error)" };
   }
 }
 
 async function generateAiChatReply({ message, history, context }) {
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return {
+      reply: [
+        "Gemini is temporarily unavailable.",
+        "Immediate next step:",
+        "1) Inspect leaves and stem base for new spots, wilting, or pest signs.",
+        "2) Check soil moisture at root depth before watering.",
+        "3) Upload a new photo in Timeline after 24 hours for re-check.",
+      ].join("\n"),
+      provider: "gemini-fallback-unavailable",
+    };
   }
 
   const contextLines = context
@@ -1440,24 +2641,67 @@ async function generateAiChatReply({ message, history, context }) {
     message,
   ].filter(Boolean).join("\n");
 
+  const modelCandidates = [
+    ...new Set([
+      GEMINI_MODEL,
+      ...GEMINI_MODEL_CANDIDATES,
+      "gemini-2.5-flash",
+      "gemini-1.5-flash",
+    ]),
+  ];
+
   let text = "";
-  try {
-    const result = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: prompt,
-    });
-    text = String(result.text || "").trim();
-  } catch (error) {
-    const raw = String(error instanceof Error ? error.message : error || "");
-    if (raw.includes("API_KEY_IP_ADDRESS_BLOCKED")) {
-      throw new Error(
-        "Gemini API key is blocked by IP restriction. Update API key restrictions to allow this server IP or remove IP restriction."
-      );
+  let lastError = null;
+
+  for (const modelName of modelCandidates) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+        });
+        text = String(result.text || "").trim();
+        if (text) {
+          break;
+        }
+      } catch (error) {
+        lastError = error;
+        const raw = String(error instanceof Error ? error.message : error || "");
+        const isTransient = /429|500|502|503|504|timed out|deadline|unavailable/i.test(raw);
+        const isModelNotFound = /404|not found|model/i.test(raw);
+        if (isModelNotFound) {
+          break;
+        }
+        if (!isTransient) {
+          break;
+        }
+      }
     }
-    if (raw.includes("403")) {
-      throw new Error("Gemini request was forbidden. Check API key restrictions and API enablement.");
+
+    if (text) {
+      break;
     }
-    throw new Error("Unable to get Gemini response from backend.");
+  }
+
+  if (!text) {
+    const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
+    const issue = /API_KEY_INVALID|API key expired/i.test(raw)
+      ? "API key expired or invalid"
+      : raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
+        ? "API key restriction"
+        : /429|RESOURCE_EXHAUSTED|quota exceeded/i.test(raw)
+          ? "Gemini quota exceeded"
+          : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
+    return {
+      reply: [
+        `Gemini is not reachable right now (${issue}).`,
+        "Quick fallback guidance:",
+        "1) Follow the latest recommended action from Timeline.",
+        "2) Re-check crop symptoms in 24 hours.",
+        "3) If symptoms worsen, open Knowledge Base for crop-specific control steps.",
+      ].join("\n"),
+      provider: "gemini-fallback-runtime",
+    };
   }
 
   if (!text) {
@@ -1468,6 +2712,630 @@ async function generateAiChatReply({ message, history, context }) {
     reply: text,
     provider: "gemini-live",
   };
+}
+
+function isVertexSearchConfigured() {
+  return VERTEX_SEARCH_ENABLED && Boolean(VERTEX_PROJECT_ID && VERTEX_SEARCH_DATA_STORE);
+}
+
+async function queryKnowledgeBase({ query, pageSize, expandQuery = VERTEX_SEARCH_QUERY_EXPANSION_ENABLED }) {
+  const cleanQuery = String(query || "").trim();
+  const normalizedPageSize = Math.min(Math.max(Math.trunc(Number(pageSize) || 5), 1), 10);
+  const candidates = buildKnowledgeQueryCandidates(cleanQuery, {
+    enabled: expandQuery,
+    maxVariants: VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS,
+  });
+  const useExpansion = candidates.length > 1;
+  const perQueryPageSize = useExpansion
+    ? Math.min(normalizedPageSize, VERTEX_SEARCH_EXPANSION_PAGE_SIZE)
+    : normalizedPageSize;
+
+  const settled = await Promise.allSettled(
+    candidates.map((candidate) => queryKnowledgeBaseSingle({
+      query: candidate,
+      pageSize: perQueryPageSize,
+    }))
+  );
+
+  const fulfilled = settled
+    .filter((item) => item.status === "fulfilled")
+    .map((item) => item.value);
+
+  if (fulfilled.length === 0) {
+    const firstRejected = settled.find((item) => item.status === "rejected");
+    throw firstRejected?.reason || new Error("Knowledge base query failed.");
+  }
+
+  const merged = mergeKnowledgeResults(fulfilled, normalizedPageSize);
+  const scored = applyFallbackRankScores(merged);
+  const totalResults = Math.max(
+    scored.length,
+    ...fulfilled.map((item) => Number(item.totalResults || 0))
+  );
+
+  return {
+    results: scored,
+    totalResults,
+  };
+}
+
+async function queryKnowledgeBaseSingle({ query, pageSize }) {
+  const accessToken = await getVertexAccessToken();
+  const endpoint = [
+    "https://discoveryengine.googleapis.com/v1",
+    `projects/${VERTEX_PROJECT_ID}`,
+    `locations/${VERTEX_SEARCH_LOCATION}`,
+    `collections/${VERTEX_SEARCH_COLLECTION}`,
+    `dataStores/${VERTEX_SEARCH_DATA_STORE}`,
+    `servingConfigs/${VERTEX_SEARCH_SERVING_CONFIG}:search`,
+  ].join("/");
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      query,
+      pageSize,
+      contentSearchSpec: {
+        snippetSpec: {
+          returnSnippet: true,
+        },
+      },
+      spellCorrectionSpec: {
+        mode: "AUTO",
+      },
+      queryExpansionSpec: {
+        condition: "AUTO",
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Vertex AI Search error ${response.status}: ${detail.slice(0, 300)}`);
+  }
+
+  const payload = await response.json();
+  const rawResults = Array.isArray(payload?.results) ? payload.results : [];
+  return {
+    results: rawResults.map(mapKnowledgeSearchResult).filter((item) => item.title || item.snippet),
+    totalResults: Number(payload?.totalSize || rawResults.length || 0),
+  };
+}
+
+function buildKnowledgeQueryCandidates(query, { enabled, maxVariants }) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery) return [];
+
+  const normalized = cleanQuery.toLowerCase();
+  const candidates = [cleanQuery];
+  const addCandidate = (value) => {
+    const next = String(value || "").trim();
+    if (!next) return;
+    if (candidates.some((item) => item.toLowerCase() === next.toLowerCase())) return;
+    candidates.push(next);
+  };
+
+  if (!enabled || maxVariants <= 0) {
+    return candidates;
+  }
+
+  if (/\bpest|insect|borer|worm\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} integrated pest management`);
+    addCandidate(`${cleanQuery} IPM`);
+    addCandidate("field scouting pest management");
+  }
+
+  if (/\bdisease|blast|blight|fung|mildew|rot\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} disease management`);
+    addCandidate("fungal disease prevention in crops");
+  }
+
+  if (/\bfertilizer|nutrient|npk|nitrogen|phosphorus|potassium\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} nutrient management`);
+    addCandidate("fertilizer schedule by crop stage");
+  }
+
+  if (/\birrigation|water|drip|sprinkler\b/.test(normalized)) {
+    addCandidate(`${cleanQuery} water management`);
+    addCandidate("irrigation scheduling for smallholder farms");
+  }
+
+  if (/\brice|paddy\b/.test(normalized)) {
+    addCandidate("rice disease and pest control");
+  }
+
+  if (/\bcorn|maize\b/.test(normalized)) {
+    addCandidate("corn pest scouting and control");
+  }
+
+  if (/\bchili|chilli|pepper\b/.test(normalized)) {
+    addCandidate("chili crop nutrition and pest management");
+  }
+
+  addCandidate(`${cleanQuery} best practices`);
+
+  return candidates.slice(0, maxVariants + 1);
+}
+
+function mergeKnowledgeResults(searchReplies, pageSize) {
+  const normalizedPageSize = Math.min(Math.max(Math.trunc(Number(pageSize) || 5), 1), 10);
+  const mergedMap = new Map();
+
+  for (const reply of searchReplies) {
+    const items = Array.isArray(reply?.results) ? reply.results : [];
+    for (const item of items) {
+      const key = toKnowledgeResultKey(item);
+      const score = Number(item?.score || 0);
+      const existing = mergedMap.get(key);
+
+      if (!existing) {
+        mergedMap.set(key, {
+          title: String(item?.title || "Knowledge Result").trim(),
+          snippet: String(item?.snippet || "").trim(),
+          uri: item?.uri || null,
+          sourceId: String(item?.sourceId || "knowledge-doc"),
+          score: Number.isFinite(score) ? score : 0,
+          hitCount: 1,
+        });
+        continue;
+      }
+
+      existing.hitCount += 1;
+      if (Number.isFinite(score) && score > existing.score) {
+        existing.score = score;
+      }
+      if ((!existing.snippet || existing.snippet.length < 40) && item?.snippet) {
+        existing.snippet = String(item.snippet).trim();
+      }
+      if (!existing.uri && item?.uri) {
+        existing.uri = item.uri;
+      }
+    }
+  }
+
+  return Array.from(mergedMap.values())
+    .sort((a, b) => {
+      if (b.hitCount !== a.hitCount) return b.hitCount - a.hitCount;
+      return b.score - a.score;
+    })
+    .slice(0, normalizedPageSize)
+    .map((item) => ({
+      title: item.title,
+      snippet: item.snippet,
+      uri: item.uri,
+      sourceId: item.sourceId,
+      score: item.score,
+    }));
+}
+
+function applyFallbackRankScores(results) {
+  const items = Array.isArray(results) ? results : [];
+  if (items.length === 0) {
+    return [];
+  }
+
+  const hasRealScores = items.some((item) => Number(item?.score) > 0);
+  if (hasRealScores) {
+    return items;
+  }
+
+  const total = items.length;
+  return items.map((item, index) => {
+    const rank = index + 1;
+    const score = total === 1
+      ? 1
+      : 1 - ((rank - 1) / (total - 1)) * 0.6;
+
+    return {
+      ...item,
+      score: Number(score.toFixed(3)),
+    };
+  });
+}
+
+function toKnowledgeResultKey(item) {
+  const sourceId = String(item?.sourceId || "").trim().toLowerCase();
+  const uri = String(item?.uri || "").trim().toLowerCase();
+  const title = String(item?.title || "").trim().toLowerCase();
+  const snippet = String(item?.snippet || "").trim().toLowerCase().slice(0, 80);
+
+  if (sourceId) return `source:${sourceId}`;
+  if (uri) return `uri:${uri}`;
+  if (title && snippet) return `title-snippet:${title}:${snippet}`;
+  if (title) return `title:${title}`;
+  return `snippet:${snippet}`;
+}
+
+async function buildKnowledgeRagAnswer({ query, results }) {
+  const contexts = Array.isArray(results)
+    ? results
+        .filter((item) => item && (item.snippet || item.title))
+        .slice(0, 5)
+        .map((item, index) => {
+          const title = String(item.title || "Untitled").trim();
+          const snippet = String(item.snippet || "").trim();
+          const source = String(item.sourceId || "knowledge-doc").trim();
+          const url = item.uri ? ` | uri: ${item.uri}` : "";
+          return `[${index + 1}] title: ${title} | source: ${source}${url}\n${snippet}`;
+        })
+    : [];
+  const hasContext = contexts.length > 0;
+  if (!hasContext) {
+    return null;
+  }
+
+  if (!ai) {
+    return null;
+  }
+
+  const prompt = [
+    "You are a practical agronomy assistant.",
+    "Respond in 2-4 concise sentences with actionable guidance.",
+    "Use only the retrieved context below and cite source indices like [1], [2].",
+    "If the context does not support a claim, do not invent it.",
+    `User question: ${query}`,
+    "Retrieved context:",
+    contexts.join("\n\n"),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: prompt,
+    });
+    const text = String(result.text || "").trim();
+    if (!text) {
+      return null;
+    }
+
+    const normalizedText = text.replace(/\s+/g, " ").trim().slice(0, 700);
+    return {
+      title: "RAG answer",
+      snippet: normalizedText,
+      uri: null,
+      sourceId: "rag-grounded",
+      score: 1,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function mapKnowledgeSearchResult(result) {
+  const document = result?.document && typeof result.document === "object" ? result.document : {};
+  const derived = document?.derivedStructData && typeof document.derivedStructData === "object"
+    ? document.derivedStructData
+    : {};
+  const structured = document?.structData && typeof document.structData === "object"
+    ? document.structData
+    : {};
+
+  const snippets = Array.isArray(derived?.snippets) ? derived.snippets : [];
+  const firstSnippet = snippets.find((snippet) => typeof snippet?.snippet === "string")?.snippet || "";
+  const snippetFallback = [
+    structured?.description,
+    structured?.content,
+    structured?.summary,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || "";
+
+  const title = [
+    document?.title,
+    derived?.title,
+    structured?.title,
+    structured?.name,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || "Knowledge Result";
+
+  const uri = [
+    document?.uri,
+    derived?.link,
+    structured?.uri,
+    structured?.link,
+  ].find((value) => typeof value === "string" && value.trim().length > 0) || null;
+
+  const score = Number(result?.modelScores?.relevanceScore || result?.chunk?.relevanceScore || 0);
+  const normalizedPrimarySnippet = normalizeSearchSnippet(firstSnippet);
+  const normalizedFallbackSnippet = normalizeSearchSnippet(snippetFallback);
+  return {
+    title: String(title).trim(),
+    snippet: normalizedPrimarySnippet || normalizedFallbackSnippet,
+    uri,
+    sourceId: String(document?.id || document?.name || "knowledge-doc"),
+    score: Number.isFinite(score) ? score : 0,
+  };
+}
+
+function normalizeSearchSnippet(input) {
+  const text = String(input || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.toLowerCase() === "no snippet is available for this page.") {
+    return "";
+  }
+  return text.slice(0, 320);
+}
+
+async function planScoutingToolSequence({
+  cropName,
+  expectedStage,
+  dayNumber,
+  recommendation,
+  rationale,
+  location,
+  hasCoordinates,
+  hasPolygon,
+}) {
+  const fallback = {
+    steps: ["photo_assessment", "knowledge_base", "weather_now", "final_recommendation"],
+    knowledgeQuery: `${cropName} ${expectedStage} ${recommendation}`.trim(),
+    reasoning: "Default tool sequence applied.",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are an agent planner for crop scouting.",
+    "Choose the best tool sequence from: photo_assessment, knowledge_base, weather_now, final_recommendation.",
+    "Return strict JSON object with keys: steps (array), knowledgeQuery (string), reasoning (string).",
+    "Keep steps minimal but complete.",
+    JSON.stringify({
+      cropName,
+      expectedStage,
+      dayNumber,
+      recommendation,
+      rationale,
+      location,
+      hasCoordinates,
+      hasPolygon,
+    }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const allowed = new Set(["photo_assessment", "knowledge_base", "weather_now", "final_recommendation"]);
+    const steps = Array.isArray(parsed.steps)
+      ? parsed.steps.map((s) => String(s || "").trim()).filter((s) => allowed.has(s))
+      : fallback.steps;
+
+    const normalizedSteps = steps.length ? steps : fallback.steps;
+    if (!normalizedSteps.includes("photo_assessment")) normalizedSteps.unshift("photo_assessment");
+    if (!normalizedSteps.includes("final_recommendation")) normalizedSteps.push("final_recommendation");
+
+    return {
+      steps: Array.from(new Set(normalizedSteps)),
+      knowledgeQuery: String(parsed.knowledgeQuery || fallback.knowledgeQuery).trim() || fallback.knowledgeQuery,
+      reasoning: String(parsed.reasoning || "").trim() || fallback.reasoning,
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+async function resolveWeatherForAgent({ location, latitude, longitude, centroid = null }) {
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+  if (hasCoordinates) {
+    const weather = await fetchCurrentWeather(latitude, longitude);
+    return {
+      location: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+      resolvedAddress: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+      latitude,
+      longitude,
+      ...weather,
+      provider: "open-meteo-coordinates",
+    };
+  }
+
+  const cleanLocation = String(location || "").trim();
+  if (cleanLocation && GOOGLE_MAPS_API_KEY) {
+    const geocoded = await geocodeWithGoogleMaps(cleanLocation);
+    const weather = await fetchCurrentWeather(geocoded.lat, geocoded.lng);
+    return {
+      location: cleanLocation,
+      resolvedAddress: geocoded.resolvedAddress,
+      latitude: geocoded.lat,
+      longitude: geocoded.lng,
+      ...weather,
+      provider: "google-geocode+open-meteo",
+    };
+  }
+
+  if (centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lng)) {
+    const weather = await fetchCurrentWeather(Number(centroid.lat), Number(centroid.lng));
+    return {
+      location: `Centroid ${round(Number(centroid.lat), 5)}, ${round(Number(centroid.lng), 5)}`,
+      resolvedAddress: `Centroid ${round(Number(centroid.lat), 5)}, ${round(Number(centroid.lng), 5)}`,
+      latitude: Number(centroid.lat),
+      longitude: Number(centroid.lng),
+      ...weather,
+      provider: "centroid+open-meteo",
+    };
+  }
+
+  return null;
+}
+
+async function synthesizeScoutingAction({ cropName, expectedStage, dayNumber, assessment, weather, knowledgeResults }) {
+  const fallback = {
+    issueSummary: `${cropName} appears ${assessment.isSimilar ? "near expected stage" : "off expected stage"}.`,
+    riskLevel: assessment.isSimilar ? "low" : "medium",
+    primaryAction: assessment.recommendation,
+    followUpCheck: "Recheck field condition in 24 hours and capture another photo.",
+    confidence: assessment.isSimilar ? 0.78 : 0.64,
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are a farm scouting action agent.",
+    "Produce strict JSON object with keys: issueSummary, riskLevel, primaryAction, followUpCheck, confidence.",
+    "riskLevel must be one of: low, medium, high.",
+    "confidence must be number between 0 and 1.",
+    JSON.stringify({ cropName, expectedStage, dayNumber, assessment, weather, knowledgeResults: knowledgeResults.slice(0, 3) }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const riskLevel = ["low", "medium", "high"].includes(String(parsed.riskLevel || "").toLowerCase())
+      ? String(parsed.riskLevel).toLowerCase()
+      : fallback.riskLevel;
+
+    return {
+      issueSummary: String(parsed.issueSummary || fallback.issueSummary).trim(),
+      riskLevel,
+      primaryAction: String(parsed.primaryAction || fallback.primaryAction).trim(),
+      followUpCheck: String(parsed.followUpCheck || fallback.followUpCheck).trim(),
+      confidence: clamp(Number(parsed.confidence ?? fallback.confidence), 0, 1),
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function buildInsightsKnowledgeQuery({ recommendations, summary, targetCrops }) {
+  const firstCrop = recommendations?.[0]?.cropName || targetCrops?.[0] || "crop";
+  const moisture = Number(summary?.soilMoistureMean || 0);
+  const rainfall = Number(summary?.rainfallMm7d || 0);
+  const ndvi = Number(summary?.ndviMean || 0);
+  return `${firstCrop} management NDVI ${round(ndvi, 2)} soil moisture ${round(moisture, 2)} rainfall ${round(rainfall, 1)}mm`;
+}
+
+async function synthesizeFieldInsightsActionBrief({ summary, recommendations, weather, knowledgeResults, targetCrops }) {
+  const topCrop = recommendations?.[0]?.cropName || targetCrops?.[0] || "crop";
+  const fallback = {
+    overview: `${topCrop} is currently the most suitable option based on field metrics and current conditions.`,
+    topAction: "Proceed with staged monitoring and verify moisture before next irrigation.",
+    watchouts: ["Monitor rainfall changes", "Watch early pest signs", "Re-assess in 48 hours"],
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are a field insights orchestrator agent.",
+    "Return strict JSON object with keys: overview, topAction, watchouts.",
+    "watchouts must be an array of 2-4 short strings.",
+    JSON.stringify({ summary, recommendations, weather, knowledgeResults: knowledgeResults.slice(0, 3), targetCrops }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const watchouts = Array.isArray(parsed.watchouts)
+      ? parsed.watchouts.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4)
+      : fallback.watchouts;
+
+    return {
+      overview: String(parsed.overview || fallback.overview).trim(),
+      topAction: String(parsed.topAction || fallback.topAction).trim(),
+      watchouts: watchouts.length ? watchouts : fallback.watchouts,
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+async function readRecentHistoryEvents(userId, limit = 20) {
+  const db = getFirestoreDb();
+  if (!db) return [];
+
+  try {
+    const size = Math.min(Math.max(Math.trunc(Number(limit) || 20), 1), 100);
+    const snap = await db
+      .collection(FIREBASE_HISTORY_COLLECTION)
+      .where("userId", "==", userId)
+      .orderBy("createdAt", "desc")
+      .limit(size)
+      .get();
+
+    return snap.docs.map((doc) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        category: String(data.category || "").trim(),
+        title: String(data.title || "").trim(),
+        summary: String(data.summary || "").trim(),
+        recommendation: String(data.recommendation || "").trim(),
+      };
+    });
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function synthesizeActionTrackerFollowUp({
+  dayNumber,
+  cropName,
+  issueType,
+  actionTaken,
+  note,
+  recentEvents,
+}) {
+  const fallback = {
+    nextBestAction: actionTaken
+      ? `Validate outcome of \"${actionTaken}\" within 24 hours and compare with Day ${dayNumber + 1} evidence.`
+      : "Log the action taken, then capture a new photo for comparison within 24 hours.",
+    followUpQuestion: "Did symptoms improve after your last action?",
+    confidence: 0.62,
+    riskLevel: "medium",
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const compactEvents = Array.isArray(recentEvents)
+    ? recentEvents.slice(0, 12).map((item) => ({
+        category: item.category,
+        title: item.title,
+        summary: item.summary,
+        recommendation: item.recommendation,
+      }))
+    : [];
+
+  const prompt = [
+    "You are an action tracker agent for farm follow-up.",
+    "Return strict JSON object with keys: nextBestAction, followUpQuestion, confidence, riskLevel.",
+    "riskLevel must be one of: low, medium, high.",
+    JSON.stringify({ dayNumber, cropName, issueType, actionTaken, note, recentEvents: compactEvents }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const riskLevel = ["low", "medium", "high"].includes(String(parsed.riskLevel || "").toLowerCase())
+      ? String(parsed.riskLevel).toLowerCase()
+      : fallback.riskLevel;
+
+    return {
+      nextBestAction: String(parsed.nextBestAction || fallback.nextBestAction).trim(),
+      followUpQuestion: String(parsed.followUpQuestion || fallback.followUpQuestion).trim(),
+      confidence: clamp(Number(parsed.confidence ?? fallback.confidence), 0, 1),
+      riskLevel,
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
 }
 
 function extractSvg(text) {
@@ -1510,11 +3378,11 @@ function fallbackPhotoAssessment({ dayNumber, expectedStage, cropName, userMarke
     isSimilar,
     observedStage: isSimilar ? expectedStage : "Slightly behind expected stage",
     recommendation: isSimilar
-      ? "Maintain current irrigation and nutrient schedule; continue daily monitoring."
-      : "Re-check watering pattern and inspect leaf color/uniformity; consider light nutrient correction.",
+      ? "Maintain current irrigation and monitor."
+      : "Adjust watering and inspect leaf health.",
     rationale: isSimilar
-      ? "Visual structure appears aligned with expected morphology for this day."
-      : "Detected differences in canopy density/stage cues compared with expected progression.",
+      ? "Plant looks on track."
+      : "Canopy differs from expected.",
   };
 }
 

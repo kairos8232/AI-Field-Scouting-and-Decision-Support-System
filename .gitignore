@@ -17,13 +17,13 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+scripts/
 
 # Local env secrets
 .env
 .env.local
 .env.*.local
 !.env.example
-cloud-backend/env.cloudrun.yaml
 
 # Local iOS secrets
 iosApp/Configuration/Secrets.xcconfig

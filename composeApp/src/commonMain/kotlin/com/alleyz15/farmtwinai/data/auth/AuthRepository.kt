@@ -3,7 +3,15 @@ package com.alleyz15.farmtwinai.data.auth
 import com.alleyz15.farmtwinai.auth.AuthUser
 
 interface AuthRepository {
+    fun getSavedSession(): AuthUser?
+
+    fun saveSession(user: AuthUser)
+
+    fun clearSession()
+
     suspend fun signIn(email: String, password: String): AuthUser
+
+    suspend fun signInWithGoogle(authorizationCode: String): AuthUser
 
     suspend fun signUp(email: String, password: String, displayName: String): AuthUser
 }

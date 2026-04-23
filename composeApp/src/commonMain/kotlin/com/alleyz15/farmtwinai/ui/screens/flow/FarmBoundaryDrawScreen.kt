@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
+import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
+
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.components.PlatformGoogleMap
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
@@ -68,7 +70,7 @@ fun FarmBoundaryDrawScreen(
     onContinue: () -> Unit,
 ) {
     val points = remember(boundaryPoints) {
-        mutableStateListOf<FarmPoint>().apply { addAll(normalizeBoundaryToRectangle(boundaryPoints)) }
+        mutableStateListOf<FarmPoint>().apply { addAll(boundaryPoints) }
     }
     var mapSize by remember { mutableStateOf(IntSize.Zero) }
     var selectedVertex by remember { mutableIntStateOf(-1) }
@@ -96,12 +98,12 @@ fun FarmBoundaryDrawScreen(
                         onClick = onBack,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White.copy(alpha = 0.08f)),
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
                     ) {
                         Icon(
                             imageVector = BackIconDraw,
                             contentDescription = "Back",
-                            tint = Sand100,
+                            tint = MaterialTheme.colorScheme.onBackground,
                         )
                     }
 
@@ -112,12 +114,12 @@ fun FarmBoundaryDrawScreen(
                             text = "Farm Setup",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
-                            color = Sand100,
+                            color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
                             text = "Step 2 of 3 - Draw boundary",
                             style = MaterialTheme.typography.bodySmall,
-                            color = Sand100.copy(alpha = 0.7f),
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                         )
                     }
                 }
@@ -128,13 +130,13 @@ fun FarmBoundaryDrawScreen(
                     text = "Draw boundary",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Sand100,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth),
                 )
                 Text(
                     text = "Tap to add points and drag to refine.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Sand100.copy(alpha = 0.78f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
                     modifier = Modifier.fillMaxWidth().widthIn(max = maxContentWidth).padding(top = 4.dp),
                 )
 
@@ -145,7 +147,7 @@ fun FarmBoundaryDrawScreen(
                         .fillMaxWidth()
                         .widthIn(max = maxContentWidth)
                         .height(320.dp)
-                        .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        .background(if (isAppDarkTheme()) Color.Black.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
                         .clip(RoundedCornerShape(16.dp))
                         .onSizeChanged { mapSize = it },
                 ) {
@@ -164,10 +166,7 @@ fun FarmBoundaryDrawScreen(
                                 detectTapGestures { tap ->
                                     val normalized = toFarmPoint(tap, mapSize)
                                     points.add(normalized)
-                                    val rectified = normalizeBoundaryToRectangle(points.toList())
-                                    points.clear()
-                                    points.addAll(rectified)
-                                    onBoundaryChanged(rectified)
+                                    onBoundaryChanged(points.toList())
                                     warningMessage = null
                                 }
                             }
@@ -185,9 +184,6 @@ fun FarmBoundaryDrawScreen(
                                         val index = selectedVertex
                                         if (index in points.indices) {
                                             points[index] = toFarmPoint(change.position, mapSize)
-                                            val rectified = normalizeBoundaryToRectangle(points.toList())
-                                            points.clear()
-                                            points.addAll(rectified)
                                         }
                                     },
                                 )
@@ -220,7 +216,7 @@ fun FarmBoundaryDrawScreen(
                             points.forEachIndexed { index, point ->
                                 val marker = toOffset(point, size)
                                 drawCircle(
-                                    color = if (index == selectedVertex) Color(0xFFE57373) else Sand100,
+                                    color = if (index == selectedVertex) Color(0xFFE57373) else Color(0xFFF4F1E8),
                                     radius = 12f,
                                     center = marker,
                                 )
@@ -251,7 +247,7 @@ fun FarmBoundaryDrawScreen(
                                 }
                             }
                         ) {
-                            Text("Undo", color = Sand100)
+                            Text("Undo", color = MaterialTheme.colorScheme.onBackground)
                         }
                         TextButton(
                             onClick = {
@@ -259,7 +255,7 @@ fun FarmBoundaryDrawScreen(
                                 onBoundaryChanged(emptyList())
                             }
                         ) {
-                            Text("Clear All", color = Sand100)
+                            Text("Clear All", color = MaterialTheme.colorScheme.onBackground)
                         }
                     }
                 }
@@ -277,8 +273,8 @@ fun FarmBoundaryDrawScreen(
 
                 Button(
                     onClick = {
-                        if (points.size < 4) {
-                            warningMessage = "Add at least 2 taps to form a rectangular boundary."
+                        if (points.size < 3) {
+                            warningMessage = "Add at least 3 points to form a boundary polygon."
                         } else {
                             warningMessage = null
                             onBoundaryChanged(points.toList())
@@ -322,26 +318,6 @@ private fun nearestVertexIndex(points: List<FarmPoint>, tap: Offset, size: IntSi
         }
     }
     return best
-}
-
-private fun normalizeBoundaryToRectangle(points: List<FarmPoint>): List<FarmPoint> {
-    if (points.isEmpty()) return emptyList()
-    if (points.size == 1) {
-        val p = points.first()
-        return listOf(FarmPoint(p.x.coerceIn(0f, 1f), p.y.coerceIn(0f, 1f)))
-    }
-
-    val minX = points.minOf { it.x.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val maxX = points.maxOf { it.x.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val minY = points.minOf { it.y.toDouble() }.toFloat().coerceIn(0f, 1f)
-    val maxY = points.maxOf { it.y.toDouble() }.toFloat().coerceIn(0f, 1f)
-
-    return listOf(
-        FarmPoint(minX, minY),
-        FarmPoint(maxX, minY),
-        FarmPoint(maxX, maxY),
-        FarmPoint(minX, maxY),
-    )
 }
 
 private val BackIconDraw: ImageVector

@@ -43,8 +43,33 @@ enum class ActionType {
     WATERED,
     IMPROVED_DRAINAGE,
     ADJUSTED_FERTILIZER,
+    APPLIED_PESTICIDE_FUNGICIDE,
+    PRUNED_AFFECTED_LEAVES,
     MONITORED_ONLY,
     REPLANTED,
+}
+
+enum class RecoveryTrend {
+    IMPROVING,
+    STABLE,
+    WORSENING,
+    UNKNOWN,
+}
+
+data class TimelineRecoveryForecast(
+    val sourceDayNumber: Int,
+    val trend: RecoveryTrend,
+    val etaDaysMin: Int,
+    val etaDaysMax: Int,
+    val confidencePercent: Int,
+    val confidenceTier: ForecastConfidenceTier,
+    val isUrgent: Boolean,
+)
+
+enum class ForecastConfidenceTier {
+    LOW,
+    MEDIUM,
+    HIGH,
 }
 
 data class UserProfile(
@@ -119,6 +144,21 @@ data class AiChatContext(
 
 data class AiChatReply(
     val reply: String,
+    val provider: String,
+)
+
+data class KnowledgeBaseResult(
+    val title: String,
+    val snippet: String,
+    val uri: String?,
+    val sourceId: String,
+    val score: Double,
+)
+
+data class KnowledgeBaseReply(
+    val query: String,
+    val results: List<KnowledgeBaseResult>,
+    val totalResults: Int,
     val provider: String,
 )
 

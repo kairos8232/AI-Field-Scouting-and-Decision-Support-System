@@ -2,9 +2,10 @@
 
 Node.js backend for polygon analysis prototype:
 - Receives polygon from mobile app
-- Produces Earth-style environment summary (mock mode by default)
+- Produces Earth Engine environment summary
 - Produces crop recommendations with Gemini (when API key is set)
 - Produces timeline stage visuals with Vertex Imagen (preferred when configured), Gemini SVG fallback otherwise
+- Supports farmer knowledge-base search with Vertex AI Search (Discovery Engine)
 - Optionally stores each analysis result in Firebase Firestore
 
 ## 1) Deploy To Cloud Run
@@ -25,7 +26,6 @@ gcloud run deploy farmtwin-field-insights \
   --region asia-southeast1 \
   --platform managed \
   --allow-unauthenticated \
-  --env-vars-file cloud-backend/env.cloudrun.yaml
 ```
 
 This way `.env` is your only file to edit, and `env.cloudrun.yaml` is generated automatically.
@@ -59,7 +59,6 @@ From repository root:
      --region asia-southeast1 \
      --platform managed \
      --allow-unauthenticated \
-     --set-env-vars GEMINI_API_KEY=YOUR_KEY,EARTH_ENGINE_MODE=mock
 
 2. Copy service URL from output.
 
@@ -140,6 +139,226 @@ Response:
   "provider": "gemini-live"
 }
 
+## 2.1) Knowledge Base Query API (Vertex AI Search)
+
+Endpoint:
+
+```bash
+POST /api/knowledge/query
+```
+
+Request body:
+
+```json
+{
+  "query": "How to control rice blast in wet season?",
+  "pageSize": 5
+}
+```
+
+Response body:
+
+```json
+{
+  "query": "How to control rice blast in wet season?",
+  "results": [
+    {
+      "title": "Rice Blast Management",
+      "snippet": "Use resistant varieties, balanced nitrogen, and fungicide timing...",
+      "uri": "https://example.org/rice-blast",
+      "sourceId": "doc-123",
+      "score": 0.91
+    }
+  ],
+  "totalResults": 24,
+  "provider": "vertex-ai-search-live"
+}
+```
+
+Required environment variables:
+
+```bash
+VERTEX_SEARCH_ENABLED=true
+VERTEX_SEARCH_DATA_STORE=YOUR_DATA_STORE_ID
+```
+
+Optional (defaults shown):
+
+```bash
+VERTEX_PROJECT_ID=YOUR_PROJECT_ID
+VERTEX_SEARCH_LOCATION=global
+VERTEX_SEARCH_COLLECTION=default_collection
+VERTEX_SEARCH_SERVING_CONFIG=default_search
+VERTEX_SEARCH_QUERY_EXPANSION_ENABLED=true
+VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS=3
+VERTEX_SEARCH_EXPANSION_PAGE_SIZE=4
+```
+
+Query expansion notes:
+
+- `VERTEX_SEARCH_QUERY_EXPANSION_ENABLED=true` enables related-query retrieval and merges unique results.
+- `VERTEX_SEARCH_QUERY_EXPANSION_VARIANTS=3` means up to 3 extra query variants beyond the original query.
+- `VERTEX_SEARCH_EXPANSION_PAGE_SIZE=4` controls how many results each expanded variant requests.
+- You can disable expansion per request by sending `"expandQuery": false` in request body.
+
+Quick test:
+
+```bash
+curl -X POST "https://YOUR_CLOUD_RUN_URL/api/knowledge/query" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"best practices for corn pest scouting","pageSize":5}'
+```
+
+## 2.2) Bulk Add Knowledge Documents (Vertex AI Search)
+
+If your datastore has only a few documents, search results will stay small even with larger `pageSize`. Use this script to upsert many agronomy documents:
+
+1. Prepare your docs JSON file (array of objects) with at least:
+
+```json
+[
+  {
+    "id": "rice-blast-management",
+    "title": "Rice Blast Management",
+    "snippet": "Use resistant varieties, balanced nitrogen, and fungicide timing.",
+    "uri": "https://example.org/rice-blast",
+    "crop": "rice",
+    "topic": "disease",
+    "tags": ["rice", "blast", "IPM"]
+  }
+]
+```
+
+2. You can start from the sample file:
+
+```bash
+cloud-backend/data/knowledge-docs.sample.json
+```
+
+3. Run bulk upsert from repository root:
+
+```bash
+npm --prefix cloud-backend run kb:upsert -- --file cloud-backend/data/knowledge-docs.sample.json
+```
+
+Required env vars for script:
+
+```bash
+VERTEX_PROJECT_ID=YOUR_PROJECT_ID
+VERTEX_SEARCH_DATA_STORE=YOUR_DATA_STORE_ID
+```
+
+Optional env vars:
+
+```bash
+VERTEX_SEARCH_LOCATION=global
+VERTEX_SEARCH_COLLECTION=default_collection
+VERTEX_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+```
+
+The script first tries `PATCH .../branches/default_branch/documents/{id}` and, if missing, falls back to `POST .../branches/default_branch/documents?documentId={id}`.
+
+## 2.3) Autonomous Agent APIs
+
+These APIs implement code-first orchestration loops in the existing backend.
+
+### A) Scouting Agent Loop
+
+Endpoint:
+
+```bash
+POST /api/agents/scouting-loop
+```
+
+Purpose:
+
+- Analyze uploaded crop photo
+- Decide whether to call knowledge base and weather tools
+- Generate a structured action recommendation
+- Optionally log event to Firestore history
+
+Request (minimum):
+
+```json
+{
+  "dayNumber": 3,
+  "expectedStage": "Vegetative",
+  "cropName": "Corn",
+  "photoMimeType": "image/jpeg",
+  "photoBase64": "..."
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `userMarkedSimilar`
+- `location` or `latitude`/`longitude`
+- `polygon`
+
+### B) Field Insights Orchestrator
+
+Endpoint:
+
+```bash
+POST /api/agents/field-insights-orchestrator
+```
+
+Purpose:
+
+- Sample Earth Engine summary
+- Generate crop recommendations
+- Query knowledge base
+- Include weather context
+- Return structured action brief
+
+Request (minimum):
+
+```json
+{
+  "polygon": [
+    { "x": 0.2, "y": 0.2 },
+    { "x": 0.8, "y": 0.2 },
+    { "x": 0.8, "y": 0.8 }
+  ]
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `targetCrops`
+- `totalFarmAreaHectares`
+- `lotAreaHectares`
+- `location`
+
+### C) Action Tracker Agent
+
+Endpoint:
+
+```bash
+POST /api/agents/action-tracker
+```
+
+Purpose:
+
+- Read recent history events for user
+- Generate follow-up recommendation and question
+- Log follow-up event to Firestore
+
+Request:
+
+```json
+{
+  "userId": "USER_UID",
+  "dayNumber": 3,
+  "cropName": "Corn",
+  "issueType": "leaf blight",
+  "actionTaken": "Applied fungicide",
+  "note": "Sprayed in the evening"
+}
+```
+
 ## 3) Firebase Storage Endpoints
 
 When Firebase is configured, each `POST /api/field-insights` call is stored in Firestore.
@@ -207,11 +426,13 @@ To enable Earth Engine link:
 After link is verified, replace buildGeometrySummary in server.js with real dataset sampling while keeping response shape unchanged.
 
 mac:
-gcloud run deploy farmtwin-field-insights \
-  --source ./cloud-backend \
-  --region asia-southeast1 \
-  --platform managed \
+gcloud run deploy farmtwin-field-insights 
+  --source ./cloud-backend 
+  --region asia-southeast1 
+  --platform managed 
   --allow-unauthenticated
+
+gcloud run deploy farmtwin-field-insights --source ./cloud-backend --region asia-southeast1 --platform managed --allow-unauthenticated
 
 Windows: 
 (New-Object Net.WebClient).DownloadFile("https://dl.google.com/dl/cloudsdk/channels/rapid/GoogleCloudSDKInstaller.exe", "$env:Temp\GoogleCloudSDKInstaller.exe")

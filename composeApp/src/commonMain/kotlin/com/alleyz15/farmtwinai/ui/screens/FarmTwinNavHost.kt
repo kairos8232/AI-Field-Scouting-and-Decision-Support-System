@@ -8,7 +8,6 @@ import com.alleyz15.farmtwinai.navigation.AppNavigator
 import com.alleyz15.farmtwinai.presentation.FarmTwinAppState
 import com.alleyz15.farmtwinai.ui.screens.flow.ActionConfirmationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AiChatScreen
-import com.alleyz15.farmtwinai.ui.screens.flow.AiConversationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.AuthScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DashboardScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.DocumentSetupScreen
@@ -18,6 +17,7 @@ import com.alleyz15.farmtwinai.ui.screens.flow.HistoryScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotSectionSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.LotRecommendationScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.MePanelScreen
+import com.alleyz15.farmtwinai.ui.screens.flow.KnowledgeBaseScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.PolygonInsightsScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.QuickSetupScreen
 import com.alleyz15.farmtwinai.ui.screens.flow.SetupMethodScreen
@@ -32,6 +32,15 @@ fun FarmTwinNavHost(
     appState: FarmTwinAppState,
 ) {
     val destination by navigator.currentDestination
+
+    LaunchedEffect(appState.isAuthenticated, destination) {
+        if (
+            appState.isAuthenticated &&
+            (destination == AppDestination.Welcome || destination is AppDestination.Auth)
+        ) {
+            navigator.resetTo(AppDestination.Dashboard)
+        }
+    }
 
     when (val current = destination) {
         AppDestination.Welcome -> WelcomeScreen(
@@ -53,7 +62,7 @@ fun FarmTwinNavHost(
                     )
                 }
             },
-            onGoogleAuth = null,
+            onGoogleAuth = { appState.signInWithGoogle() },
             onAuthenticated = { user ->
                 appState.authenticateAndHydrate(user) { hasSavedFarmConfig ->
                     if (hasSavedFarmConfig) {
@@ -91,7 +100,10 @@ fun FarmTwinNavHost(
             onAddressChange = appState::updateFarmSetupAddress,
             onSearch = appState::searchFarmSetupAddress,
             onUseCurrentLocation = appState::useCurrentLocationForFarmSetup,
-            onBack = { navigator.pop() },
+            onBack = {
+                appState.cancelAddFarmDraftIfNeeded()
+                navigator.pop()
+            },
             onContinue = {
                 appState.continueToBoundaryDrawing()
                 navigator.navigate(AppDestination.FarmBoundaryDraw)
@@ -201,17 +213,47 @@ fun FarmTwinNavHost(
                 }
             }
 
+            LaunchedEffect(appState.snapshot.farm.location, appState.farmSetupAddress, appState.farmSetupMapQuery) {
+                appState.loadDashboardCurrentWeather()
+            }
+
             DashboardScreen(
                 snapshot = appState.snapshot,
+                currentTimelineDay = appState.selectedTimelineDay.dayNumber,
                 selectedMode = appState.selectedMode,
                 lotSections = appState.lotSections,
-                onOpenTimeline = { navigator.navigate(AppDestination.Timeline) },
+                onOpenTimeline = { currentDay ->
+                    appState.openTimelineForDay(currentDay)
+                    navigator.navigate(AppDestination.Timeline)
+                },
                 onOpenChat = { navigator.navigate(AppDestination.AiChat) },
-                onOpenHistory = { navigator.navigate(AppDestination.History) },
+                latestTimelineHealthScore = appState.timelinePhotoAssessmentByDay
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.similarityScore,
+                pendingFollowUpDayNumber = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.key,
+                pendingFollowUpQuestion = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.followUp
+                    ?.followUpQuestion,
+                pendingFollowUpNextAction = appState.timelineActionDecisionByDay
+                    .filterValues { it.followUp != null }
+                    .maxByOrNull { it.key }
+                    ?.value
+                    ?.followUp
+                    ?.nextBestAction,
+                onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
                 isTabBarVisible = true,
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
                 getLotSummary = appState::getOrGenerateCropSummaryForLot,
+                weatherNowByLotId = appState.dashboardWeatherByLotId,
+                weatherNowFromLocation = appState.dashboardCurrentWeatherNow,
             )
         }
         is AppDestination.ZoneDetail -> ZoneDetailScreen(
@@ -229,51 +271,132 @@ fun FarmTwinNavHost(
             photoAssessment = appState.timelinePhotoAssessment,
             photoAssessmentError = appState.timelinePhotoAssessmentError,
             isAssessingPhoto = appState.isAssessingTimelinePhoto,
+            resolvedStatus = appState.timelineStatusForDay(appState.selectedTimelineDay.dayNumber),
+            recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
+            recommendedActionText = appState.recommendedActionTextForDay(appState.selectedTimelineDay.dayNumber),
+            hasAssessmentForSelectedDay = appState.hasAssessmentForDay(appState.selectedTimelineDay.dayNumber),
+            unlockedMaxDayNumber = appState.timelineUnlockedMaxDayNumber(),
+            cachedPhotoBase64 = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoBase64,
+            cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
+            isFarmConfigCacheReady = appState.isFarmConfigCacheReady,
+            actionBannerMessage = appState.timelineActionBannerMessage,
+            persistentFollowUp = appState.timelineActionDecisionByDay[appState.selectedTimelineDay.dayNumber]?.followUp,
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
+            onRegenerateStageVisual = appState::regenerateTimelineStageVisual,
+            onCacheUploadedPhoto = appState::cacheTimelineUploadedPhoto,
             onComparePhoto = appState::compareTimelinePhoto,
+            onClearUploadedPhoto = appState::clearTimelineUploadedPhoto,
+            onOpenActionPlan = { navigator.navigate(AppDestination.ActionConfirmation) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
+            onConsumeActionBanner = appState::consumeTimelineActionBanner,
+            onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
         )
         AppDestination.AiChat -> AiChatScreen(
-            messages = appState.snapshot.chatMessages,
-            onBack = { navigator.pop() },
-            onConfirmAction = { navigator.navigate(AppDestination.ActionConfirmation) },
-            onOpenConversation = { initialPrompt ->
-                appState.startAiConversation(initialPrompt)
-                navigator.navigate(AppDestination.AiConversation)
-            },
-            authenticatedUser = appState.authenticatedUser,
-        )
-        AppDestination.AiConversation -> AiConversationScreen(
-            messages = appState.aiConversationMessages,
+            messages = if (appState.aiConversationMessages.isEmpty()) appState.snapshot.chatMessages else appState.aiConversationMessages,
             isSending = appState.isSendingAiConversationMessage,
             errorMessage = appState.aiConversationError,
-            providerLabel = appState.aiConversationProvider,
             onBack = { navigator.pop() },
             onSend = appState::sendAiConversationMessage,
+            onOpenHistory = { navigator.navigate(AppDestination.History) },
+            onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
+            authenticatedUser = appState.authenticatedUser,
+        )
+        AppDestination.KnowledgeBase -> KnowledgeBaseScreen(
+            results = appState.knowledgeBaseResults,
+            isSearching = appState.isSearchingKnowledgeBase,
+            errorMessage = appState.knowledgeBaseError,
+            provider = appState.knowledgeBaseProvider,
+            totalResults = appState.knowledgeBaseTotalResults,
+            lastQuery = appState.knowledgeBaseLastQuery,
+            onBack = { navigator.pop() },
+            onSearch = { query -> appState.searchKnowledgeBase(query) },
         )
         AppDestination.ActionConfirmation -> ActionConfirmationScreen(
-            latestAction = appState.snapshot.cropSummary.latestRecommendation,
+            dayNumber = appState.selectedTimelineDay.dayNumber,
+            cropName = appState.snapshot.farm.cropName,
+            latestAction = appState.recommendedActionTextForDay(appState.selectedTimelineDay.dayNumber),
+            primaryRecommendedAction = appState.defaultActionTypeForDay(appState.selectedTimelineDay.dayNumber),
+            alternativeActions = appState.recommendedActionTypesForDay(appState.selectedTimelineDay.dayNumber).drop(1),
+            recoveryForecast = appState.recoveryForecastForDay(appState.selectedTimelineDay.dayNumber),
+            followUp = appState.timelineActionDecisionByDay[appState.selectedTimelineDay.dayNumber]?.followUp,
             onBack = { navigator.pop() },
+            onOpenAiChat = { starterPrompt ->
+                appState.startAiConversation(starterPrompt)
+                navigator.navigate(AppDestination.AiChat)
+            },
+            onOpenKnowledgeBase = { starterQuery ->
+                appState.searchKnowledgeBase(starterQuery)
+                navigator.navigate(AppDestination.KnowledgeBase)
+            },
             onSubmit = { actionType, actionState ->
-                appState.recordAction(actionType, actionState)
-                navigator.navigate(AppDestination.History)
+                val dayNumber = appState.selectedTimelineDay.dayNumber
+                appState.recordTimelineAction(
+                    dayNumber = dayNumber,
+                    actionType = actionType,
+                    actionState = actionState,
+                )
+                when (actionState) {
+                    com.alleyz15.farmtwinai.domain.model.ActionState.DONE -> {
+                        navigator.pop()
+                    }
+                    com.alleyz15.farmtwinai.domain.model.ActionState.NOT_YET -> {
+                        val starterPrompt = buildString {
+                            append("Day ")
+                            append(dayNumber)
+                            if (appState.snapshot.farm.cropName.isNotBlank()) {
+                                append(" for crop ")
+                                append(appState.snapshot.farm.cropName)
+                            }
+                            append(" action is not done yet: ")
+                            append(actionType.name.lowercase().replace('_', ' '))
+                            append(". Give me practical step-by-step instructions and precautions for today.")
+                        }
+                        appState.startAiConversation(starterPrompt)
+                        navigator.navigate(AppDestination.AiChat)
+                    }
+                    com.alleyz15.farmtwinai.domain.model.ActionState.SKIP -> {
+                        appState.setTimelineActionBanner("Action skipped for Day $dayNumber. Keep close monitoring and upload next photo to avoid missing deterioration.")
+                        navigator.pop()
+                    }
+                }
             },
         )
         AppDestination.History -> HistoryScreen(
-            snapshot = appState.snapshot,
+            historyRecords = appState.fieldInsightHistory,
+            onLoadHistory = { appState.loadFieldInsightHistory() },
+            onContinueChat = { initialPrompt ->
+                appState.startAiConversation(initialPrompt)
+                navigator.navigate(AppDestination.AiChat)
+            },
             onBack = { navigator.pop() },
         )
         AppDestination.Me -> MePanelScreen(
             snapshot = appState.snapshot,
+            lotSections = appState.lotSections,
+            storedFarms = appState.storedFarms,
             authenticatedUser = appState.authenticatedUser,
             onBack = if (appState.isAuthenticated) null else ({ navigator.pop() }),
-            onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
             onAddFarm = {
-                appState.prepareNewFarmDraft()
+                appState.startAddFarmFlow()
                 navigator.navigate(AppDestination.FarmMapSetup)
             },
+            onModifyFarm = { navigator.navigate(AppDestination.FarmMapSetup) },
+            onSwitchFarm = { farmId ->
+                appState.switchToStoredFarm(farmId)
+                navigator.replace(AppDestination.Dashboard)
+            },
+            onDeleteFarm = appState::deleteStoredFarm,
+            onDeleteActiveFarm = {
+                val deleted = appState.deleteActiveFarm()
+                if (deleted) {
+                    navigator.replace(AppDestination.Dashboard)
+                }
+            },
+            canDeleteActiveFarm = appState.storedFarms.isNotEmpty(),
+            selectedThemePreference = appState.themePreference,
+            onThemePreferenceChange = appState::updateThemePreference,
             onSignOut = {
                 appState.signOut()
                 navigator.resetTo(AppDestination.Welcome)

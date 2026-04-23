@@ -8,6 +8,8 @@ data class EarthEngineSummary(
     val rainfallMm7d: Double,
     val averageTempC: Double,
     val notes: String,
+    val source: String = "unknown",
+    val sourceVerified: Boolean = false,
 )
 
 data class CropRecommendation(
@@ -42,5 +44,42 @@ data class TimelinePhotoAssessment(
     val observedStage: String,
     val recommendation: String,
     val rationale: String,
+    val provider: String,
+)
+
+enum class FieldInsightHistoryCategory {
+    SCAN,
+    ACTION_LOG,
+    KB_SEARCH,
+    TIMELINE_COMPARISON,
+    CONVERSATION,
+    UNKNOWN,
+}
+
+data class FieldInsightHistoryRecord(
+    val id: String,
+    val category: FieldInsightHistoryCategory = FieldInsightHistoryCategory.SCAN,
+    val title: String = "",
+    val summaryNotes: String,
+    val recommendedCrops: String,
+    val dateString: String,
+    val hasConversation: Boolean = false,
+    val chatMessagesCount: Int = 0,
+)
+
+data class CurrentWeatherNow(
+    val location: String,
+    val resolvedAddress: String,
+    val temperatureC: Double,
+    val condition: String,
+    val icon: String,
+    val provider: String,
+)
+
+data class ActionTrackerFollowUp(
+    val nextBestAction: String,
+    val followUpQuestion: String,
+    val confidence: Double,
+    val riskLevel: String,
     val provider: String,
 )

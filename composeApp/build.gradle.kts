@@ -121,15 +121,25 @@ android {
         versionCode = 1
         versionName = "1.0"
         val mapsApiKey = firstConfigured(
-            "GOOGLE_MAPS_API_KEY_ANDROID",
             "GOOGLE_MAPS_API_KEY",
             "MAPS_API_KEY",
         )
+        val googleOAuthClientId = firstConfigured(
+            "GOOGLE_OAUTH_CLIENT_ID",
+            "GOOGLE_WEB_CLIENT_ID",
+        )
+        val googleOAuthRedirectUri = envOrDefault(
+            "GOOGLE_OAUTH_REDIRECT_URI",
+            "farmtwinai://oauth2redirect/google",
+        )
         if (mapsApiKey.isBlank()) {
-            logger.warn("GOOGLE_MAPS_API_KEY_ANDROID is blank. Checked project/root local.properties and .env files.")
+            logger.warn("GOOGLE_MAPS_API_KEY is blank. Checked project/root local.properties and .env files.")
         }
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKey
+        manifestPlaceholders["GOOGLE_OAUTH_REDIRECT_URI"] = googleOAuthRedirectUri
         buildConfigField("String", "GOOGLE_MAPS_API_KEY", asBuildConfigString(mapsApiKey))
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", asBuildConfigString(googleOAuthClientId))
+        buildConfigField("String", "GOOGLE_OAUTH_REDIRECT_URI", asBuildConfigString(googleOAuthRedirectUri))
         buildConfigField(
             "String",
             "FIELD_INSIGHTS_BASE_URL",
