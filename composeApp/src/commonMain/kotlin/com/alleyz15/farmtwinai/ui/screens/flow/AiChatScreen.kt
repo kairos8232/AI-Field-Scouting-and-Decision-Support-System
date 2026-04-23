@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,17 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +40,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.auth.AuthUser
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
@@ -51,8 +48,6 @@ import com.alleyz15.farmtwinai.domain.model.MessageSender
 import com.alleyz15.farmtwinai.ui.components.AuroraBackground
 import com.alleyz15.farmtwinai.ui.components.OnboardingAdaptiveWidth
 import com.alleyz15.farmtwinai.ui.theme.Leaf400
-import com.alleyz15.farmtwinai.ui.theme.Mint200
-import com.alleyz15.farmtwinai.ui.theme.Sand100
 import com.alleyz15.farmtwinai.ui.theme.isAppDarkTheme
 
 @Composable
@@ -69,8 +64,6 @@ fun AiChatScreen(
     val darkTheme = isAppDarkTheme()
     val listState = rememberLazyListState()
     var draft by remember { mutableStateOf("") }
-    val inputBorder = if (darkTheme) Color.White.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
-    val fieldContainer = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -191,52 +184,73 @@ fun AiChatScreen(
                         )
                     }
 
-                    OutlinedTextField(
-                        value = draft,
-                        onValueChange = { draft = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = {
-                            Text(
-                                text = "Ask follow-up question...",
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                            )
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        minLines = 2,
-                        maxLines = 5,
-                        enabled = !isSending,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = MaterialTheme.colorScheme.onBackground,
-                            unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
-                            focusedBorderColor = Leaf400,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = if (darkTheme) 0.45f else 0.62f),
-                            focusedContainerColor = fieldContainer,
-                            unfocusedContainerColor = fieldContainer,
-                            cursorColor = Leaf400,
-                        ),
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp),
+                        shape = RoundedCornerShape(28.dp),
+                        color = Color.White,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.35.dp, Leaf400.copy(alpha = 0.9f)),
                     ) {
-                        Button(
-                            onClick = {
-                                val prompt = draft.trim()
-                                if (prompt.isNotEmpty()) {
-                                    onSend(prompt)
-                                    draft = ""
-                                }
-                            },
-                            enabled = !isSending,
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Leaf400, contentColor = Color.White),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 20.dp, end = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (isSending) {
-                                Text("Sending...")
-                            } else {
-                                Text("Send")
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 10.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (draft.isBlank()) {
+                                    Text(
+                                        text = "Ask follow-up question...",
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+
+                                BasicTextField(
+                                    value = draft,
+                                    onValueChange = { draft = it },
+                                    enabled = !isSending,
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    ),
+                                    cursorBrush = SolidColor(Leaf400),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+
+                            Surface(
+                                shape = CircleShape,
+                                color = Leaf400,
+                                shadowElevation = 3.dp,
+                            ) {
+                                IconButton(
+                                    onClick = {
+                                        if (isSending) return@IconButton
+                                        val prompt = draft.trim()
+                                        if (prompt.isNotEmpty()) {
+                                            onSend(prompt)
+                                            draft = ""
+                                        }
+                                    },
+                                    modifier = Modifier.size(44.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = SendUpIcon,
+                                        contentDescription = "Send",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = Color.White,
+                                    )
+                                }
                             }
                         }
                     }
@@ -386,6 +400,28 @@ private val KnowledgeIcon: ImageVector
             horizontalLineTo(14f)
             verticalLineTo(17f)
             horizontalLineTo(7f)
+            close()
+        }
+    }.build()
+
+private val SendUpIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "SendUp",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(12f, 4f)
+            lineToRelative(-6f, 6f)
+            lineToRelative(1.41f, 1.41f)
+            lineTo(11f, 7.83f)
+            lineTo(11f, 20f)
+            lineToRelative(2f, 0f)
+            lineTo(13f, 7.83f)
+            lineToRelative(3.59f, 3.58f)
+            lineTo(18f, 10f)
             close()
         }
     }.build()
