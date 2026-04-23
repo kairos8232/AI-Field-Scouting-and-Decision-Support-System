@@ -29,7 +29,7 @@ class MockFarmTwinRepository {
             farm = FarmProfile(
                 farmName = "My Farm",
                 cropName = "",
-                plantingDate = "2026-03-20",
+                plantingDate = "",
                 location = "",
                 fieldSize = "",
                 irrigationSource = "Drip irrigation + rainwater tank",

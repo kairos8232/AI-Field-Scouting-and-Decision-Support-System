@@ -118,6 +118,7 @@ fun AuroraInfoCard(
 fun TimelineScreen(
     days: List<TimelineDay>,
     selectedDay: TimelineDay,
+    farmStartDate: String?,
     healthScore: Int,
     stageVisual: TimelineStageVisual?,
     stageVisualError: String?,
@@ -155,6 +156,14 @@ fun TimelineScreen(
     val resolvedPhotoMimeType = cachedPhotoMimeType?.ifBlank { "image/jpeg" } ?: "image/jpeg"
     val pickedPhotoDataUrl = cachedPhotoBase64?.let { base64 ->
         if (base64.startsWith("data:")) base64 else "data:$resolvedPhotoMimeType;base64,$base64"
+    }
+    val timelineSubtitle = farmStartDate
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { "Started from $it" }
+        ?: "Planting date to crop cycle"
+    val expectedCalendarDate = remember(farmStartDate, selectedDay.dayNumber) {
+        calculateTimelineDate(farmStartDate, selectedDay.dayNumber)
     }
 
     val imagePickerController: ImagePickerController = rememberImagePickerController(
@@ -225,7 +234,7 @@ fun TimelineScreen(
                             color = MaterialTheme.colorScheme.onBackground,
                         )
                         Text(
-                            text = "Planting date to crop cycle",
+                            text = timelineSubtitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                         )
@@ -336,6 +345,14 @@ fun TimelineScreen(
                         }
                     }
 
+                    expectedCalendarDate?.let { dateText ->
+                        Text(
+                            text = "Expected date: $dateText",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -364,7 +381,7 @@ fun TimelineScreen(
                                 }
                             }
                             Text(
-                                text = "Expected: ${selectedDay.expectedStage}", 
+                                text = "Stage: ${selectedDay.expectedStage}", 
                                 style = MaterialTheme.typography.labelSmall, 
                                 color = MaterialTheme.colorScheme.onBackground,
                                 maxLines = 1,
@@ -595,5 +612,57 @@ private fun summarizeRecommendationForFarmer(raw: String): String {
         text.contains("prun") || text.contains("remove") || text.contains("leaf") ->
             "Prune visibly affected leaves and monitor regrowth."
         else -> "Follow the recommended action and upload a new photo tomorrow."
+    }
+}
+
+private fun calculateTimelineDate(startDate: String?, dayNumber: Int): String? {
+    val plantedEpoch = startDate
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::isoDateToEpochDay)
+        ?: return null
+    val safeDay = dayNumber.coerceAtLeast(1)
+    val targetEpoch = plantedEpoch + (safeDay - 1).toLong()
+    return epochDayToIsoDate(targetEpoch)
+}
+
+private fun isoDateToEpochDay(value: String): Long? {
+    val parts = value.split("-")
+    if (parts.size != 3) return null
+    val year = parts[0].toIntOrNull() ?: return null
+    val month = parts[1].toIntOrNull() ?: return null
+    val day = parts[2].toIntOrNull() ?: return null
+    if (month !in 1..12 || day !in 1..31) return null
+
+    var y = year.toLong()
+    val m = month.toLong()
+    val d = day.toLong()
+    y -= if (m <= 2L) 1L else 0L
+    val era = if (y >= 0L) y / 400L else (y - 399L) / 400L
+    val yoe = y - era * 400L
+    val mp = m + if (m > 2L) -3L else 9L
+    val doy = (153L * mp + 2L) / 5L + d - 1L
+    val doe = yoe * 365L + yoe / 4L - yoe / 100L + doy
+    return era * 146097L + doe - 719468L
+}
+
+private fun epochDayToIsoDate(epochDay: Long): String {
+    var z = epochDay + 719468L
+    val era = if (z >= 0L) z / 146097L else (z - 146096L) / 146097L
+    val doe = z - era * 146097L
+    val yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L
+    var y = yoe + era * 400L
+    val doy = doe - (365L * yoe + yoe / 4L - yoe / 100L)
+    val mp = (5L * doy + 2L) / 153L
+    val d = doy - (153L * mp + 2L) / 5L + 1L
+    val m = mp + if (mp < 10L) 3L else -9L
+    if (m <= 2L) y += 1L
+
+    return buildString {
+        append(y.toString().padStart(4, '0'))
+        append('-')
+        append(m.toString().padStart(2, '0'))
+        append('-')
+        append(d.toString().padStart(2, '0'))
     }
 }

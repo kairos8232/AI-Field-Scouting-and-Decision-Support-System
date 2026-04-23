@@ -50,6 +50,8 @@ class HttpFarmConfigRepository(
                             put("mapQuery", farm.mapQuery)
                             put("totalAreaInput", farm.totalAreaInput)
                             put("mode", farm.mode.name)
+                            put("plantingDate", farm.plantingDate)
+                            put("createdAtEpochMs", farm.createdAtEpochMs)
                             put("boundaryPoints", buildPointsArray(farm.boundaryPoints))
                             put("lots", buildJsonArray {
                                 farm.lots.forEach { lot ->
@@ -61,6 +63,7 @@ class HttpFarmConfigRepository(
                                             put("cropPlan", lot.cropPlan)
                                             put("soilType", lot.soilType)
                                             put("waterAvailability", lot.waterAvailability)
+                                            put("plantingDate", lot.plantingDate.orEmpty())
                                         }
                                     )
                                 }
@@ -74,6 +77,7 @@ class HttpFarmConfigRepository(
             put("mapQuery", draft.mapQuery)
             put("totalAreaInput", draft.totalAreaInput)
             put("mode", draft.mode.name)
+            put("plantingDate", draft.plantingDate)
             put("boundaryPoints", buildPointsArray(draft.boundaryPoints))
             put("lots", buildJsonArray {
                 draft.lots.forEach { lot ->
@@ -85,6 +89,7 @@ class HttpFarmConfigRepository(
                             put("cropPlan", lot.cropPlan)
                             put("soilType", lot.soilType)
                             put("waterAvailability", lot.waterAvailability)
+                            put("plantingDate", lot.plantingDate.orEmpty())
                         }
                     )
                 }
@@ -221,6 +226,7 @@ class HttpFarmConfigRepository(
                     cropPlan = lotObj["cropPlan"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     soilType = lotObj["soilType"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     waterAvailability = lotObj["waterAvailability"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    plantingDate = lotObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 )
             }
 
@@ -239,6 +245,8 @@ class HttpFarmConfigRepository(
                 mapQuery = farmObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 totalAreaInput = farmObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 mode = mode,
+                plantingDate = farmObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                createdAtEpochMs = farmObj["createdAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                 boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
                 lots = farmLots,
             )
@@ -256,6 +264,7 @@ class HttpFarmConfigRepository(
                 cropPlan = lotObj["cropPlan"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 soilType = lotObj["soilType"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 waterAvailability = lotObj["waterAvailability"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                plantingDate = lotObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }
 
@@ -274,6 +283,8 @@ class HttpFarmConfigRepository(
                 mapQuery = itemObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 totalAreaInput = itemObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 mode = legacyMode,
+                plantingDate = itemObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                createdAtEpochMs = itemObj["createdAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                 boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
                 lots = lots,
             )
@@ -387,6 +398,7 @@ class HttpFarmConfigRepository(
             mapQuery = activeFarm?.mapQuery.orEmpty(),
             totalAreaInput = activeFarm?.totalAreaInput.orEmpty(),
             mode = activeFarm?.mode ?: AppMode.PLANNING,
+            plantingDate = activeFarm?.plantingDate.orEmpty(),
             boundaryPoints = activeFarm?.boundaryPoints.orEmpty(),
             lots = activeFarm?.lots.orEmpty(),
             timelinePhotoCache = timelinePhotoCache,

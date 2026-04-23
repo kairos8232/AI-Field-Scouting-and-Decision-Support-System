@@ -77,6 +77,12 @@ data class TimelineActionDecision(
     val followUp: ActionTrackerFollowUp? = null,
 )
 
+data class PendingTimelineFollowUp(
+    val actionDayNumber: Int,
+    val targetDayNumber: Int,
+    val followUp: ActionTrackerFollowUp,
+)
+
 data class StoredFarm(
     val id: String,
     val farmName: String,
@@ -84,6 +90,8 @@ data class StoredFarm(
     val mapQuery: String,
     val totalAreaInput: String,
     val mode: AppMode,
+    val plantingDate: String = "",
+    val createdAtEpochMs: Long = 0L,
     val boundaryPoints: List<FarmPoint>,
     val lots: List<LotSectionDraft>,
 )
@@ -141,6 +149,9 @@ class FarmTwinAppState(
         private set
 
     var farmSetupMapQuery by mutableStateOf("")
+        private set
+
+    var farmSetupPlantingDate by mutableStateOf(snapshot.farm.plantingDate)
         private set
 
     var farmSetupSearchTrigger by mutableStateOf(0)
@@ -689,6 +700,15 @@ class FarmTwinAppState(
         }
     }
 
+    fun updateFarmSetupPlantingDate(value: String) {
+        farmSetupPlantingDate = value
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = value.trim(),
+            ),
+        )
+    }
+
     fun searchFarmSetupAddress() {
         val query = farmSetupAddress.trim()
         if (query.isBlank()) return
@@ -745,14 +765,21 @@ class FarmTwinAppState(
 
     fun prepareNewFarmDraft() {
         val defaultBoundary = defaultFarmBoundary()
+        val todayPlantingDate = currentIsoDate()
         farmBoundaryPoints = defaultBoundary
         farmSetupFarmName = ""
         farmSetupAddress = ""
         farmSetupMapQuery = farmSetupAddress
+        farmSetupPlantingDate = todayPlantingDate
         farmSetupSearchTrigger = 0
         farmSetupUseCurrentLocationTrigger = 0
         isFarmMapFrozen = false
         lotTotalAreaInput = snapshot.farm.fieldSize
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = todayPlantingDate,
+            ),
+        )
         lotSections = listOf(
             LotSectionDraft(
                 id = "lot-1",
@@ -784,6 +811,7 @@ class FarmTwinAppState(
             farmSetupFarmName = previous.farmName
             farmSetupAddress = previous.address
             farmSetupMapQuery = previous.mapQuery
+            farmSetupPlantingDate = previous.plantingDate
             lotTotalAreaInput = previous.totalAreaInput
             selectedMode = previous.mode
             if (previous.boundaryPoints.size >= 3) {
@@ -816,6 +844,7 @@ class FarmTwinAppState(
         farmSetupFarmName = target.farmName
         farmSetupAddress = target.address
         farmSetupMapQuery = target.mapQuery
+        farmSetupPlantingDate = target.plantingDate
         lotTotalAreaInput = target.totalAreaInput
         selectedMode = target.mode
 
@@ -834,6 +863,7 @@ class FarmTwinAppState(
                 location = target.address.ifBlank { snapshot.farm.location },
                 fieldSize = target.totalAreaInput.ifBlank { snapshot.farm.fieldSize },
                 mode = target.mode,
+                plantingDate = target.plantingDate.ifBlank { snapshot.farm.plantingDate },
             ),
         )
 
@@ -1405,25 +1435,38 @@ class FarmTwinAppState(
 
     private fun calculateMockDaysPassed(plantingDate: String?): Int {
         if (plantingDate.isNullOrBlank()) return 0
-        val parts = plantingDate.split("-")
-        if (parts.size != 3) return 0
-        val year = parts[0].toIntOrNull() ?: return 0
-        val month = parts[1].toIntOrNull() ?: return 0
-        val day = parts[2].toIntOrNull() ?: return 0
-        
-        val currentYear = 2026
-        val currentMonth = 4
-        val currentDay = 14
-        
-        val daysInMonths = intArrayOf(0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-        var plantedDayOfYear = day
-        for (i in 1 until month.coerceIn(1, 12)) plantedDayOfYear += daysInMonths[i]
-        
-        var todayDayOfYear = currentDay
-        for (i in 1 until currentMonth) todayDayOfYear += daysInMonths[i]
-        
-        val yearDiff = currentYear - year
-        return (yearDiff * 365) + todayDayOfYear - plantedDayOfYear
+        val plantedEpochDay = isoDateToEpochDay(plantingDate) ?: return 0
+        val todayEpochDay = isoDateToEpochDay(currentIsoDate()) ?: return 0
+        return (todayEpochDay - plantedEpochDay).toInt()
+    }
+
+    private fun isoDateToEpochDay(value: String): Long? {
+        val parts = value.split("-")
+        if (parts.size != 3) return null
+        val year = parts[0].toIntOrNull() ?: return null
+        val month = parts[1].toIntOrNull() ?: return null
+        val day = parts[2].toIntOrNull() ?: return null
+        if (month !in 1..12 || day !in 1..31) return null
+
+        var y = year.toLong()
+        val m = month.toLong()
+        val d = day.toLong()
+        y -= if (m <= 2L) 1L else 0L
+        val era = if (y >= 0L) y / 400L else (y - 399L) / 400L
+        val yoe = y - era * 400L
+        val mp = m + if (m > 2L) -3L else 9L
+        val doy = (153L * mp + 2L) / 5L + d - 1L
+        val doe = yoe * 365L + yoe / 4L - yoe / 100L + doy
+        return era * 146097L + doe - 719468L
+    }
+
+    private fun timelineDateCappedMaxDay(minTimelineDay: Int, maxTimelineDay: Int): Int {
+        val plantingDate = snapshot.farm.plantingDate.trim().ifBlank { farmSetupPlantingDate.trim() }
+        if (plantingDate.isBlank()) return minTimelineDay
+
+        val elapsedDays = calculateMockDaysPassed(plantingDate).coerceAtLeast(0)
+        val cappedByCalendar = minTimelineDay + elapsedDays
+        return cappedByCalendar.coerceIn(minTimelineDay, maxTimelineDay)
     }
 
     private fun nextAiConversationMessageId(): String {
@@ -1446,19 +1489,27 @@ class FarmTwinAppState(
         val totalArea = lotTotalAreaInput.trim().ifBlank { snapshot.farm.fieldSize.trim() }
         val boundary = if (farmBoundaryPoints.size >= 3) farmBoundaryPoints else lotSections.firstOrNull()?.points.orEmpty()
         val lotsCopy = lotSections.map { lot -> lot.copy(points = lot.points.toList()) }
+        val farmId = farmIdentity(farmName = farmName, address = address, mapQuery = mapQuery, lots = lotsCopy)
 
         if (farmName.isBlank() || lotsCopy.isEmpty()) return null
 
         return StoredFarm(
-            id = farmIdentity(farmName = farmName, address = address, mapQuery = mapQuery, lots = lotsCopy),
+            id = farmId,
             farmName = farmName,
             address = address,
             mapQuery = mapQuery,
             totalAreaInput = totalArea,
             mode = selectedMode,
+            plantingDate = farmSetupPlantingDate.trim().ifBlank { snapshot.farm.plantingDate.trim() },
+            createdAtEpochMs = resolveFarmCreatedAtEpochMs(farmId),
             boundaryPoints = boundary,
             lots = lotsCopy,
         )
+    }
+
+    private fun resolveFarmCreatedAtEpochMs(farmId: String): Long {
+        val existing = storedFarms.firstOrNull { it.id == farmId }?.createdAtEpochMs ?: 0L
+        return if (existing > 0L) existing else currentWallClockEpochMs()
     }
 
     private fun storeFarmIfUnique(farm: StoredFarm, exceptId: String? = null) {
@@ -1670,6 +1721,8 @@ class FarmTwinAppState(
                     mapQuery = farm.mapQuery,
                     totalAreaInput = farm.totalAreaInput,
                     mode = farm.mode,
+                    plantingDate = farm.plantingDate,
+                    createdAtEpochMs = farm.createdAtEpochMs,
                     boundaryPoints = farm.boundaryPoints,
                     lots = farm.lots,
                 )
@@ -1684,6 +1737,7 @@ class FarmTwinAppState(
             mapQuery = activeFarm?.mapQuery ?: farmSetupMapQuery.trim(),
             totalAreaInput = activeFarm?.totalAreaInput ?: lotTotalAreaInput.trim(),
             mode = activeFarm?.mode ?: selectedMode,
+            plantingDate = activeFarm?.plantingDate ?: farmSetupPlantingDate.trim(),
             boundaryPoints = activeFarm?.boundaryPoints ?: farmBoundaryPoints,
             lots = activeFarm?.lots ?: lotSections,
             timelinePhotoCache = photoCache,
@@ -1709,6 +1763,8 @@ class FarmTwinAppState(
                     mapQuery = farm.mapQuery,
                     totalAreaInput = farm.totalAreaInput,
                     mode = farm.mode,
+                    plantingDate = farm.plantingDate,
+                    createdAtEpochMs = farm.createdAtEpochMs,
                     boundaryPoints = farm.boundaryPoints,
                     lots = farm.lots,
                 )
@@ -1731,6 +1787,12 @@ class FarmTwinAppState(
             farmSetupMapQuery = resolvedActive.mapQuery
         } else if (remote.mapQuery.isNotBlank()) {
             farmSetupMapQuery = remote.mapQuery
+        }
+
+        if (!resolvedActive?.plantingDate.isNullOrBlank()) {
+            farmSetupPlantingDate = resolvedActive.plantingDate
+        } else if (remote.plantingDate.isNotBlank()) {
+            farmSetupPlantingDate = remote.plantingDate
         }
 
         if (!resolvedActive?.totalAreaInput.isNullOrBlank()) {
@@ -1759,6 +1821,7 @@ class FarmTwinAppState(
                 location = (resolvedActive?.address ?: remote.address).ifBlank { snapshot.farm.location },
                 fieldSize = (resolvedActive?.totalAreaInput ?: remote.totalAreaInput).ifBlank { snapshot.farm.fieldSize },
                 mode = resolvedActive?.mode ?: remote.mode,
+                plantingDate = (resolvedActive?.plantingDate ?: remote.plantingDate).ifBlank { snapshot.farm.plantingDate },
             ),
         )
 
@@ -2184,6 +2247,29 @@ class FarmTwinAppState(
         return cacheUpdateSequence
     }
 
+    private fun currentIsoDate(): String = epochMillisToIsoDateUtc(currentWallClockEpochMs())
+
+    private fun currentWallClockEpochMs(): Long = wallClockEpochMillis()
+
+    private fun epochMillisToIsoDateUtc(epochMillis: Long): String {
+        val epochDays = epochMillis / 86_400_000L
+        var z = epochDays + 719468L
+        val era = if (z >= 0L) z / 146097L else (z - 146096L) / 146097L
+        val doe = z - era * 146097L
+        val yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L
+        var y = yoe + era * 400L
+        val doy = doe - (365L * yoe + yoe / 4L - yoe / 100L)
+        val mp = (5L * doy + 2L) / 153L
+        val d = doy - (153L * mp + 2L) / 5L + 1L
+        val m = mp + if (mp < 10L) 3L else -9L
+        if (m <= 2L) y += 1L
+
+        val year = y.toString().padStart(4, '0')
+        val month = m.toString().padStart(2, '0')
+        val day = d.toString().padStart(2, '0')
+        return "$year-$month-$day"
+    }
+
     private fun refreshSnapshotCurrentDayFromTimeline() {
         val derivedDay = timelineUnlockedMaxDayNumber().coerceAtLeast(1)
         if (snapshot.cropSummary.currentDay != derivedDay) {
@@ -2301,26 +2387,55 @@ class FarmTwinAppState(
         return timelineActionDecisionByDay[dayNumber]
     }
 
+    private fun followUpTargetDayForActionDay(actionDayNumber: Int): Int {
+        val maxTimelineDay = snapshot.timeline.maxOfOrNull { it.dayNumber } ?: (actionDayNumber + 1)
+        return (actionDayNumber + 1).coerceAtMost(maxTimelineDay)
+    }
+
+    fun followUpForTimelineDay(dayNumber: Int): ActionTrackerFollowUp? {
+        if (dayNumber <= 1) return null
+        return timelineActionDecisionByDay[dayNumber - 1]?.followUp
+    }
+
+    fun followUpSourceActionDayForTimelineDay(dayNumber: Int): Int? {
+        if (dayNumber <= 1) return null
+        return timelineActionDecisionByDay[dayNumber - 1]
+            ?.followUp
+            ?.let { dayNumber - 1 }
+    }
+
+    fun clearTimelineFollowUpForTimelineDay(dayNumber: Int) {
+        val sourceDay = followUpSourceActionDayForTimelineDay(dayNumber) ?: return
+        clearTimelineActionFollowUp(sourceDay)
+    }
+
+    fun latestPendingTimelineFollowUp(): PendingTimelineFollowUp? {
+        val latest = timelineActionDecisionByDay.entries
+            .mapNotNull { (actionDayNumber, decision) ->
+                decision.followUp?.let { followUp ->
+                    PendingTimelineFollowUp(
+                        actionDayNumber = actionDayNumber,
+                        targetDayNumber = followUpTargetDayForActionDay(actionDayNumber),
+                        followUp = followUp,
+                    )
+                }
+            }
+            .maxByOrNull { it.targetDayNumber }
+
+        return latest
+    }
+
     fun hasAssessmentForDay(dayNumber: Int): Boolean {
         return timelinePhotoAssessmentByDay[dayNumber] != null
     }
 
     fun timelineUnlockedMaxDayNumber(): Int {
-        val minTimelineDay = snapshot.timeline.minOfOrNull { it.dayNumber } ?: 0
+        val minTimelineDay = snapshot.timeline.minOfOrNull { it.dayNumber } ?: 1
         val maxTimelineDay = snapshot.timeline.maxOfOrNull { it.dayNumber } ?: minTimelineDay
-        val latestCheckedInDay = listOfNotNull(
-            timelineUploadByDay.keys.maxOrNull(),
-            timelinePhotoAssessmentByDay.keys.maxOrNull(),
-            timelineActionDecisionByDay.keys.maxOrNull(),
-        ).maxOrNull()
-
-        val unlocked = if (latestCheckedInDay == null) {
-            minTimelineDay
-        } else {
-            (latestCheckedInDay + 1).coerceAtMost(maxTimelineDay)
-        }
-
-        return unlocked.coerceAtLeast(minTimelineDay)
+        return timelineDateCappedMaxDay(
+            minTimelineDay = minTimelineDay,
+            maxTimelineDay = maxTimelineDay,
+        )
     }
 
     fun clearTimelineUploadedPhoto(dayNumber: Int) {

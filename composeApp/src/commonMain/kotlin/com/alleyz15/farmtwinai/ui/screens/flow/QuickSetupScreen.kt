@@ -9,6 +9,8 @@ import com.alleyz15.farmtwinai.ui.components.SectionHeader
 
 @Composable
 fun QuickSetupScreen(
+    plantingDate: String,
+    onPlantingDateChange: (String) -> Unit,
     onBack: () -> Unit,
     onContinue: () -> Unit,
 ) {
@@ -18,10 +20,15 @@ fun QuickSetupScreen(
                 title = "Enter only the essentials",
                 body = "The app will later infer defaults from crop type, region, and rough field conditions. For now this path uses mocked defaults after submission.",
             )
-            LabeledInput("Crop type", initialValue = "Tomato")
-            LabeledInput("Planting date", initialValue = "2026-03-20")
-            LabeledInput("Rough field size", initialValue = "Around 2 acres")
-            LabeledInput("Approximate location", initialValue = "Kedah")
+            LabeledInput("Crop type", placeholder = "e.g. Tomato")
+            LabeledInput(
+                label = "Planting date",
+                value = plantingDate,
+                onValueChange = onPlantingDateChange,
+                placeholder = "YYYY-MM-DD",
+            )
+            LabeledInput("Rough field size", placeholder = "e.g. Around 2 acres")
+            LabeledInput("Approximate location", placeholder = "e.g. Kedah")
             DualActionButtons(
                 primaryLabel = "Create Quick Farm Twin",
                 onPrimary = onContinue,

@@ -19,7 +19,7 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 dotenv.config({ path: path.resolve(ROOT_DIR, ".env") });
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "15mb" }));
 app.use(
   cors({
     origin: process.env.ALLOWED_ORIGIN || "*",
@@ -174,11 +174,34 @@ app.post("/api/farm-config", async (req, res) => {
       return res.status(400).json({ error: "userId is required." });
     }
 
+    const existingDoc = await db.collection("farmConfigs").doc(userId).get();
+    const existingData = existingDoc.exists ? (existingDoc.data() || {}) : {};
+    const existingFarms = normalizeFarms(
+      parseFirestoreArrayField(existingData.farmsJson, existingData.farms),
+      {
+        farmName: String(existingData.farmName || "").trim(),
+        address: String(existingData.address || "").trim(),
+        mapQuery: String(existingData.mapQuery || "").trim(),
+        totalAreaInput: String(existingData.totalAreaInput || "").trim(),
+        mode: String(existingData.mode || "").trim(),
+        plantingDate: String(existingData.plantingDate || "").trim(),
+        boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(existingData.boundaryPointsJson, existingData.boundaryPoints)),
+        lots: normalizeLots(parseFirestoreArrayField(existingData.lotsJson, existingData.lots)),
+      },
+      new Map(),
+    );
+    const existingCreatedAtByFarmId = new Map(
+      existingFarms
+        .filter((farm) => Number.isFinite(farm.createdAtEpochMs) && farm.createdAtEpochMs > 0)
+        .map((farm) => [farm.id, farm.createdAtEpochMs])
+    );
+
     const legacyFarmName = String(req.body?.farmName || "").trim();
     const legacyAddress = String(req.body?.address || "").trim();
     const legacyMapQuery = String(req.body?.mapQuery || "").trim();
     const legacyTotalAreaInput = String(req.body?.totalAreaInput || "").trim();
     const legacyMode = String(req.body?.mode || "").trim();
+    const legacyPlantingDate = String(req.body?.plantingDate || "").trim();
     const legacyBoundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
     const legacyLots = normalizeLots(req.body?.lots);
     const farms = normalizeFarms(req.body?.farms, {
@@ -187,9 +210,10 @@ app.post("/api/farm-config", async (req, res) => {
       mapQuery: legacyMapQuery,
       totalAreaInput: legacyTotalAreaInput,
       mode: legacyMode,
+      plantingDate: legacyPlantingDate,
       boundaryPoints: legacyBoundaryPoints,
       lots: legacyLots,
-    });
+    }, existingCreatedAtByFarmId);
     const requestedActiveFarmId = String(req.body?.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
     const activeFarmId = activeFarm?.id || null;
@@ -211,20 +235,21 @@ app.post("/api/farm-config", async (req, res) => {
     const payload = {
       userId,
       activeFarmId,
-      farms,
+      farmsJson: JSON.stringify(farms),
       // Keep legacy single-farm fields for backward compatibility.
       farmName: activeFarm?.farmName || "",
       address: activeFarm?.address || "",
       mapQuery: activeFarm?.mapQuery || "",
       totalAreaInput: activeFarm?.totalAreaInput || "",
       mode: activeFarm?.mode || "PLANNING",
-      boundaryPoints: activeFarm?.boundaryPoints || [],
-      lots: activeFarm?.lots || [],
-      timelinePhotoCache,
-      timelineStageVisualCache,
-      timelineAssessmentCache,
-      timelineActionDecisionCache,
-      timelineInsightCache,
+      plantingDate: activeFarm?.plantingDate || "",
+      boundaryPointsJson: JSON.stringify(activeFarm?.boundaryPoints || []),
+      lotsJson: JSON.stringify(activeFarm?.lots || []),
+      timelinePhotoCacheJson: JSON.stringify(timelinePhotoCache),
+      timelineStageVisualCacheJson: JSON.stringify(compactTimelineStageVisualCache(timelineStageVisualCache)),
+      timelineAssessmentCacheJson: JSON.stringify(timelineAssessmentCache),
+      timelineActionDecisionCacheJson: JSON.stringify(timelineActionDecisionCache),
+      timelineInsightCacheJson: JSON.stringify(timelineInsightCache),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -264,34 +289,37 @@ app.get("/api/farm-config", async (req, res) => {
     }
 
     const data = doc.data() || {};
-    const farms = normalizeFarms(data.farms, {
+    const farms = normalizeFarms(parseFirestoreArrayField(data.farmsJson, data.farms), {
       farmName: String(data.farmName || "").trim(),
       address: String(data.address || "").trim(),
       mapQuery: String(data.mapQuery || "").trim(),
       totalAreaInput: String(data.totalAreaInput || "").trim(),
       mode: String(data.mode || "").trim(),
-      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
-      lots: normalizeLots(data.lots),
+      plantingDate: String(data.plantingDate || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(data.boundaryPointsJson, data.boundaryPoints)),
+      lots: normalizeLots(parseFirestoreArrayField(data.lotsJson, data.lots)),
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
-    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
-    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
-    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(data.timelineActionDecisionCache);
-    const timelineInsightCache = normalizeTimelineInsightCache(data.timelineInsightCache);
+    const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
+    const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
 
     return res.json({
       item: {
         id: doc.id,
         ...data,
-        activeFarmId: activeFarm?.id || null,
         farms,
+        activeFarmId: activeFarm?.id || null,
         farmName: activeFarm?.farmName || "",
         address: activeFarm?.address || "",
         mapQuery: activeFarm?.mapQuery || "",
         totalAreaInput: activeFarm?.totalAreaInput || "",
         mode: activeFarm?.mode || "PLANNING",
+        plantingDate: activeFarm?.plantingDate || "",
+        createdAtEpochMs: activeFarm?.createdAtEpochMs || 0,
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
         timelinePhotoCache,
@@ -330,34 +358,37 @@ app.get("/api/farm-config/latest", async (req, res) => {
     }
 
     const data = doc.data() || {};
-    const farms = normalizeFarms(data.farms, {
+    const farms = normalizeFarms(parseFirestoreArrayField(data.farmsJson, data.farms), {
       farmName: String(data.farmName || "").trim(),
       address: String(data.address || "").trim(),
       mapQuery: String(data.mapQuery || "").trim(),
       totalAreaInput: String(data.totalAreaInput || "").trim(),
       mode: String(data.mode || "").trim(),
-      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
-      lots: normalizeLots(data.lots),
+      plantingDate: String(data.plantingDate || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(data.boundaryPointsJson, data.boundaryPoints)),
+      lots: normalizeLots(parseFirestoreArrayField(data.lotsJson, data.lots)),
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
-    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
-    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
-    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(data.timelineActionDecisionCache);
-    const timelineInsightCache = normalizeTimelineInsightCache(data.timelineInsightCache);
+    const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
+    const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
 
     return res.json({
       item: {
         id: doc.id,
         ...data,
-        activeFarmId: activeFarm?.id || null,
         farms,
+        activeFarmId: activeFarm?.id || null,
         farmName: activeFarm?.farmName || "",
         address: activeFarm?.address || "",
         mapQuery: activeFarm?.mapQuery || "",
         totalAreaInput: activeFarm?.totalAreaInput || "",
         mode: activeFarm?.mode || "PLANNING",
+        plantingDate: activeFarm?.plantingDate || "",
+        createdAtEpochMs: activeFarm?.createdAtEpochMs || 0,
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
         timelinePhotoCache,
@@ -1695,6 +1726,22 @@ function normalizeUserId(input) {
   return value || null;
 }
 
+function parseFirestoreArrayField(preferred, fallback = []) {
+  if (Array.isArray(preferred)) return preferred;
+  if (typeof preferred === "string") {
+    const raw = preferred.trim();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_error) {
+        // Ignore malformed JSON and fall back to legacy data.
+      }
+    }
+  }
+  return Array.isArray(fallback) ? fallback : [];
+}
+
 function normalizeNormalizedPoints(input) {
   if (!Array.isArray(input)) return [];
 
@@ -1726,12 +1773,13 @@ function normalizeLots(input) {
         cropPlan: String(raw?.cropPlan || "").trim(),
         soilType: String(raw?.soilType || "").trim(),
         waterAvailability: String(raw?.waterAvailability || "").trim(),
+        plantingDate: String(raw?.plantingDate || "").trim(),
       };
     })
     .filter(Boolean);
 }
 
-function normalizeFarms(input, fallback = null) {
+function normalizeFarms(input, fallback = null, existingCreatedAtByFarmId = new Map()) {
   const farms = Array.isArray(input)
     ? input
         .map((raw, index) => {
@@ -1739,13 +1787,20 @@ function normalizeFarms(input, fallback = null) {
           if (lots.length === 0) return null;
 
           const boundaryPoints = normalizeNormalizedPoints(raw?.boundaryPoints);
+          const id = String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`;
+          const incomingCreatedAtEpochMs = normalizeOptionalEpochMs(raw?.createdAtEpochMs);
           return {
-            id: String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`,
+            id,
             farmName: String(raw?.farmName || "").trim(),
             address: String(raw?.address || "").trim(),
             mapQuery: String(raw?.mapQuery || "").trim(),
             totalAreaInput: String(raw?.totalAreaInput || "").trim(),
             mode: String(raw?.mode || "PLANNING").trim() || "PLANNING",
+            plantingDate: String(raw?.plantingDate || "").trim(),
+            createdAtEpochMs:
+              existingCreatedAtByFarmId.get(id)
+              || incomingCreatedAtEpochMs
+              || Date.now(),
             boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
             lots,
           };
@@ -1776,10 +1831,21 @@ function normalizeFarms(input, fallback = null) {
       mapQuery: String(fallback.mapQuery || "").trim(),
       totalAreaInput: String(fallback.totalAreaInput || "").trim(),
       mode: String(fallback.mode || "PLANNING").trim() || "PLANNING",
+      plantingDate: String(fallback.plantingDate || "").trim(),
+      createdAtEpochMs:
+        existingCreatedAtByFarmId.get("farm-legacy")
+        || normalizeOptionalEpochMs(fallback.createdAtEpochMs)
+        || Date.now(),
       boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
       lots,
     },
   ];
+}
+
+function normalizeOptionalEpochMs(value) {
+  const epoch = Number(value);
+  if (!Number.isFinite(epoch) || epoch <= 0) return null;
+  return Math.trunc(epoch);
 }
 
 function normalizeTimelinePhotoCache(input) {
@@ -1817,6 +1883,34 @@ function normalizeTimelineStageVisualCache(input) {
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl,
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function compactTimelineStageVisualCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const imageDataUrl = String(raw?.imageDataUrl || "").trim();
+      const compactImageDataUrl = imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048
+        ? imageDataUrl
+        : "";
+
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        title: String(raw?.title || "").trim(),
+        description: String(raw?.description || "").trim(),
+        imageDataUrl: compactImageDataUrl,
         provider: String(raw?.provider || "").trim(),
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
       };

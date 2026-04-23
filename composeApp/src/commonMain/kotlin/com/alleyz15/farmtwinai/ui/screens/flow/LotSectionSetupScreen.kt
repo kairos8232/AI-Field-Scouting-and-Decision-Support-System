@@ -602,13 +602,11 @@ fun LotSectionSetupScreen(
                             )
                             IconButton(
                                 onClick = {
-                                    val daysAgo = (10..30).random()
-                                    val mockDate = "2026-03-${(31 - daysAgo).coerceIn(1, 31).toString().padStart(2, '0')}"
-                                    onLotPlantingDateChange(selectedLotIndex, mockDate)
+                                    onLotPlantingDateChange(selectedLotIndex, "")
                                 },
                                 modifier = Modifier.padding(top = 8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Mint200.copy(alpha=0.1f))
                             ) {
-                                Text("✨")
+                                Text("×")
                             }
                         }
                     }

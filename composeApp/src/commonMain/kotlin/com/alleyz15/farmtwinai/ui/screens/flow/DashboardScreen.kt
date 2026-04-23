@@ -137,6 +137,13 @@ fun DashboardScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f),
                         )
+                        if (snapshot.farm.plantingDate.isNotBlank()) {
+                            Text(
+                                text = "Started: ${snapshot.farm.plantingDate}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
+                            )
+                        }
                     }
 
                     // Compact Weather Pill

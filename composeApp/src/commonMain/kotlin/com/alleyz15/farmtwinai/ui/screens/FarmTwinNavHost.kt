@@ -203,10 +203,14 @@ fun FarmTwinNavHost(
             onContinue = { navigator.resetTo(AppDestination.Dashboard) },
         )
         AppDestination.QuickSetup -> QuickSetupScreen(
+            plantingDate = appState.farmSetupPlantingDate,
+            onPlantingDateChange = appState::updateFarmSetupPlantingDate,
             onBack = { navigator.pop() },
             onContinue = { navigator.resetTo(AppDestination.Dashboard) },
         )
         AppDestination.Dashboard -> {
+            val pendingTimelineFollowUp = appState.latestPendingTimelineFollowUp()
+
             LaunchedEffect(appState.authenticatedUser?.userId) {
                 if (appState.isAuthenticated) {
                     appState.loadFarmConfigFromCloud()
@@ -231,23 +235,10 @@ fun FarmTwinNavHost(
                     .maxByOrNull { it.key }
                     ?.value
                     ?.similarityScore,
-                pendingFollowUpDayNumber = appState.timelineActionDecisionByDay
-                    .filterValues { it.followUp != null }
-                    .maxByOrNull { it.key }
-                    ?.key,
-                pendingFollowUpQuestion = appState.timelineActionDecisionByDay
-                    .filterValues { it.followUp != null }
-                    .maxByOrNull { it.key }
-                    ?.value
-                    ?.followUp
-                    ?.followUpQuestion,
-                pendingFollowUpNextAction = appState.timelineActionDecisionByDay
-                    .filterValues { it.followUp != null }
-                    .maxByOrNull { it.key }
-                    ?.value
-                    ?.followUp
-                    ?.nextBestAction,
-                onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
+                pendingFollowUpDayNumber = pendingTimelineFollowUp?.targetDayNumber,
+                pendingFollowUpQuestion = pendingTimelineFollowUp?.followUp?.followUpQuestion,
+                pendingFollowUpNextAction = pendingTimelineFollowUp?.followUp?.nextBestAction,
+                onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineFollowUpForTimelineDay(dayNumber) },
                 isTabBarVisible = true,
                 onSelectDashboardTab = { navigator.replace(AppDestination.Dashboard) },
                 onSelectMeTab = { navigator.replace(AppDestination.Me) },
@@ -264,6 +255,7 @@ fun FarmTwinNavHost(
         AppDestination.Timeline -> TimelineScreen(
             days = appState.snapshot.timeline,
             selectedDay = appState.selectedTimelineDay,
+            farmStartDate = appState.snapshot.farm.plantingDate,
             healthScore = appState.snapshot.cropSummary.currentFarmHealthScore,
             stageVisual = appState.timelineStageVisual,
             stageVisualError = appState.timelineStageVisualError,
@@ -280,7 +272,7 @@ fun FarmTwinNavHost(
             cachedPhotoMimeType = appState.timelineUploadByDay[appState.selectedTimelineDay.dayNumber]?.photoMimeType,
             isFarmConfigCacheReady = appState.isFarmConfigCacheReady,
             actionBannerMessage = appState.timelineActionBannerMessage,
-            persistentFollowUp = appState.timelineActionDecisionByDay[appState.selectedTimelineDay.dayNumber]?.followUp,
+            persistentFollowUp = appState.followUpForTimelineDay(appState.selectedTimelineDay.dayNumber),
             onBack = { navigator.pop() },
             onSelectDay = appState::selectTimelineDay,
             onLoadStageVisual = appState::loadTimelineStageVisual,
@@ -291,7 +283,7 @@ fun FarmTwinNavHost(
             onOpenActionPlan = { navigator.navigate(AppDestination.ActionConfirmation) },
             onOpenChat = { navigator.navigate(AppDestination.AiChat) },
             onConsumeActionBanner = appState::consumeTimelineActionBanner,
-            onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineActionFollowUp(dayNumber) },
+            onAcknowledgeFollowUp = { dayNumber -> appState.clearTimelineFollowUpForTimelineDay(dayNumber) },
         )
         AppDestination.AiChat -> AiChatScreen(
             messages = if (appState.aiConversationMessages.isEmpty()) appState.snapshot.chatMessages else appState.aiConversationMessages,
