@@ -8,6 +8,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Genkit integration
+import { expressHandler } from "@genkit-ai/express";
+import {
+  scoutingLoopFlow,
+  fieldInsightsOrchestratorFlow,
+  actionTrackerFlow,
+  dailyDecisionLoopFlow,
+} from "./src/genkit/index.js";
+
 const require = createRequire(import.meta.url);
 const ee = require("@google/earthengine");
 
@@ -970,110 +979,31 @@ app.post("/api/weather-now", async (req, res) => {
 
 app.post("/api/agents/scouting-loop", async (req, res) => {
   try {
-    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
-    const expectedStage = String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression";
-    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
-    const photoMimeType = String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
     const photoBase64 = String(req.body?.photoBase64 || "").trim();
-    const userMarkedSimilar = typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : null;
-
     if (!photoBase64) {
       return res.status(400).json({ error: "photoBase64 is required." });
     }
 
-    const location = String(req.body?.location || "").trim();
     const latitude = Number(req.body?.latitude);
     const longitude = Number(req.body?.longitude);
     const polygon = normalizePolygon(req.body?.polygon);
-    const centroid = polygon.length >= 3
-      ? computeCentroid(polygon)
-      : (Number.isFinite(latitude) && Number.isFinite(longitude) ? { lat: latitude, lng: longitude } : null);
 
-    const assessment = await assessTimelinePhoto({
-      dayNumber,
-      expectedStage,
-      cropName,
-      photoMimeType,
+    const result = await scoutingLoopFlow({
+      userId: normalizeUserId(req.body?.userId),
+      dayNumber: Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1),
+      expectedStage: String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression",
+      cropName: String(req.body?.cropName || "Crop").trim() || "Crop",
+      photoMimeType: String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg",
       photoBase64,
-      userMarkedSimilar,
+      location: String(req.body?.location || "").trim(),
+      latitude: Number.isFinite(latitude) ? latitude : undefined,
+      longitude: Number.isFinite(longitude) ? longitude : undefined,
+      polygon: polygon.length >= 3 ? polygon : undefined,
+      userMarkedSimilar:
+        typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : undefined,
     });
 
-    const toolPlan = await planScoutingToolSequence({
-      cropName,
-      expectedStage,
-      dayNumber,
-      recommendation: assessment.recommendation,
-      rationale: assessment.rationale,
-      location,
-      hasCoordinates: Number.isFinite(latitude) && Number.isFinite(longitude),
-      hasPolygon: polygon.length >= 3,
-    });
-
-    const knowledgeQuery = toolPlan.knowledgeQuery
-      || `${cropName} ${assessment.observedStage} ${assessment.recommendation}`.trim();
-    const shouldUseKnowledge = toolPlan.steps.includes("knowledge_base");
-    const shouldUseWeather = toolPlan.steps.includes("weather_now");
-
-    const kbReply = shouldUseKnowledge
-      ? await queryKnowledgeBase({ query: knowledgeQuery, pageSize: 4, expandQuery: true })
-      : { results: [], totalResults: 0 };
-
-    const weather = shouldUseWeather
-      ? await resolveWeatherForAgent({ location, latitude, longitude, centroid })
-      : null;
-
-    const finalAction = await synthesizeScoutingAction({
-      cropName,
-      expectedStage,
-      dayNumber,
-      assessment,
-      weather,
-      knowledgeResults: kbReply.results,
-    });
-
-    const toolTrace = [
-      { step: "photo_assessment", provider: assessment.provider, used: true },
-      { step: "knowledge_base", used: shouldUseKnowledge, query: shouldUseKnowledge ? knowledgeQuery : null, totalResults: kbReply.totalResults || 0 },
-      { step: "weather_now", used: shouldUseWeather, condition: weather?.condition || null },
-      { step: "final_recommendation", provider: finalAction.provider },
-    ];
-
-    const userId = normalizeUserId(req.body?.userId);
-    if (userId) {
-      void persistHistoryEvent({
-        userId,
-        category: "action_log",
-        title: `Scouting loop - Day ${dayNumber}`,
-        summary: finalAction.issueSummary,
-        recommendation: finalAction.primaryAction,
-        payload: {
-          cropName,
-          expectedStage,
-          dayNumber,
-          similarityScore: assessment.similarityScore,
-          observedStage: assessment.observedStage,
-          weatherCondition: weather?.condition || null,
-          toolTrace,
-        },
-      });
-    }
-
-    return res.json({
-      dayNumber,
-      cropName,
-      expectedStage,
-      assessment,
-      weather,
-      knowledge: {
-        query: shouldUseKnowledge ? knowledgeQuery : null,
-        results: kbReply.results,
-        totalResults: kbReply.totalResults,
-      },
-      recommendation: finalAction,
-      toolPlan,
-      toolTrace,
-      provider: "agent-scouting-loop-v1",
-    });
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({
       error: "Unable to run scouting loop.",
@@ -1089,65 +1019,22 @@ app.post("/api/agents/field-insights-orchestrator", async (req, res) => {
       return res.status(400).json({ error: "Polygon must have at least 3 points." });
     }
 
+    const centroid = req.body?.centroid ? toLatLngPoint(req.body.centroid) : computeCentroid(polygon);
     const targetCrops = normalizeTargetCrops(req.body?.targetCrops);
     const totalFarmAreaHectares = normalizeOptionalNumber(req.body?.totalFarmAreaHectares);
     const lotAreaHectares = normalizeOptionalNumber(req.body?.lotAreaHectares);
-    const centroid = req.body?.centroid ? toLatLngPoint(req.body.centroid) : computeCentroid(polygon);
-    const location = String(req.body?.location || "").trim();
 
-    const earthSummary = await getEarthSummary({ polygon, centroid });
-    const recommendations = await getCropRecommendations(earthSummary, targetCrops, {
+    const result = await fieldInsightsOrchestratorFlow({
+      userId: normalizeUserId(req.body?.userId),
+      polygon,
+      centroid,
+      targetCrops,
       totalFarmAreaHectares,
       lotAreaHectares,
+      location: String(req.body?.location || "").trim(),
     });
 
-    const kbQuery = buildInsightsKnowledgeQuery({ recommendations, summary: earthSummary, targetCrops });
-    const kbReply = await queryKnowledgeBase({ query: kbQuery, pageSize: 4, expandQuery: true });
-    const weather = await resolveWeatherForAgent({
-      location,
-      latitude: Number(centroid.lat),
-      longitude: Number(centroid.lng),
-      centroid,
-    });
-
-    const actionBrief = await synthesizeFieldInsightsActionBrief({
-      summary: earthSummary,
-      recommendations,
-      weather,
-      knowledgeResults: kbReply.results,
-      targetCrops,
-    });
-
-    const userId = normalizeUserId(req.body?.userId);
-    if (userId) {
-      void persistHistoryEvent({
-        userId,
-        category: "action_log",
-        title: "Field insights orchestrator run",
-        summary: actionBrief.overview,
-        recommendation: actionBrief.topAction,
-        payload: {
-          centroid,
-          targetCrops,
-          kbQuery,
-          weatherCondition: weather?.condition || null,
-        },
-      });
-    }
-
-    return res.json({
-      summary: earthSummary,
-      recommendations,
-      weather,
-      knowledge: {
-        query: kbQuery,
-        results: kbReply.results,
-        totalResults: kbReply.totalResults,
-      },
-      actionBrief,
-      toolTrace: ["earth_engine", "gemini_recommendation", "vertex_search", "weather_now", "final_brief"],
-      provider: "agent-field-insights-orchestrator-v1",
-    });
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({
       error: "Unable to run field insights orchestrator.",
@@ -1163,49 +1050,16 @@ app.post("/api/agents/action-tracker", async (req, res) => {
       return res.status(400).json({ error: "userId is required." });
     }
 
-    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
-    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
-    const issueType = String(req.body?.issueType || "crop health issue").trim() || "crop health issue";
-    const actionTaken = String(req.body?.actionTaken || "").trim();
-    const note = String(req.body?.note || "").trim();
-
-    const recentEvents = await readRecentHistoryEvents(userId, 25);
-    const followUp = await synthesizeActionTrackerFollowUp({
+    const result = await actionTrackerFlow({
       userId,
-      dayNumber,
-      cropName,
-      issueType,
-      actionTaken,
-      note,
-      recentEvents,
+      dayNumber: Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1),
+      cropName: String(req.body?.cropName || "Crop").trim() || "Crop",
+      issueType: String(req.body?.issueType || "crop health issue").trim() || "crop health issue",
+      actionTaken: String(req.body?.actionTaken || "").trim() || undefined,
+      note: String(req.body?.note || "").trim() || undefined,
     });
 
-    await persistHistoryEvent({
-      userId,
-      category: "action_log",
-      title: `Action tracker follow-up - Day ${dayNumber}`,
-      summary: `${issueType} (${cropName})`,
-      recommendation: followUp.nextBestAction,
-      payload: {
-        dayNumber,
-        cropName,
-        issueType,
-        actionTaken,
-        note,
-        confidence: followUp.confidence,
-      },
-    });
-
-    return res.json({
-      dayNumber,
-      cropName,
-      issueType,
-      actionTaken,
-      note,
-      recentEventsUsed: recentEvents.length,
-      followUp,
-      provider: "agent-action-tracker-v1",
-    });
+    return res.json(result);
   } catch (error) {
     return res.status(500).json({
       error: "Unable to run action tracker agent.",
@@ -1213,6 +1067,57 @@ app.post("/api/agents/action-tracker", async (req, res) => {
     });
   }
 });
+
+app.post("/api/agents/daily-decision-loop", async (req, res) => {
+  try {
+    const photoBase64 = String(req.body?.photoBase64 || "").trim();
+    if (!photoBase64) {
+      return res.status(400).json({ error: "photoBase64 is required." });
+    }
+
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const polygon = normalizePolygon(req.body?.polygon);
+    const threshold = String(req.body?.autoTrackThreshold || "medium").trim().toLowerCase();
+    const autoTrackThreshold = ["low", "medium", "high"].includes(threshold) ? threshold : "medium";
+
+    const result = await dailyDecisionLoopFlow({
+      userId: normalizeUserId(req.body?.userId),
+      dayNumber: Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1),
+      expectedStage: String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression",
+      cropName: String(req.body?.cropName || "Crop").trim() || "Crop",
+      photoMimeType: String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg",
+      photoBase64,
+      location: String(req.body?.location || "").trim(),
+      latitude: Number.isFinite(latitude) ? latitude : undefined,
+      longitude: Number.isFinite(longitude) ? longitude : undefined,
+      polygon: polygon.length >= 3 ? polygon : undefined,
+      userMarkedSimilar:
+        typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : undefined,
+      issueType: String(req.body?.issueType || "crop health issue").trim() || "crop health issue",
+      actionTaken: String(req.body?.actionTaken || "").trim() || undefined,
+      note: String(req.body?.note || "").trim() || undefined,
+      autoTrackThreshold,
+    });
+
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run daily decision loop.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Genkit Flow HTTP endpoints
+// ---------------------------------------------------------------------------
+app.use(
+  "/api/genkit",
+  expressHandler({
+    flows: [scoutingLoopFlow, fieldInsightsOrchestratorFlow, actionTrackerFlow, dailyDecisionLoopFlow],
+  })
+);
 
 app.listen(PORT, () => {
   console.log(`Field insights service listening on ${PORT}`);

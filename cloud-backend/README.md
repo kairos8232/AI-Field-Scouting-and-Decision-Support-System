@@ -291,7 +291,7 @@ The script first tries `PATCH .../branches/default_branch/documents/{id}` and, i
 
 ## 2.3) Autonomous Agent APIs
 
-These APIs implement code-first orchestration loops in the existing backend.
+These APIs implement code-first orchestration loops with Firebase Genkit flows in the existing backend.
 
 ### A) Scouting Agent Loop
 
@@ -389,6 +389,41 @@ Request:
   "note": "Sprayed in the evening"
 }
 ```
+
+### D) Daily Decision Loop (Composite Genkit Flow)
+
+Endpoint:
+
+```bash
+POST /api/agents/daily-decision-loop
+```
+
+Purpose:
+
+- Run scouting loop first (photo assessment + optional KB/weather + recommendation)
+- Auto-run action tracker based on risk threshold
+- Return combined result for daily decisioning in one call
+
+Request (minimum):
+
+```json
+{
+  "dayNumber": 3,
+  "expectedStage": "Vegetative",
+  "cropName": "Corn",
+  "photoMimeType": "image/jpeg",
+  "photoBase64": "..."
+}
+```
+
+Optional inputs:
+
+- `userId` (required to auto-log and auto-run action tracker)
+- `userMarkedSimilar`
+- `location` or `latitude`/`longitude`
+- `polygon`
+- `issueType`, `actionTaken`, `note`
+- `autoTrackThreshold`: `low` | `medium` | `high` (default `medium`)
 
 ## 3) Firebase Storage Endpoints
 

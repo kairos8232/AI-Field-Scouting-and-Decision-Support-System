@@ -148,13 +148,22 @@ class HttpFieldInsightsRepository(
             }
         }
         val configuredBase = baseUrl.trimEnd('/')
-        val primaryResponse = client.post("$configuredBase/agents/scouting-loop") {
+        val primaryResponse = client.post("$configuredBase/agents/daily-decision-loop") {
             contentType(ContentType.Application.Json)
             setBody(payload.toString())
         }
 
         if (primaryResponse.status.isSuccess()) {
             return parseTimelinePhotoAssessmentFromScoutingLoop(primaryResponse.body<String>())
+        }
+
+        val secondaryResponse = client.post("$configuredBase/agents/scouting-loop") {
+            contentType(ContentType.Application.Json)
+            setBody(payload.toString())
+        }
+
+        if (secondaryResponse.status.isSuccess()) {
+            return parseTimelinePhotoAssessmentFromScoutingLoop(secondaryResponse.body<String>())
         }
 
         val fallbackResponse = client.post("$configuredBase/timeline/photo-compare") {
@@ -422,8 +431,9 @@ class HttpFieldInsightsRepository(
 
     private fun parseTimelinePhotoAssessmentFromScoutingLoop(raw: String): TimelinePhotoAssessment {
         val root = json.parseToJsonElement(raw).jsonObject
-        val assessment = root["assessment"]?.jsonObject ?: root
-        val recommendation = root["recommendation"]?.jsonObject
+        val scoutingRoot = root["scouting"]?.jsonObject ?: root
+        val assessment = scoutingRoot["assessment"]?.jsonObject ?: scoutingRoot
+        val recommendation = scoutingRoot["recommendation"]?.jsonObject
         return TimelinePhotoAssessment(
             dayNumber = assessment["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1,
             expectedStage = assessment["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -437,7 +447,8 @@ class HttpFieldInsightsRepository(
             rationale = recommendation?.get("issueSummary")?.jsonPrimitive?.contentOrNull
                 ?: assessment["rationale"]?.jsonPrimitive?.contentOrNull
                 ?: "Insufficient detail for robust stage matching.",
-            provider = root["provider"]?.jsonPrimitive?.contentOrNull
+            provider = scoutingRoot["provider"]?.jsonPrimitive?.contentOrNull
+                ?: root["provider"]?.jsonPrimitive?.contentOrNull
                 ?: assessment["provider"]?.jsonPrimitive?.contentOrNull
                 ?: "agent-scouting-loop-v1",
         )
