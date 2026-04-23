@@ -223,7 +223,7 @@ fun FarmTwinNavHost(
 
             DashboardScreen(
                 snapshot = appState.snapshot,
-                currentTimelineDay = appState.selectedTimelineDay.dayNumber,
+                currentTimelineDay = appState.timelineUnlockedMaxDayNumber(),
                 selectedMode = appState.selectedMode,
                 lotSections = appState.lotSections,
                 onOpenTimeline = { currentDay ->

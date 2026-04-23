@@ -2247,7 +2247,11 @@ class FarmTwinAppState(
         return cacheUpdateSequence
     }
 
-    private fun currentIsoDate(): String = epochMillisToIsoDateUtc(currentWallClockEpochMs())
+    private fun currentIsoDate(): String {
+        val nowEpochMillis = currentWallClockEpochMs()
+        val offsetMillis = localUtcOffsetMinutes(nowEpochMillis).toLong() * 60_000L
+        return epochMillisToIsoDateUtc(nowEpochMillis + offsetMillis)
+    }
 
     private fun currentWallClockEpochMs(): Long = wallClockEpochMillis()
 

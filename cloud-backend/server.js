@@ -20,6 +20,7 @@ dotenv.config({ path: path.resolve(ROOT_DIR, ".env") });
 
 const app = express();
 app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ limit: "15mb", extended: true }));
 app.use(
   cors({
     origin: process.env.ALLOWED_ORIGIN || "*",
@@ -2746,6 +2747,7 @@ async function generateAiChatReply({ message, history, context }) {
 
   let text = "";
   let lastError = null;
+  const errorMessages = [];
 
   for (const modelName of modelCandidates) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -2761,6 +2763,7 @@ async function generateAiChatReply({ message, history, context }) {
       } catch (error) {
         lastError = error;
         const raw = String(error instanceof Error ? error.message : error || "");
+        errorMessages.push(raw);
         const isTransient = /429|500|502|503|504|timed out|deadline|unavailable/i.test(raw);
         const isModelNotFound = /404|not found|model/i.test(raw);
         if (isModelNotFound) {
@@ -2779,16 +2782,44 @@ async function generateAiChatReply({ message, history, context }) {
 
   if (!text) {
     const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
-    const issue = /API_KEY_INVALID|API key expired/i.test(raw)
-      ? "API key expired or invalid"
-      : raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
-        ? "API key restriction"
-        : /429|RESOURCE_EXHAUSTED|quota exceeded/i.test(raw)
-          ? "Gemini quota exceeded"
-          : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
+    const combinedErrors = errorMessages.length ? `${errorMessages.join(" | ")} | ${raw}` : raw;
+
+    // Check for various error patterns (SDK wraps HTTP errors differently)
+    const isQuotaExhausted = /429|RESOURCE_EXHAUSTED|quota|rate limit|too many requests|exceeded your current quota/i.test(combinedErrors);
+    const isApiKeyIssue = /API_KEY_INVALID|API key expired|401|authentication/i.test(combinedErrors);
+    const isIpBlocked = combinedErrors.includes("API_KEY_IP_ADDRESS_BLOCKED");
+    const isPermissionIssue = /403|forbidden|permission|access denied/i.test(combinedErrors);
+    const isServiceUnavailable = /503|service unavailable|temporarily unavailable|high demand/i.test(combinedErrors);
+
+    let fallbackTitle = "Gemini is not reachable right now.";
+    let extraGuidance = [];
+
+    if (isApiKeyIssue) {
+      fallbackTitle = "Gemini API configuration issue.";
+      extraGuidance = ["API key validation failed. Contact system administrator."];
+    } else if (isIpBlocked) {
+      fallbackTitle = "Gemini access restricted.";
+      extraGuidance = ["API key IP restriction. Contact system administrator."];
+    } else if (isQuotaExhausted) {
+      fallbackTitle = "Gemini daily quota reached.";
+      extraGuidance = [
+        "Free tier: 20 requests/day for gemini-2.5-flash",
+        "Try again after midnight UTC (quota resets daily)",
+        "Or upgrade to Gemini API paid tier for unlimited requests",
+      ];
+    } else if (isServiceUnavailable) {
+      fallbackTitle = "Gemini service temporarily overloaded.";
+      extraGuidance = ["High demand detected. Try again in a few minutes."];
+    } else if (isPermissionIssue) {
+      fallbackTitle = "Gemini permission denied.";
+      extraGuidance = ["Access restriction. Contact system administrator."];
+    }
+
     return {
       reply: [
-        `Gemini is not reachable right now (${issue}).`,
+        fallbackTitle,
+        ...extraGuidance,
+        "",
         "Quick fallback guidance:",
         "1) Follow the latest recommended action from Timeline.",
         "2) Re-check crop symptoms in 24 hours.",
