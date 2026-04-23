@@ -9,6 +9,7 @@ import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
+import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -155,6 +156,7 @@ class HttpFarmConfigRepository(
                         buildJsonObject {
                             put("dayNumber", entry.dayNumber)
                             put("recommendedActionText", entry.recommendedActionText)
+                            entry.timelineStatus?.let { put("timelineStatus", it.name) }
                             put("sourceDayNumber", entry.sourceDayNumber)
                             put("trend", entry.trend.name)
                             put("etaDaysMin", entry.etaDaysMin)
@@ -360,9 +362,12 @@ class HttpFarmConfigRepository(
             val confidenceTier = obj["confidenceTier"]?.jsonPrimitive?.contentOrNull
                 ?.let { runCatching { ForecastConfidenceTier.valueOf(it) }.getOrNull() }
                 ?: ForecastConfidenceTier.LOW
+            val timelineStatus = obj["timelineStatus"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { TimelineStatus.valueOf(it) }.getOrNull() }
             TimelineInsightCacheEntry(
                 dayNumber = dayNumber,
                 recommendedActionText = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                timelineStatus = timelineStatus,
                 sourceDayNumber = obj["sourceDayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: dayNumber,
                 trend = trend,
                 etaDaysMin = obj["etaDaysMin"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1,

@@ -66,6 +66,7 @@ import com.alleyz15.farmtwinai.ui.theme.Sand100
 @Composable
 fun DashboardScreen(
     snapshot: FarmTwinSnapshot,
+    currentTimelineDay: Int,
     selectedMode: AppMode,
     lotSections: List<LotSectionDraft>,
     onOpenTimeline: (Int) -> Unit,
@@ -254,7 +255,7 @@ fun DashboardScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val displayDay = cropSummary.currentDay.coerceAtLeast(1)
+                        val displayDay = currentTimelineDay.coerceAtLeast(1)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box(

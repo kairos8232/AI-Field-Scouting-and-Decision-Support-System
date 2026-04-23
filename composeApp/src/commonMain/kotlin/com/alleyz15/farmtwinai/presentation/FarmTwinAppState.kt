@@ -1643,6 +1643,7 @@ class FarmTwinAppState(
             TimelineInsightCacheEntry(
                 dayNumber = dayNumber,
                 recommendedActionText = recommendation,
+                timelineStatus = timelineDynamicStatusByDay[dayNumber],
                 sourceDayNumber = effectiveForecast.sourceDayNumber,
                 trend = effectiveForecast.trend,
                 etaDaysMin = effectiveForecast.etaDaysMin,
@@ -1844,8 +1845,12 @@ class FarmTwinAppState(
                     isUrgent = entry.isUrgent,
                 )
             }
+            val remoteStatuses = remote.timelineInsightCache
+                .mapNotNull { entry -> entry.timelineStatus?.let { entry.dayNumber to it } }
+                .toMap()
             timelineSuggestedActionByDay = remoteSuggested + timelineSuggestedActionByDay
             timelineRecoveryForecastByDay = remoteForecasts + timelineRecoveryForecastByDay
+            timelineDynamicStatusByDay = remoteStatuses + timelineDynamicStatusByDay
         }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber
@@ -2010,7 +2015,9 @@ class FarmTwinAppState(
             if (recommendedAction.isBlank() && forecast == null) {
                 null
             } else {
-                dayNumber to Pair(recommendedAction, forecast)
+                val status = obj["timelineStatus"]?.jsonPrimitive?.contentOrNull
+                    ?.let { runCatching { TimelineStatus.valueOf(it) }.getOrNull() }
+                dayNumber to Triple(recommendedAction, forecast, status)
             }
         }.orEmpty().toMap()
 
@@ -2031,12 +2038,17 @@ class FarmTwinAppState(
                 .mapValuesNotNull { (_, value) -> value.first.takeIf { it.isNotBlank() } }
             val forecasts = insights
                 .mapValuesNotNull { (_, value) -> value.second }
+            val statuses = insights
+                .mapValuesNotNull { (_, value) -> value.third }
 
             if (suggestedActions.isNotEmpty()) {
                 timelineSuggestedActionByDay = suggestedActions
             }
             if (forecasts.isNotEmpty()) {
                 timelineRecoveryForecastByDay = forecasts
+            }
+            if (statuses.isNotEmpty()) {
+                timelineDynamicStatusByDay = statuses
             }
         }
 
@@ -2140,6 +2152,7 @@ class FarmTwinAppState(
                             if (recommendation.isNotBlank()) {
                                 put("recommendedActionText", recommendation)
                             }
+                            timelineDynamicStatusByDay[dayNumber]?.let { put("timelineStatus", it.name) }
                             if (forecast != null) {
                                 put("sourceDayNumber", forecast.sourceDayNumber)
                                 put("trend", forecast.trend.name)
@@ -2257,9 +2270,14 @@ class FarmTwinAppState(
     }
 
     fun recommendedActionTextForDay(dayNumber: Int): String {
-        return timelineSuggestedActionByDay[dayNumber]
+        val recommendation = timelineSuggestedActionByDay[dayNumber]
             ?: timelinePhotoAssessmentByDay[dayNumber]?.recommendation
             ?: snapshot.cropSummary.latestRecommendation
+
+        if (recommendation.contains("mock", ignoreCase = true) || recommendation.contains("fallback", ignoreCase = true)) {
+            return "Run photo comparison to generate the latest AI recommendation."
+        }
+        return recommendation
     }
 
     fun defaultActionTypeForDay(dayNumber: Int): ActionType {

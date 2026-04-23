@@ -1886,6 +1886,7 @@ function normalizeTimelineActionDecisionCache(input) {
 
 function normalizeTimelineInsightCache(input) {
   if (!Array.isArray(input)) return [];
+  const allowedStatuses = new Set(["NORMAL", "WARNING", "ACTION_TAKEN", "UPDATED"]);
 
   return input
     .map((raw) => {
@@ -1898,9 +1899,12 @@ function normalizeTimelineInsightCache(input) {
       const confidencePercent = Number(raw?.confidencePercent);
       const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
 
+      const timelineStatusRaw = String(raw?.timelineStatus || "").trim().toUpperCase();
+
       return {
         dayNumber: Math.trunc(dayNumber),
         recommendedActionText: String(raw?.recommendedActionText || "").trim(),
+        timelineStatus: allowedStatuses.has(timelineStatusRaw) ? timelineStatusRaw : null,
         sourceDayNumber: Number.isFinite(sourceDayNumber) ? Math.trunc(sourceDayNumber) : Math.trunc(dayNumber),
         trend: String(raw?.trend || "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
         etaDaysMin: Number.isFinite(etaDaysMin) ? Math.max(1, Math.trunc(etaDaysMin)) : 1,

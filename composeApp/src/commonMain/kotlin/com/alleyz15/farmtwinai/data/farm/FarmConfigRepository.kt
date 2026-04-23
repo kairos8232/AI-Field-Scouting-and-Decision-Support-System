@@ -7,6 +7,7 @@ import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
 import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
+import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 
 data class TimelinePhotoCacheEntry(
     val dayNumber: Int,
@@ -52,6 +53,7 @@ data class TimelineActionDecisionCacheEntry(
 data class TimelineInsightCacheEntry(
     val dayNumber: Int,
     val recommendedActionText: String,
+    val timelineStatus: TimelineStatus?,
     val sourceDayNumber: Int,
     val trend: RecoveryTrend,
     val etaDaysMin: Int,
