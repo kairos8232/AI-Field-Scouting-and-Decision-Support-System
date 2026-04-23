@@ -19,13 +19,16 @@ fun LabeledInput(
     label: String,
     initialValue: String = "",
     placeholder: String = "",
+    value: String? = null,
+    onValueChange: ((String) -> Unit)? = null,
 ) {
-    val value = remember { mutableStateOf(initialValue) }
+    val localValue = remember(initialValue) { mutableStateOf(initialValue) }
+    val displayedValue = value ?: localValue.value
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
         OutlinedTextField(
-            value = value.value,
-            onValueChange = { value.value = it },
+            value = displayedValue,
+            onValueChange = onValueChange ?: { localValue.value = it },
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(placeholder) },
             singleLine = true,

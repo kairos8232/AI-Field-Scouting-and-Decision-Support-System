@@ -2,6 +2,7 @@ package com.alleyz15.farmtwinai.ui.screens.flow
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseResult
@@ -76,7 +78,9 @@ fun KnowledgeBaseScreen(
     onSearch: (String) -> Unit,
 ) {
     val darkTheme = isAppDarkTheme()
+    val uriHandler = LocalUriHandler.current
     var draft by remember(lastQuery) { mutableStateOf(lastQuery) }
+    var openUrlError by remember { mutableStateOf<String?>(null) }
     val fieldContainer = if (darkTheme) Color.White.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -175,6 +179,7 @@ fun KnowledgeBaseScreen(
                     onClick = {
                         val query = draft.trim()
                         if (query.isNotEmpty()) {
+                            openUrlError = null
                             onSearch(query)
                         }
                     },
@@ -186,9 +191,9 @@ fun KnowledgeBaseScreen(
                     Text(if (isSearching) "Searching..." else "Search Knowledge Base")
                 }
 
-                if (!errorMessage.isNullOrBlank()) {
+                if (!errorMessage.isNullOrBlank() || !openUrlError.isNullOrBlank()) {
                     Text(
-                        text = errorMessage,
+                        text = openUrlError ?: errorMessage.orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -220,7 +225,21 @@ fun KnowledgeBaseScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         items(results) { result ->
-                            KnowledgeResultCard(result)
+                            KnowledgeResultCard(
+                                result = result,
+                                onOpenUrl = { rawUrl ->
+                                    val safeUrl = normalizeKnowledgeUrl(rawUrl)
+                                    if (safeUrl == null) {
+                                        openUrlError = "This result does not contain a valid source URL."
+                                    } else {
+                                        runCatching {
+                                            uriHandler.openUri(safeUrl)
+                                        }.onFailure {
+                                            openUrlError = "Unable to open source link right now."
+                                        }
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -230,8 +249,12 @@ fun KnowledgeBaseScreen(
 }
 
 @Composable
-private fun KnowledgeResultCard(result: KnowledgeBaseResult) {
+private fun KnowledgeResultCard(
+    result: KnowledgeBaseResult,
+    onOpenUrl: (String) -> Unit,
+) {
     val darkTheme = isAppDarkTheme()
+    val clickableUrl = normalizeKnowledgeUrl(result.uri)
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
@@ -241,9 +264,14 @@ private fun KnowledgeResultCard(result: KnowledgeBaseResult) {
             width = 1.dp,
             color = if (darkTheme) Color.White.copy(alpha = 0.16f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
         ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = clickableUrl != null) {
+                clickableUrl?.let(onOpenUrl)
+            },
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
@@ -278,16 +306,30 @@ private fun KnowledgeResultCard(result: KnowledgeBaseResult) {
                 )
             }
 
-            result.uri?.takeIf { it.isNotBlank() }?.let { url ->
+            clickableUrl?.let { url ->
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = url,
                     style = MaterialTheme.typography.labelSmall,
                     color = Leaf400,
                     maxLines = 1,
+                    modifier = Modifier.clickable { onOpenUrl(url) },
                 )
             }
         }
+    }
+}
+
+private fun normalizeKnowledgeUrl(raw: String?): String? {
+    val value = raw?.trim().orEmpty()
+    if (value.isBlank()) return null
+    val lower = value.lowercase()
+    return when {
+        lower.startsWith("http://") || lower.startsWith("https://") -> value
+        lower.startsWith("www.") -> "https://$value"
+        lower.startsWith("mailto:") || lower.startsWith("tel:") -> value
+        value.contains('.') && !value.contains(' ') -> "https://$value"
+        else -> null
     }
 }
 

@@ -152,6 +152,7 @@ fun MePanelScreen(
         mapQuery = "",
         totalAreaInput = snapshot.farm.fieldSize,
         mode = snapshot.farm.mode,
+        plantingDate = snapshot.farm.plantingDate,
         boundaryPoints = emptyList(),
         lots = lotSections,
     )

@@ -19,7 +19,7 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 dotenv.config({ path: path.resolve(ROOT_DIR, ".env") });
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "15mb" }));
 app.use(
   cors({
     origin: process.env.ALLOWED_ORIGIN || "*",
@@ -174,11 +174,34 @@ app.post("/api/farm-config", async (req, res) => {
       return res.status(400).json({ error: "userId is required." });
     }
 
+    const existingDoc = await db.collection("farmConfigs").doc(userId).get();
+    const existingData = existingDoc.exists ? (existingDoc.data() || {}) : {};
+    const existingFarms = normalizeFarms(
+      parseFirestoreArrayField(existingData.farmsJson, existingData.farms),
+      {
+        farmName: String(existingData.farmName || "").trim(),
+        address: String(existingData.address || "").trim(),
+        mapQuery: String(existingData.mapQuery || "").trim(),
+        totalAreaInput: String(existingData.totalAreaInput || "").trim(),
+        mode: String(existingData.mode || "").trim(),
+        plantingDate: String(existingData.plantingDate || "").trim(),
+        boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(existingData.boundaryPointsJson, existingData.boundaryPoints)),
+        lots: normalizeLots(parseFirestoreArrayField(existingData.lotsJson, existingData.lots)),
+      },
+      new Map(),
+    );
+    const existingCreatedAtByFarmId = new Map(
+      existingFarms
+        .filter((farm) => Number.isFinite(farm.createdAtEpochMs) && farm.createdAtEpochMs > 0)
+        .map((farm) => [farm.id, farm.createdAtEpochMs])
+    );
+
     const legacyFarmName = String(req.body?.farmName || "").trim();
     const legacyAddress = String(req.body?.address || "").trim();
     const legacyMapQuery = String(req.body?.mapQuery || "").trim();
     const legacyTotalAreaInput = String(req.body?.totalAreaInput || "").trim();
     const legacyMode = String(req.body?.mode || "").trim();
+    const legacyPlantingDate = String(req.body?.plantingDate || "").trim();
     const legacyBoundaryPoints = normalizeNormalizedPoints(req.body?.boundaryPoints);
     const legacyLots = normalizeLots(req.body?.lots);
     const farms = normalizeFarms(req.body?.farms, {
@@ -187,9 +210,10 @@ app.post("/api/farm-config", async (req, res) => {
       mapQuery: legacyMapQuery,
       totalAreaInput: legacyTotalAreaInput,
       mode: legacyMode,
+      plantingDate: legacyPlantingDate,
       boundaryPoints: legacyBoundaryPoints,
       lots: legacyLots,
-    });
+    }, existingCreatedAtByFarmId);
     const requestedActiveFarmId = String(req.body?.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
     const activeFarmId = activeFarm?.id || null;
@@ -201,6 +225,8 @@ app.post("/api/farm-config", async (req, res) => {
       activeFarmId,
     });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(req.body?.timelineAssessmentCache);
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(req.body?.timelineActionDecisionCache);
+    const timelineInsightCache = normalizeTimelineInsightCache(req.body?.timelineInsightCache);
 
     if (farms.length === 0) {
       return res.status(400).json({ error: "At least one farm is required." });
@@ -209,18 +235,21 @@ app.post("/api/farm-config", async (req, res) => {
     const payload = {
       userId,
       activeFarmId,
-      farms,
+      farmsJson: JSON.stringify(farms),
       // Keep legacy single-farm fields for backward compatibility.
       farmName: activeFarm?.farmName || "",
       address: activeFarm?.address || "",
       mapQuery: activeFarm?.mapQuery || "",
       totalAreaInput: activeFarm?.totalAreaInput || "",
       mode: activeFarm?.mode || "PLANNING",
-      boundaryPoints: activeFarm?.boundaryPoints || [],
-      lots: activeFarm?.lots || [],
-      timelinePhotoCache,
-      timelineStageVisualCache,
-      timelineAssessmentCache,
+      plantingDate: activeFarm?.plantingDate || "",
+      boundaryPointsJson: JSON.stringify(activeFarm?.boundaryPoints || []),
+      lotsJson: JSON.stringify(activeFarm?.lots || []),
+      timelinePhotoCacheJson: JSON.stringify(timelinePhotoCache),
+      timelineStageVisualCacheJson: JSON.stringify(compactTimelineStageVisualCache(timelineStageVisualCache)),
+      timelineAssessmentCacheJson: JSON.stringify(timelineAssessmentCache),
+      timelineActionDecisionCacheJson: JSON.stringify(timelineActionDecisionCache),
+      timelineInsightCacheJson: JSON.stringify(timelineInsightCache),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -260,37 +289,44 @@ app.get("/api/farm-config", async (req, res) => {
     }
 
     const data = doc.data() || {};
-    const farms = normalizeFarms(data.farms, {
+    const farms = normalizeFarms(parseFirestoreArrayField(data.farmsJson, data.farms), {
       farmName: String(data.farmName || "").trim(),
       address: String(data.address || "").trim(),
       mapQuery: String(data.mapQuery || "").trim(),
       totalAreaInput: String(data.totalAreaInput || "").trim(),
       mode: String(data.mode || "").trim(),
-      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
-      lots: normalizeLots(data.lots),
+      plantingDate: String(data.plantingDate || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(data.boundaryPointsJson, data.boundaryPoints)),
+      lots: normalizeLots(parseFirestoreArrayField(data.lotsJson, data.lots)),
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
-    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
-    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
+    const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
+    const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
 
     return res.json({
       item: {
         id: doc.id,
         ...data,
-        activeFarmId: activeFarm?.id || null,
         farms,
+        activeFarmId: activeFarm?.id || null,
         farmName: activeFarm?.farmName || "",
         address: activeFarm?.address || "",
         mapQuery: activeFarm?.mapQuery || "",
         totalAreaInput: activeFarm?.totalAreaInput || "",
         mode: activeFarm?.mode || "PLANNING",
+        plantingDate: activeFarm?.plantingDate || "",
+        createdAtEpochMs: activeFarm?.createdAtEpochMs || 0,
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
         timelinePhotoCache,
         timelineStageVisualCache,
         timelineAssessmentCache,
+        timelineActionDecisionCache,
+        timelineInsightCache,
       },
     });
   } catch (error) {
@@ -322,37 +358,44 @@ app.get("/api/farm-config/latest", async (req, res) => {
     }
 
     const data = doc.data() || {};
-    const farms = normalizeFarms(data.farms, {
+    const farms = normalizeFarms(parseFirestoreArrayField(data.farmsJson, data.farms), {
       farmName: String(data.farmName || "").trim(),
       address: String(data.address || "").trim(),
       mapQuery: String(data.mapQuery || "").trim(),
       totalAreaInput: String(data.totalAreaInput || "").trim(),
       mode: String(data.mode || "").trim(),
-      boundaryPoints: normalizeNormalizedPoints(data.boundaryPoints),
-      lots: normalizeLots(data.lots),
+      plantingDate: String(data.plantingDate || "").trim(),
+      boundaryPoints: normalizeNormalizedPoints(parseFirestoreArrayField(data.boundaryPointsJson, data.boundaryPoints)),
+      lots: normalizeLots(parseFirestoreArrayField(data.lotsJson, data.lots)),
     });
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
-    const timelinePhotoCache = normalizeTimelinePhotoCache(data.timelinePhotoCache);
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(data.timelineStageVisualCache);
-    const timelineAssessmentCache = normalizeTimelineAssessmentCache(data.timelineAssessmentCache);
+    const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
+    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
+    const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
+    const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
 
     return res.json({
       item: {
         id: doc.id,
         ...data,
-        activeFarmId: activeFarm?.id || null,
         farms,
+        activeFarmId: activeFarm?.id || null,
         farmName: activeFarm?.farmName || "",
         address: activeFarm?.address || "",
         mapQuery: activeFarm?.mapQuery || "",
         totalAreaInput: activeFarm?.totalAreaInput || "",
         mode: activeFarm?.mode || "PLANNING",
+        plantingDate: activeFarm?.plantingDate || "",
+        createdAtEpochMs: activeFarm?.createdAtEpochMs || 0,
         boundaryPoints: activeFarm?.boundaryPoints || [],
         lots: activeFarm?.lots || [],
         timelinePhotoCache,
         timelineStageVisualCache,
         timelineAssessmentCache,
+        timelineActionDecisionCache,
+        timelineInsightCache,
       },
     });
   } catch (error) {
@@ -924,6 +967,252 @@ app.post("/api/weather-now", async (req, res) => {
   }
 });
 
+app.post("/api/agents/scouting-loop", async (req, res) => {
+  try {
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const expectedStage = String(req.body?.expectedStage || "Growth progression").trim() || "Growth progression";
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+    const photoMimeType = String(req.body?.photoMimeType || "image/jpeg").trim() || "image/jpeg";
+    const photoBase64 = String(req.body?.photoBase64 || "").trim();
+    const userMarkedSimilar = typeof req.body?.userMarkedSimilar === "boolean" ? req.body.userMarkedSimilar : null;
+
+    if (!photoBase64) {
+      return res.status(400).json({ error: "photoBase64 is required." });
+    }
+
+    const location = String(req.body?.location || "").trim();
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const polygon = normalizePolygon(req.body?.polygon);
+    const centroid = polygon.length >= 3
+      ? computeCentroid(polygon)
+      : (Number.isFinite(latitude) && Number.isFinite(longitude) ? { lat: latitude, lng: longitude } : null);
+
+    const assessment = await assessTimelinePhoto({
+      dayNumber,
+      expectedStage,
+      cropName,
+      photoMimeType,
+      photoBase64,
+      userMarkedSimilar,
+    });
+
+    const toolPlan = await planScoutingToolSequence({
+      cropName,
+      expectedStage,
+      dayNumber,
+      recommendation: assessment.recommendation,
+      rationale: assessment.rationale,
+      location,
+      hasCoordinates: Number.isFinite(latitude) && Number.isFinite(longitude),
+      hasPolygon: polygon.length >= 3,
+    });
+
+    const knowledgeQuery = toolPlan.knowledgeQuery
+      || `${cropName} ${assessment.observedStage} ${assessment.recommendation}`.trim();
+    const shouldUseKnowledge = toolPlan.steps.includes("knowledge_base");
+    const shouldUseWeather = toolPlan.steps.includes("weather_now");
+
+    const kbReply = shouldUseKnowledge
+      ? await queryKnowledgeBase({ query: knowledgeQuery, pageSize: 4, expandQuery: true })
+      : { results: [], totalResults: 0 };
+
+    const weather = shouldUseWeather
+      ? await resolveWeatherForAgent({ location, latitude, longitude, centroid })
+      : null;
+
+    const finalAction = await synthesizeScoutingAction({
+      cropName,
+      expectedStage,
+      dayNumber,
+      assessment,
+      weather,
+      knowledgeResults: kbReply.results,
+    });
+
+    const toolTrace = [
+      { step: "photo_assessment", provider: assessment.provider, used: true },
+      { step: "knowledge_base", used: shouldUseKnowledge, query: shouldUseKnowledge ? knowledgeQuery : null, totalResults: kbReply.totalResults || 0 },
+      { step: "weather_now", used: shouldUseWeather, condition: weather?.condition || null },
+      { step: "final_recommendation", provider: finalAction.provider },
+    ];
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "action_log",
+        title: `Scouting loop - Day ${dayNumber}`,
+        summary: finalAction.issueSummary,
+        recommendation: finalAction.primaryAction,
+        payload: {
+          cropName,
+          expectedStage,
+          dayNumber,
+          similarityScore: assessment.similarityScore,
+          observedStage: assessment.observedStage,
+          weatherCondition: weather?.condition || null,
+          toolTrace,
+        },
+      });
+    }
+
+    return res.json({
+      dayNumber,
+      cropName,
+      expectedStage,
+      assessment,
+      weather,
+      knowledge: {
+        query: shouldUseKnowledge ? knowledgeQuery : null,
+        results: kbReply.results,
+        totalResults: kbReply.totalResults,
+      },
+      recommendation: finalAction,
+      toolPlan,
+      toolTrace,
+      provider: "agent-scouting-loop-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run scouting loop.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/agents/field-insights-orchestrator", async (req, res) => {
+  try {
+    const polygon = normalizePolygon(req.body?.polygon);
+    if (polygon.length < 3) {
+      return res.status(400).json({ error: "Polygon must have at least 3 points." });
+    }
+
+    const targetCrops = normalizeTargetCrops(req.body?.targetCrops);
+    const totalFarmAreaHectares = normalizeOptionalNumber(req.body?.totalFarmAreaHectares);
+    const lotAreaHectares = normalizeOptionalNumber(req.body?.lotAreaHectares);
+    const centroid = req.body?.centroid ? toLatLngPoint(req.body.centroid) : computeCentroid(polygon);
+    const location = String(req.body?.location || "").trim();
+
+    const earthSummary = await getEarthSummary({ polygon, centroid });
+    const recommendations = await getCropRecommendations(earthSummary, targetCrops, {
+      totalFarmAreaHectares,
+      lotAreaHectares,
+    });
+
+    const kbQuery = buildInsightsKnowledgeQuery({ recommendations, summary: earthSummary, targetCrops });
+    const kbReply = await queryKnowledgeBase({ query: kbQuery, pageSize: 4, expandQuery: true });
+    const weather = await resolveWeatherForAgent({
+      location,
+      latitude: Number(centroid.lat),
+      longitude: Number(centroid.lng),
+      centroid,
+    });
+
+    const actionBrief = await synthesizeFieldInsightsActionBrief({
+      summary: earthSummary,
+      recommendations,
+      weather,
+      knowledgeResults: kbReply.results,
+      targetCrops,
+    });
+
+    const userId = normalizeUserId(req.body?.userId);
+    if (userId) {
+      void persistHistoryEvent({
+        userId,
+        category: "action_log",
+        title: "Field insights orchestrator run",
+        summary: actionBrief.overview,
+        recommendation: actionBrief.topAction,
+        payload: {
+          centroid,
+          targetCrops,
+          kbQuery,
+          weatherCondition: weather?.condition || null,
+        },
+      });
+    }
+
+    return res.json({
+      summary: earthSummary,
+      recommendations,
+      weather,
+      knowledge: {
+        query: kbQuery,
+        results: kbReply.results,
+        totalResults: kbReply.totalResults,
+      },
+      actionBrief,
+      toolTrace: ["earth_engine", "gemini_recommendation", "vertex_search", "weather_now", "final_brief"],
+      provider: "agent-field-insights-orchestrator-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run field insights orchestrator.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+app.post("/api/agents/action-tracker", async (req, res) => {
+  try {
+    const userId = normalizeUserId(req.body?.userId);
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required." });
+    }
+
+    const dayNumber = Math.max(1, Number.parseInt(String(req.body?.dayNumber ?? "1"), 10) || 1);
+    const cropName = String(req.body?.cropName || "Crop").trim() || "Crop";
+    const issueType = String(req.body?.issueType || "crop health issue").trim() || "crop health issue";
+    const actionTaken = String(req.body?.actionTaken || "").trim();
+    const note = String(req.body?.note || "").trim();
+
+    const recentEvents = await readRecentHistoryEvents(userId, 25);
+    const followUp = await synthesizeActionTrackerFollowUp({
+      userId,
+      dayNumber,
+      cropName,
+      issueType,
+      actionTaken,
+      note,
+      recentEvents,
+    });
+
+    await persistHistoryEvent({
+      userId,
+      category: "action_log",
+      title: `Action tracker follow-up - Day ${dayNumber}`,
+      summary: `${issueType} (${cropName})`,
+      recommendation: followUp.nextBestAction,
+      payload: {
+        dayNumber,
+        cropName,
+        issueType,
+        actionTaken,
+        note,
+        confidence: followUp.confidence,
+      },
+    });
+
+    return res.json({
+      dayNumber,
+      cropName,
+      issueType,
+      actionTaken,
+      note,
+      recentEventsUsed: recentEvents.length,
+      followUp,
+      provider: "agent-action-tracker-v1",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "Unable to run action tracker agent.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Field insights service listening on ${PORT}`);
 });
@@ -1437,6 +1726,22 @@ function normalizeUserId(input) {
   return value || null;
 }
 
+function parseFirestoreArrayField(preferred, fallback = []) {
+  if (Array.isArray(preferred)) return preferred;
+  if (typeof preferred === "string") {
+    const raw = preferred.trim();
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (_error) {
+        // Ignore malformed JSON and fall back to legacy data.
+      }
+    }
+  }
+  return Array.isArray(fallback) ? fallback : [];
+}
+
 function normalizeNormalizedPoints(input) {
   if (!Array.isArray(input)) return [];
 
@@ -1468,12 +1773,13 @@ function normalizeLots(input) {
         cropPlan: String(raw?.cropPlan || "").trim(),
         soilType: String(raw?.soilType || "").trim(),
         waterAvailability: String(raw?.waterAvailability || "").trim(),
+        plantingDate: String(raw?.plantingDate || "").trim(),
       };
     })
     .filter(Boolean);
 }
 
-function normalizeFarms(input, fallback = null) {
+function normalizeFarms(input, fallback = null, existingCreatedAtByFarmId = new Map()) {
   const farms = Array.isArray(input)
     ? input
         .map((raw, index) => {
@@ -1481,13 +1787,20 @@ function normalizeFarms(input, fallback = null) {
           if (lots.length === 0) return null;
 
           const boundaryPoints = normalizeNormalizedPoints(raw?.boundaryPoints);
+          const id = String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`;
+          const incomingCreatedAtEpochMs = normalizeOptionalEpochMs(raw?.createdAtEpochMs);
           return {
-            id: String(raw?.id || `farm-${index + 1}`).trim() || `farm-${index + 1}`,
+            id,
             farmName: String(raw?.farmName || "").trim(),
             address: String(raw?.address || "").trim(),
             mapQuery: String(raw?.mapQuery || "").trim(),
             totalAreaInput: String(raw?.totalAreaInput || "").trim(),
             mode: String(raw?.mode || "PLANNING").trim() || "PLANNING",
+            plantingDate: String(raw?.plantingDate || "").trim(),
+            createdAtEpochMs:
+              existingCreatedAtByFarmId.get(id)
+              || incomingCreatedAtEpochMs
+              || Date.now(),
             boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
             lots,
           };
@@ -1518,10 +1831,21 @@ function normalizeFarms(input, fallback = null) {
       mapQuery: String(fallback.mapQuery || "").trim(),
       totalAreaInput: String(fallback.totalAreaInput || "").trim(),
       mode: String(fallback.mode || "PLANNING").trim() || "PLANNING",
+      plantingDate: String(fallback.plantingDate || "").trim(),
+      createdAtEpochMs:
+        existingCreatedAtByFarmId.get("farm-legacy")
+        || normalizeOptionalEpochMs(fallback.createdAtEpochMs)
+        || Date.now(),
       boundaryPoints: boundaryPoints.length >= 3 ? boundaryPoints : lots[0]?.points || [],
       lots,
     },
   ];
+}
+
+function normalizeOptionalEpochMs(value) {
+  const epoch = Number(value);
+  if (!Number.isFinite(epoch) || epoch <= 0) return null;
+  return Math.trunc(epoch);
 }
 
 function normalizeTimelinePhotoCache(input) {
@@ -1567,6 +1891,34 @@ function normalizeTimelineStageVisualCache(input) {
     .slice(0, 90);
 }
 
+function compactTimelineStageVisualCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const imageDataUrl = String(raw?.imageDataUrl || "").trim();
+      const compactImageDataUrl = imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048
+        ? imageDataUrl
+        : "";
+
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        title: String(raw?.title || "").trim(),
+        description: String(raw?.description || "").trim(),
+        imageDataUrl: compactImageDataUrl,
+        provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
 function normalizeTimelineAssessmentCache(input) {
   if (!Array.isArray(input)) return [];
 
@@ -1588,6 +1940,72 @@ function normalizeTimelineAssessmentCache(input) {
         recommendation: String(raw?.recommendation || "").trim(),
         rationale: String(raw?.rationale || "").trim(),
         provider: String(raw?.provider || "").trim(),
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineActionDecisionCache(input) {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const actionType = String(raw?.actionType || "").trim().toUpperCase();
+      const state = String(raw?.state || "").trim().toUpperCase();
+      if (!actionType || !state) return null;
+
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      const confidence = Number(raw?.confidence);
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        actionType,
+        state,
+        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+        nextBestAction: String(raw?.nextBestAction || "").trim(),
+        followUpQuestion: String(raw?.followUpQuestion || "").trim(),
+        confidence: Number.isFinite(confidence) ? confidence : 0,
+        riskLevel: String(raw?.riskLevel || "unknown").trim() || "unknown",
+        provider: String(raw?.provider || "agent-action-tracker-v1").trim() || "agent-action-tracker-v1",
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 90);
+}
+
+function normalizeTimelineInsightCache(input) {
+  if (!Array.isArray(input)) return [];
+  const allowedStatuses = new Set(["NORMAL", "WARNING", "ACTION_TAKEN", "UPDATED"]);
+
+  return input
+    .map((raw) => {
+      const dayNumber = Number(raw?.dayNumber);
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
+
+      const sourceDayNumber = Number(raw?.sourceDayNumber);
+      const etaDaysMin = Number(raw?.etaDaysMin);
+      const etaDaysMax = Number(raw?.etaDaysMax);
+      const confidencePercent = Number(raw?.confidencePercent);
+      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+
+      const timelineStatusRaw = String(raw?.timelineStatus || "").trim().toUpperCase();
+
+      return {
+        dayNumber: Math.trunc(dayNumber),
+        recommendedActionText: String(raw?.recommendedActionText || "").trim(),
+        timelineStatus: allowedStatuses.has(timelineStatusRaw) ? timelineStatusRaw : null,
+        sourceDayNumber: Number.isFinite(sourceDayNumber) ? Math.trunc(sourceDayNumber) : Math.trunc(dayNumber),
+        trend: String(raw?.trend || "UNKNOWN").trim().toUpperCase() || "UNKNOWN",
+        etaDaysMin: Number.isFinite(etaDaysMin) ? Math.max(1, Math.trunc(etaDaysMin)) : 1,
+        etaDaysMax: Number.isFinite(etaDaysMax) ? Math.max(1, Math.trunc(etaDaysMax)) : 1,
+        confidencePercent: Number.isFinite(confidencePercent) ? Math.max(0, Math.min(100, Math.trunc(confidencePercent))) : 0,
+        confidenceTier: String(raw?.confidenceTier || "LOW").trim().toUpperCase() || "LOW",
+        isUrgent: Boolean(raw?.isUrgent),
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
       };
     })
@@ -2089,11 +2507,35 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
           error instanceof Error ? error.message : String(error)
         }`
       );
-      throw new Error("photorealistic_image_unavailable");
+      const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+      return {
+        dayNumber,
+        expectedStage,
+        cropName,
+        title,
+        description,
+        imageDataUrl: svgToDataUrl(svg),
+        prompt,
+        provider: "vertex-imagen-fallback-svg",
+      };
     }
   }
 
-  throw new Error("photorealistic_image_unavailable");
+  const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
+  return {
+    dayNumber,
+    expectedStage,
+    cropName,
+    title,
+    description,
+    imageDataUrl: svgToDataUrl(svg),
+    prompt,
+    provider: "timeline-fallback-svg",
+  };
+}
+
+function svgToDataUrl(svgText) {
+  return `data:image/svg+xml;base64,${Buffer.from(String(svgText || ""), "utf8").toString("base64")}`;
 }
 
 function isVertexConfigured() {
@@ -2256,7 +2698,16 @@ async function assessTimelinePhoto({
 
 async function generateAiChatReply({ message, history, context }) {
   if (!ai) {
-    throw new Error("wrong connection to server");
+    return {
+      reply: [
+        "Gemini is temporarily unavailable.",
+        "Immediate next step:",
+        "1) Inspect leaves and stem base for new spots, wilting, or pest signs.",
+        "2) Check soil moisture at root depth before watering.",
+        "3) Upload a new photo in Timeline after 24 hours for re-check.",
+      ].join("\n"),
+      provider: "gemini-fallback-unavailable",
+    };
   }
 
   const contextLines = context
@@ -2328,15 +2779,23 @@ async function generateAiChatReply({ message, history, context }) {
 
   if (!text) {
     const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
-    if (raw.includes("API_KEY_IP_ADDRESS_BLOCKED")) {
-      throw new Error(
-        "Gemini API key is blocked by IP restriction. Update API key restrictions to allow this server IP or remove IP restriction."
-      );
-    }
-    if (/403|forbidden|permission/i.test(raw)) {
-      throw new Error("Gemini request was forbidden. Check API key restrictions and API enablement.");
-    }
-    throw new Error("Unable to get Gemini response from backend.");
+    const issue = /API_KEY_INVALID|API key expired/i.test(raw)
+      ? "API key expired or invalid"
+      : raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
+        ? "API key restriction"
+        : /429|RESOURCE_EXHAUSTED|quota exceeded/i.test(raw)
+          ? "Gemini quota exceeded"
+          : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
+    return {
+      reply: [
+        `Gemini is not reachable right now (${issue}).`,
+        "Quick fallback guidance:",
+        "1) Follow the latest recommended action from Timeline.",
+        "2) Re-check crop symptoms in 24 hours.",
+        "3) If symptoms worsen, open Knowledge Base for crop-specific control steps.",
+      ].join("\n"),
+      provider: "gemini-fallback-runtime",
+    };
   }
 
   if (!text) {
@@ -2696,6 +3155,281 @@ function normalizeSearchSnippet(input) {
     return "";
   }
   return text.slice(0, 320);
+}
+
+async function planScoutingToolSequence({
+  cropName,
+  expectedStage,
+  dayNumber,
+  recommendation,
+  rationale,
+  location,
+  hasCoordinates,
+  hasPolygon,
+}) {
+  const fallback = {
+    steps: ["photo_assessment", "knowledge_base", "weather_now", "final_recommendation"],
+    knowledgeQuery: `${cropName} ${expectedStage} ${recommendation}`.trim(),
+    reasoning: "Default tool sequence applied.",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are an agent planner for crop scouting.",
+    "Choose the best tool sequence from: photo_assessment, knowledge_base, weather_now, final_recommendation.",
+    "Return strict JSON object with keys: steps (array), knowledgeQuery (string), reasoning (string).",
+    "Keep steps minimal but complete.",
+    JSON.stringify({
+      cropName,
+      expectedStage,
+      dayNumber,
+      recommendation,
+      rationale,
+      location,
+      hasCoordinates,
+      hasPolygon,
+    }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const allowed = new Set(["photo_assessment", "knowledge_base", "weather_now", "final_recommendation"]);
+    const steps = Array.isArray(parsed.steps)
+      ? parsed.steps.map((s) => String(s || "").trim()).filter((s) => allowed.has(s))
+      : fallback.steps;
+
+    const normalizedSteps = steps.length ? steps : fallback.steps;
+    if (!normalizedSteps.includes("photo_assessment")) normalizedSteps.unshift("photo_assessment");
+    if (!normalizedSteps.includes("final_recommendation")) normalizedSteps.push("final_recommendation");
+
+    return {
+      steps: Array.from(new Set(normalizedSteps)),
+      knowledgeQuery: String(parsed.knowledgeQuery || fallback.knowledgeQuery).trim() || fallback.knowledgeQuery,
+      reasoning: String(parsed.reasoning || "").trim() || fallback.reasoning,
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+async function resolveWeatherForAgent({ location, latitude, longitude, centroid = null }) {
+  const hasCoordinates = Number.isFinite(latitude) && Number.isFinite(longitude);
+  if (hasCoordinates) {
+    const weather = await fetchCurrentWeather(latitude, longitude);
+    return {
+      location: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+      resolvedAddress: location || `Lat ${round(latitude, 5)}, Lng ${round(longitude, 5)}`,
+      latitude,
+      longitude,
+      ...weather,
+      provider: "open-meteo-coordinates",
+    };
+  }
+
+  const cleanLocation = String(location || "").trim();
+  if (cleanLocation && GOOGLE_MAPS_API_KEY) {
+    const geocoded = await geocodeWithGoogleMaps(cleanLocation);
+    const weather = await fetchCurrentWeather(geocoded.lat, geocoded.lng);
+    return {
+      location: cleanLocation,
+      resolvedAddress: geocoded.resolvedAddress,
+      latitude: geocoded.lat,
+      longitude: geocoded.lng,
+      ...weather,
+      provider: "google-geocode+open-meteo",
+    };
+  }
+
+  if (centroid && Number.isFinite(centroid.lat) && Number.isFinite(centroid.lng)) {
+    const weather = await fetchCurrentWeather(Number(centroid.lat), Number(centroid.lng));
+    return {
+      location: `Centroid ${round(Number(centroid.lat), 5)}, ${round(Number(centroid.lng), 5)}`,
+      resolvedAddress: `Centroid ${round(Number(centroid.lat), 5)}, ${round(Number(centroid.lng), 5)}`,
+      latitude: Number(centroid.lat),
+      longitude: Number(centroid.lng),
+      ...weather,
+      provider: "centroid+open-meteo",
+    };
+  }
+
+  return null;
+}
+
+async function synthesizeScoutingAction({ cropName, expectedStage, dayNumber, assessment, weather, knowledgeResults }) {
+  const fallback = {
+    issueSummary: `${cropName} appears ${assessment.isSimilar ? "near expected stage" : "off expected stage"}.`,
+    riskLevel: assessment.isSimilar ? "low" : "medium",
+    primaryAction: assessment.recommendation,
+    followUpCheck: "Recheck field condition in 24 hours and capture another photo.",
+    confidence: assessment.isSimilar ? 0.78 : 0.64,
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are a farm scouting action agent.",
+    "Produce strict JSON object with keys: issueSummary, riskLevel, primaryAction, followUpCheck, confidence.",
+    "riskLevel must be one of: low, medium, high.",
+    "confidence must be number between 0 and 1.",
+    JSON.stringify({ cropName, expectedStage, dayNumber, assessment, weather, knowledgeResults: knowledgeResults.slice(0, 3) }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const riskLevel = ["low", "medium", "high"].includes(String(parsed.riskLevel || "").toLowerCase())
+      ? String(parsed.riskLevel).toLowerCase()
+      : fallback.riskLevel;
+
+    return {
+      issueSummary: String(parsed.issueSummary || fallback.issueSummary).trim(),
+      riskLevel,
+      primaryAction: String(parsed.primaryAction || fallback.primaryAction).trim(),
+      followUpCheck: String(parsed.followUpCheck || fallback.followUpCheck).trim(),
+      confidence: clamp(Number(parsed.confidence ?? fallback.confidence), 0, 1),
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function buildInsightsKnowledgeQuery({ recommendations, summary, targetCrops }) {
+  const firstCrop = recommendations?.[0]?.cropName || targetCrops?.[0] || "crop";
+  const moisture = Number(summary?.soilMoistureMean || 0);
+  const rainfall = Number(summary?.rainfallMm7d || 0);
+  const ndvi = Number(summary?.ndviMean || 0);
+  return `${firstCrop} management NDVI ${round(ndvi, 2)} soil moisture ${round(moisture, 2)} rainfall ${round(rainfall, 1)}mm`;
+}
+
+async function synthesizeFieldInsightsActionBrief({ summary, recommendations, weather, knowledgeResults, targetCrops }) {
+  const topCrop = recommendations?.[0]?.cropName || targetCrops?.[0] || "crop";
+  const fallback = {
+    overview: `${topCrop} is currently the most suitable option based on field metrics and current conditions.`,
+    topAction: "Proceed with staged monitoring and verify moisture before next irrigation.",
+    watchouts: ["Monitor rainfall changes", "Watch early pest signs", "Re-assess in 48 hours"],
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const prompt = [
+    "You are a field insights orchestrator agent.",
+    "Return strict JSON object with keys: overview, topAction, watchouts.",
+    "watchouts must be an array of 2-4 short strings.",
+    JSON.stringify({ summary, recommendations, weather, knowledgeResults: knowledgeResults.slice(0, 3), targetCrops }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const watchouts = Array.isArray(parsed.watchouts)
+      ? parsed.watchouts.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 4)
+      : fallback.watchouts;
+
+    return {
+      overview: String(parsed.overview || fallback.overview).trim(),
+      topAction: String(parsed.topAction || fallback.topAction).trim(),
+      watchouts: watchouts.length ? watchouts : fallback.watchouts,
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+async function readRecentHistoryEvents(userId, limit = 20) {
+  const db = getFirestoreDb();
+  if (!db) return [];
+
+  try {
+    const size = Math.min(Math.max(Math.trunc(Number(limit) || 20), 1), 100);
+    const snap = await db
+      .collection(FIREBASE_HISTORY_COLLECTION)
+      .where("userId", "==", userId)
+      .orderBy("createdAt", "desc")
+      .limit(size)
+      .get();
+
+    return snap.docs.map((doc) => {
+      const data = doc.data() || {};
+      return {
+        id: doc.id,
+        category: String(data.category || "").trim(),
+        title: String(data.title || "").trim(),
+        summary: String(data.summary || "").trim(),
+        recommendation: String(data.recommendation || "").trim(),
+      };
+    });
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function synthesizeActionTrackerFollowUp({
+  dayNumber,
+  cropName,
+  issueType,
+  actionTaken,
+  note,
+  recentEvents,
+}) {
+  const fallback = {
+    nextBestAction: actionTaken
+      ? `Validate outcome of \"${actionTaken}\" within 24 hours and compare with Day ${dayNumber + 1} evidence.`
+      : "Log the action taken, then capture a new photo for comparison within 24 hours.",
+    followUpQuestion: "Did symptoms improve after your last action?",
+    confidence: 0.62,
+    riskLevel: "medium",
+    provider: "heuristic-fallback",
+  };
+
+  if (!ai) return fallback;
+
+  const compactEvents = Array.isArray(recentEvents)
+    ? recentEvents.slice(0, 12).map((item) => ({
+        category: item.category,
+        title: item.title,
+        summary: item.summary,
+        recommendation: item.recommendation,
+      }))
+    : [];
+
+  const prompt = [
+    "You are an action tracker agent for farm follow-up.",
+    "Return strict JSON object with keys: nextBestAction, followUpQuestion, confidence, riskLevel.",
+    "riskLevel must be one of: low, medium, high.",
+    JSON.stringify({ dayNumber, cropName, issueType, actionTaken, note, recentEvents: compactEvents }),
+  ].join("\n");
+
+  try {
+    const result = await ai.models.generateContent({ model: GEMINI_MODEL, contents: prompt });
+    const parsed = safeParseJsonObject(result.text || "");
+    if (!parsed) return fallback;
+
+    const riskLevel = ["low", "medium", "high"].includes(String(parsed.riskLevel || "").toLowerCase())
+      ? String(parsed.riskLevel).toLowerCase()
+      : fallback.riskLevel;
+
+    return {
+      nextBestAction: String(parsed.nextBestAction || fallback.nextBestAction).trim(),
+      followUpQuestion: String(parsed.followUpQuestion || fallback.followUpQuestion).trim(),
+      confidence: clamp(Number(parsed.confidence ?? fallback.confidence), 0, 1),
+      riskLevel,
+      provider: "gemini-live",
+    };
+  } catch (_error) {
+    return fallback;
+  }
 }
 
 function extractSvg(text) {

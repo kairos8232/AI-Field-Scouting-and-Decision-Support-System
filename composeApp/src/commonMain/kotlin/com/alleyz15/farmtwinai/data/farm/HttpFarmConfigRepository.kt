@@ -2,9 +2,14 @@ package com.alleyz15.farmtwinai.data.farm
 
 import com.alleyz15.farmtwinai.data.analysis.resolvedFieldInsightsBaseUrl
 import com.alleyz15.farmtwinai.data.remote.platformHttpClientEngineFactory
+import com.alleyz15.farmtwinai.domain.model.ActionState
+import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.AppMode
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
+import com.alleyz15.farmtwinai.domain.model.ForecastConfidenceTier
 import com.alleyz15.farmtwinai.domain.model.LotSectionDraft
+import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
+import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -45,6 +50,8 @@ class HttpFarmConfigRepository(
                             put("mapQuery", farm.mapQuery)
                             put("totalAreaInput", farm.totalAreaInput)
                             put("mode", farm.mode.name)
+                            put("plantingDate", farm.plantingDate)
+                            put("createdAtEpochMs", farm.createdAtEpochMs)
                             put("boundaryPoints", buildPointsArray(farm.boundaryPoints))
                             put("lots", buildJsonArray {
                                 farm.lots.forEach { lot ->
@@ -56,6 +63,7 @@ class HttpFarmConfigRepository(
                                             put("cropPlan", lot.cropPlan)
                                             put("soilType", lot.soilType)
                                             put("waterAvailability", lot.waterAvailability)
+                                            put("plantingDate", lot.plantingDate.orEmpty())
                                         }
                                     )
                                 }
@@ -69,6 +77,7 @@ class HttpFarmConfigRepository(
             put("mapQuery", draft.mapQuery)
             put("totalAreaInput", draft.totalAreaInput)
             put("mode", draft.mode.name)
+            put("plantingDate", draft.plantingDate)
             put("boundaryPoints", buildPointsArray(draft.boundaryPoints))
             put("lots", buildJsonArray {
                 draft.lots.forEach { lot ->
@@ -80,6 +89,7 @@ class HttpFarmConfigRepository(
                             put("cropPlan", lot.cropPlan)
                             put("soilType", lot.soilType)
                             put("waterAvailability", lot.waterAvailability)
+                            put("plantingDate", lot.plantingDate.orEmpty())
                         }
                     )
                 }
@@ -123,6 +133,42 @@ class HttpFarmConfigRepository(
                             put("recommendation", entry.recommendation)
                             put("rationale", entry.rationale)
                             put("provider", entry.provider)
+                            put("updatedAtEpochMs", entry.updatedAtEpochMs)
+                        }
+                    )
+                }
+            })
+            put("timelineActionDecisionCache", buildJsonArray {
+                draft.timelineActionDecisionCache.forEach { entry ->
+                    add(
+                        buildJsonObject {
+                            put("dayNumber", entry.dayNumber)
+                            put("actionType", entry.actionType.name)
+                            put("state", entry.state.name)
+                            put("updatedAtEpochMs", entry.updatedAtEpochMs)
+                            put("nextBestAction", entry.nextBestAction)
+                            put("followUpQuestion", entry.followUpQuestion)
+                            put("confidence", entry.confidence)
+                            put("riskLevel", entry.riskLevel)
+                            put("provider", entry.provider)
+                        }
+                    )
+                }
+            })
+            put("timelineInsightCache", buildJsonArray {
+                draft.timelineInsightCache.forEach { entry ->
+                    add(
+                        buildJsonObject {
+                            put("dayNumber", entry.dayNumber)
+                            put("recommendedActionText", entry.recommendedActionText)
+                            entry.timelineStatus?.let { put("timelineStatus", it.name) }
+                            put("sourceDayNumber", entry.sourceDayNumber)
+                            put("trend", entry.trend.name)
+                            put("etaDaysMin", entry.etaDaysMin)
+                            put("etaDaysMax", entry.etaDaysMax)
+                            put("confidencePercent", entry.confidencePercent)
+                            put("confidenceTier", entry.confidenceTier.name)
+                            put("isUrgent", entry.isUrgent)
                             put("updatedAtEpochMs", entry.updatedAtEpochMs)
                         }
                     )
@@ -180,6 +226,7 @@ class HttpFarmConfigRepository(
                     cropPlan = lotObj["cropPlan"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     soilType = lotObj["soilType"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                     waterAvailability = lotObj["waterAvailability"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    plantingDate = lotObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 )
             }
 
@@ -198,6 +245,8 @@ class HttpFarmConfigRepository(
                 mapQuery = farmObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 totalAreaInput = farmObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 mode = mode,
+                plantingDate = farmObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                createdAtEpochMs = farmObj["createdAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                 boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
                 lots = farmLots,
             )
@@ -215,6 +264,7 @@ class HttpFarmConfigRepository(
                 cropPlan = lotObj["cropPlan"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 soilType = lotObj["soilType"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 waterAvailability = lotObj["waterAvailability"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                plantingDate = lotObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
             )
         }
 
@@ -233,6 +283,8 @@ class HttpFarmConfigRepository(
                 mapQuery = itemObj["mapQuery"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 totalAreaInput = itemObj["totalAreaInput"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 mode = legacyMode,
+                plantingDate = itemObj["plantingDate"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                createdAtEpochMs = itemObj["createdAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
                 boundaryPoints = if (boundary.size >= 3) boundary else fallbackBoundary,
                 lots = lots,
             )
@@ -290,6 +342,54 @@ class HttpFarmConfigRepository(
             )
         }
 
+        val timelineActionDecisionCache = itemObj["timelineActionDecisionCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
+            val obj = rawEntry.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
+            val actionType = obj["actionType"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { ActionType.valueOf(it) }.getOrNull() }
+                ?: return@mapNotNull null
+            val state = obj["state"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { ActionState.valueOf(it) }.getOrNull() }
+                ?: return@mapNotNull null
+            TimelineActionDecisionCacheEntry(
+                dayNumber = dayNumber,
+                actionType = actionType,
+                state = state,
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+                nextBestAction = obj["nextBestAction"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                followUpQuestion = obj["followUpQuestion"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                confidence = obj["confidence"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+                riskLevel = obj["riskLevel"]?.jsonPrimitive?.contentOrNull ?: "unknown",
+                provider = obj["provider"]?.jsonPrimitive?.contentOrNull ?: "agent-action-tracker-v1",
+            )
+        }
+
+        val timelineInsightCache = itemObj["timelineInsightCache"]?.jsonArray.orEmpty().mapNotNull { rawEntry ->
+            val obj = rawEntry.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
+            val trend = obj["trend"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { RecoveryTrend.valueOf(it) }.getOrNull() }
+                ?: RecoveryTrend.UNKNOWN
+            val confidenceTier = obj["confidenceTier"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { ForecastConfidenceTier.valueOf(it) }.getOrNull() }
+                ?: ForecastConfidenceTier.LOW
+            val timelineStatus = obj["timelineStatus"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { TimelineStatus.valueOf(it) }.getOrNull() }
+            TimelineInsightCacheEntry(
+                dayNumber = dayNumber,
+                recommendedActionText = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                timelineStatus = timelineStatus,
+                sourceDayNumber = obj["sourceDayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: dayNumber,
+                trend = trend,
+                etaDaysMin = obj["etaDaysMin"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1,
+                etaDaysMax = obj["etaDaysMax"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 1,
+                confidencePercent = obj["confidencePercent"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
+                confidenceTier = confidenceTier,
+                isUrgent = obj["isUrgent"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
+            )
+        }
+
         return FarmConfigRemote(
             activeFarmId = activeFarm?.id.orEmpty(),
             farms = resolvedFarms,
@@ -298,11 +398,14 @@ class HttpFarmConfigRepository(
             mapQuery = activeFarm?.mapQuery.orEmpty(),
             totalAreaInput = activeFarm?.totalAreaInput.orEmpty(),
             mode = activeFarm?.mode ?: AppMode.PLANNING,
+            plantingDate = activeFarm?.plantingDate.orEmpty(),
             boundaryPoints = activeFarm?.boundaryPoints.orEmpty(),
             lots = activeFarm?.lots.orEmpty(),
             timelinePhotoCache = timelinePhotoCache,
             timelineStageVisualCache = timelineStageVisualCache,
             timelineAssessmentCache = timelineAssessmentCache,
+            timelineActionDecisionCache = timelineActionDecisionCache,
+            timelineInsightCache = timelineInsightCache,
         )
     }
 
