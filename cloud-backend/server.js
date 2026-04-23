@@ -2685,9 +2685,13 @@ async function generateAiChatReply({ message, history, context }) {
 
   if (!text) {
     const raw = String(lastError instanceof Error ? lastError.message : lastError || "");
-    const issue = raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
-      ? "API key restriction"
-      : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
+    const issue = /API_KEY_INVALID|API key expired/i.test(raw)
+      ? "API key expired or invalid"
+      : raw.includes("API_KEY_IP_ADDRESS_BLOCKED")
+        ? "API key restriction"
+        : /429|RESOURCE_EXHAUSTED|quota exceeded/i.test(raw)
+          ? "Gemini quota exceeded"
+          : (/403|forbidden|permission/i.test(raw) ? "permission restriction" : "temporary backend issue");
     return {
       reply: [
         `Gemini is not reachable right now (${issue}).`,
