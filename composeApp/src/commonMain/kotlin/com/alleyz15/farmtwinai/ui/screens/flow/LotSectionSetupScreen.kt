@@ -493,7 +493,12 @@ fun LotSectionSetupScreen(
                     boundaryArea > 0.0 &&
                     selectedLotArea != null
                 ) {
-                    totalFarmAreaHaValue * (selectedLotArea / boundaryArea)
+                    val computedAreaHa = totalFarmAreaHaValue * (selectedLotArea / boundaryArea)
+                    if (lots.size > 1 && computedAreaHa >= totalFarmAreaHaValue * 0.98) {
+                        totalFarmAreaHaValue / lots.size.toDouble()
+                    } else {
+                        computedAreaHa
+                    }
                 } else {
                     null
                 }
@@ -602,13 +607,11 @@ fun LotSectionSetupScreen(
                             )
                             IconButton(
                                 onClick = {
-                                    val daysAgo = (10..30).random()
-                                    val mockDate = "2026-03-${(31 - daysAgo).coerceIn(1, 31).toString().padStart(2, '0')}"
-                                    onLotPlantingDateChange(selectedLotIndex, mockDate)
+                                    onLotPlantingDateChange(selectedLotIndex, "")
                                 },
                                 modifier = Modifier.padding(top = 8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Mint200.copy(alpha=0.1f))
                             ) {
-                                Text("✨")
+                                Text("×")
                             }
                         }
                     }
@@ -776,13 +779,19 @@ private fun generateMockLots(boundary: List<FarmPoint>, mode: String, count: Int
         else -> listOf(boundary)
     }
 
-    return rawLots.mapNotNull { lot ->
+    val clippedLots = rawLots.mapNotNull { lot ->
         val xMin = lot.minOf { it.x }
         val xMax = lot.maxOf { it.x }
         val yMin = lot.minOf { it.y }
         val yMax = lot.maxOf { it.y }
         val clipped = clipPolygonAgainstRectangle(boundary, xMin, yMin, xMax, yMax)
         if (clipped.size >= 3) clipped else null
+    }
+
+    return if (clippedLots.size >= rawLots.size.coerceAtLeast(1).coerceAtMost(boundary.size)) {
+        clippedLots
+    } else {
+        rawLots
     }
 }
 

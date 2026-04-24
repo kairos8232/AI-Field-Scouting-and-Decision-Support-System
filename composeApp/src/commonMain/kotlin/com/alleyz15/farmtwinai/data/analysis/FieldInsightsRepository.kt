@@ -7,6 +7,7 @@ import com.alleyz15.farmtwinai.domain.model.CurrentWeatherNow
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
 import com.alleyz15.farmtwinai.domain.model.FarmPoint
 import com.alleyz15.farmtwinai.domain.model.KnowledgeBaseReply
+import com.alleyz15.farmtwinai.domain.model.ActionTrackerFollowUp
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
 import com.alleyz15.farmtwinai.domain.model.TimelinePhotoAssessment
@@ -65,4 +66,13 @@ interface FieldInsightsRepository {
         summary: String,
         cropName: String,
     )
+
+    suspend fun trackActionFollowUp(
+        userId: String,
+        dayNumber: Int,
+        cropName: String,
+        issueType: String,
+        actionTaken: String,
+        note: String = "",
+    ): ActionTrackerFollowUp
 }

@@ -8,6 +8,13 @@ Node.js backend for polygon analysis prototype:
 - Supports farmer knowledge-base search with Vertex AI Search (Discovery Engine)
 - Optionally stores each analysis result in Firebase Firestore
 
+## Latest Backend Updates (Apr 2026)
+
+- AI chat fallback now classifies runtime errors from all model attempts (not only the last error), so quota errors are surfaced correctly.
+- Gemini quota fallback message is explicit: daily quota reached, reset after midnight UTC, or upgrade to paid tier.
+- Request parsing now supports both JSON and URL-encoded payloads with `15mb` limit.
+- Large request handling was improved to reduce request-entity-too-large incidents.
+
 ## 1) Deploy To Cloud Run
 
 ### One Source of Truth (Recommended)
@@ -209,6 +216,30 @@ curl -X POST "https://YOUR_CLOUD_RUN_URL/api/knowledge/query" \
   -d '{"query":"best practices for corn pest scouting","pageSize":5}'
 ```
 
+## 2.3) AI Chat Fallback Behavior
+
+Endpoint:
+
+```bash
+POST /api/chat
+```
+
+Fallback classification includes:
+
+- Gemini daily quota reached (429 / quota exceeded)
+- API key issues (invalid/expired)
+- Permission restrictions (403)
+- Temporary service overload (503/high demand)
+
+Quota fallback example:
+
+```text
+Gemini daily quota reached.
+Free tier: 20 requests/day for gemini-2.5-flash
+Try again after midnight UTC (quota resets daily)
+Or upgrade to Gemini API paid tier for unlimited requests
+```
+
 ## 2.2) Bulk Add Knowledge Documents (Vertex AI Search)
 
 If your datastore has only a few documents, search results will stay small even with larger `pageSize`. Use this script to upsert many agronomy documents:
@@ -257,6 +288,142 @@ VERTEX_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
 ```
 
 The script first tries `PATCH .../branches/default_branch/documents/{id}` and, if missing, falls back to `POST .../branches/default_branch/documents?documentId={id}`.
+
+## 2.3) Autonomous Agent APIs
+
+These APIs implement code-first orchestration loops with Firebase Genkit flows in the existing backend.
+
+### A) Scouting Agent Loop
+
+Endpoint:
+
+```bash
+POST /api/agents/scouting-loop
+```
+
+Purpose:
+
+- Analyze uploaded crop photo
+- Decide whether to call knowledge base and weather tools
+- Generate a structured action recommendation
+- Optionally log event to Firestore history
+
+Request (minimum):
+
+```json
+{
+  "dayNumber": 3,
+  "expectedStage": "Vegetative",
+  "cropName": "Corn",
+  "photoMimeType": "image/jpeg",
+  "photoBase64": "..."
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `userMarkedSimilar`
+- `location` or `latitude`/`longitude`
+- `polygon`
+
+### B) Field Insights Orchestrator
+
+Endpoint:
+
+```bash
+POST /api/agents/field-insights-orchestrator
+```
+
+Purpose:
+
+- Sample Earth Engine summary
+- Generate crop recommendations
+- Query knowledge base
+- Include weather context
+- Return structured action brief
+
+Request (minimum):
+
+```json
+{
+  "polygon": [
+    { "x": 0.2, "y": 0.2 },
+    { "x": 0.8, "y": 0.2 },
+    { "x": 0.8, "y": 0.8 }
+  ]
+}
+```
+
+Optional inputs:
+
+- `userId`
+- `targetCrops`
+- `totalFarmAreaHectares`
+- `lotAreaHectares`
+- `location`
+
+### C) Action Tracker Agent
+
+Endpoint:
+
+```bash
+POST /api/agents/action-tracker
+```
+
+Purpose:
+
+- Read recent history events for user
+- Generate follow-up recommendation and question
+- Log follow-up event to Firestore
+
+Request:
+
+```json
+{
+  "userId": "USER_UID",
+  "dayNumber": 3,
+  "cropName": "Corn",
+  "issueType": "leaf blight",
+  "actionTaken": "Applied fungicide",
+  "note": "Sprayed in the evening"
+}
+```
+
+### D) Daily Decision Loop (Composite Genkit Flow)
+
+Endpoint:
+
+```bash
+POST /api/agents/daily-decision-loop
+```
+
+Purpose:
+
+- Run scouting loop first (photo assessment + optional KB/weather + recommendation)
+- Auto-run action tracker based on risk threshold
+- Return combined result for daily decisioning in one call
+
+Request (minimum):
+
+```json
+{
+  "dayNumber": 3,
+  "expectedStage": "Vegetative",
+  "cropName": "Corn",
+  "photoMimeType": "image/jpeg",
+  "photoBase64": "..."
+}
+```
+
+Optional inputs:
+
+- `userId` (required to auto-log and auto-run action tracker)
+- `userMarkedSimilar`
+- `location` or `latitude`/`longitude`
+- `polygon`
+- `issueType`, `actionTaken`, `note`
+- `autoTrackThreshold`: `low` | `medium` | `high` (default `medium`)
 
 ## 3) Firebase Storage Endpoints
 

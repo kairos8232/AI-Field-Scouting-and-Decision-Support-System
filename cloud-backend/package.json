@@ -12,12 +12,15 @@
     "kb:upsert": "node scripts/bulk-upsert-knowledge-docs.mjs"
   },
   "dependencies": {
+    "@genkit-ai/express": "^1.0.0",
+    "@genkit-ai/google-genai": "^1.0.0",
     "@google/earthengine": "^1.7.21",
     "@google/genai": "^0.14.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "firebase-admin": "^13.8.0",
+    "genkit": "^1.0.0",
     "google-auth-library": "^9.14.2"
   }
 }

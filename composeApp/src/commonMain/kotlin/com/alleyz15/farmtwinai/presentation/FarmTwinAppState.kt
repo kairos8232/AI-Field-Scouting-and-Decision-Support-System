@@ -15,11 +15,14 @@ import com.alleyz15.farmtwinai.data.farm.TimelinePhotoCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelineStageVisualCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelinePhotoAssessmentCacheEntry
 import com.alleyz15.farmtwinai.data.farm.TimelineCacheStore
+import com.alleyz15.farmtwinai.data.farm.TimelineActionDecisionCacheEntry
+import com.alleyz15.farmtwinai.data.farm.TimelineInsightCacheEntry
 import com.alleyz15.farmtwinai.data.farm.createTimelineCacheStore
 import com.alleyz15.farmtwinai.data.mock.MockFarmTwinRepository
 import com.alleyz15.farmtwinai.domain.model.AiChatContext
 import com.alleyz15.farmtwinai.domain.model.ActionState
 import com.alleyz15.farmtwinai.domain.model.ActionType
+import com.alleyz15.farmtwinai.domain.model.ActionTrackerFollowUp
 import com.alleyz15.farmtwinai.domain.model.AppMode
 import com.alleyz15.farmtwinai.domain.model.ChatMessage
 import com.alleyz15.farmtwinai.domain.model.FieldInsightReport
@@ -41,7 +44,9 @@ import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
@@ -71,6 +76,13 @@ data class TimelineActionDecision(
     val actionType: ActionType,
     val state: ActionState,
     val updatedAtEpochMs: Long,
+    val followUp: ActionTrackerFollowUp? = null,
+)
+
+data class PendingTimelineFollowUp(
+    val actionDayNumber: Int,
+    val targetDayNumber: Int,
+    val followUp: ActionTrackerFollowUp,
 )
 
 data class StoredFarm(
@@ -80,6 +92,8 @@ data class StoredFarm(
     val mapQuery: String,
     val totalAreaInput: String,
     val mode: AppMode,
+    val plantingDate: String = "",
+    val createdAtEpochMs: Long = 0L,
     val boundaryPoints: List<FarmPoint>,
     val lots: List<LotSectionDraft>,
 )
@@ -137,6 +151,9 @@ class FarmTwinAppState(
         private set
 
     var farmSetupMapQuery by mutableStateOf("")
+        private set
+
+    var farmSetupPlantingDate by mutableStateOf(snapshot.farm.plantingDate)
         private set
 
     var farmSetupSearchTrigger by mutableStateOf(0)
@@ -264,6 +281,8 @@ class FarmTwinAppState(
         private set
 
     var timelineDynamicStatusByDay by mutableStateOf<Map<Int, TimelineStatus>>(emptyMap())
+    var timelineSuggestedActionByDay by mutableStateOf<Map<Int, String>>(emptyMap())
+    var timelineRecoveryForecastByDay by mutableStateOf<Map<Int, TimelineRecoveryForecast>>(emptyMap())
         private set
 
     var timelineActionDecisionByDay by mutableStateOf<Map<Int, TimelineActionDecision>>(emptyMap())
@@ -403,7 +422,15 @@ class FarmTwinAppState(
         snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.let {
             selectedTimelineDay = it
             isLoadingTimelineStageVisual = dayNumber in timelineLoadingStageVisualDays
-            timelineStageVisual = timelineStageVisualByDay[dayNumber]
+            timelineStageVisual = timelineStageVisualByDay[dayNumber].takeIf { visual ->
+                isTimelineStageVisualCompatible(
+                    visual = visual,
+                    dayNumber = dayNumber,
+                    expectedStage = it.expectedStage,
+                    cropName = snapshot.farm.cropName,
+                    farmId = effectiveTimelineFarmId(),
+                )
+            }
             timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
             timelinePhotoAssessment = timelinePhotoAssessmentByDay[dayNumber]
             timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[dayNumber]
@@ -411,7 +438,15 @@ class FarmTwinAppState(
     }
 
     fun loadTimelineStageVisual(dayNumber: Int, expectedStage: String) {
-        timelineStageVisualByDay[dayNumber]?.let {
+        timelineStageVisualByDay[dayNumber]?.takeIf { visual ->
+            isTimelineStageVisualCompatible(
+                visual = visual,
+                dayNumber = dayNumber,
+                expectedStage = expectedStage,
+                cropName = snapshot.farm.cropName,
+                farmId = effectiveTimelineFarmId(),
+            )
+        }?.let {
             timelineStageVisual = it
             timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
             return
@@ -435,11 +470,13 @@ class FarmTwinAppState(
                         cropName = snapshot.farm.cropName,
                     )
                 }
-            }.onSuccess { visual ->
-                    timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to visual)
+                }.onSuccess { visual ->
+                    val farmId = effectiveTimelineFarmId()
+                    val taggedVisual = visual.copy(farmId = farmId)
+                    timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to taggedVisual)
                     lastUpdatedTimelineStageVisualDay = dayNumber
                     timelineStageVisualErrorByDay = timelineStageVisualErrorByDay - dayNumber
-                timelineStageVisual = visual
+                timelineStageVisual = taggedVisual
                     persistTimelineCacheToCloudIfAuthenticated()
             }.onFailure { error ->
                     val message = error.message ?: "Unable to generate expected plant image."
@@ -519,6 +556,10 @@ class FarmTwinAppState(
                     timelineDynamicStatusByDay = timelineDynamicStatusByDay + (
                         dayNumber to deriveTimelineStatus(assessment, userMarkedSimilar)
                     )
+                timelineSuggestedActionByDay = timelineSuggestedActionByDay + (dayNumber to assessment.recommendation)
+                computeRecoveryForecast(dayNumber)?.let { forecast ->
+                    timelineRecoveryForecastByDay = timelineRecoveryForecastByDay + (dayNumber to forecast)
+                }
                 timelinePhotoAssessment = assessment
                     persistTimelineCacheToCloudIfAuthenticated()
             }.onFailure { error ->
@@ -539,6 +580,13 @@ class FarmTwinAppState(
         if (firstPrompt.isNotEmpty()) {
             sendAiConversationMessage(firstPrompt)
         }
+    }
+
+    fun clearAiConversation() {
+        aiConversationMessages = emptyList()
+        aiConversationError = null
+        aiConversationProvider = null
+        isSendingAiConversationMessage = false
     }
 
     fun sendAiConversationMessage(rawMessage: String) {
@@ -585,7 +633,15 @@ class FarmTwinAppState(
                         timestamp = "Now",
                     )
             }.onFailure { error ->
-                aiConversationError = error.message ?: "Unable to get response from Gemini right now. Please retry."
+                aiConversationError = null
+                aiConversationProvider = "gemini-offline-fallback"
+                aiConversationMessages = aiConversationMessages +
+                    ChatMessage(
+                        id = nextAiConversationMessageId(),
+                        sender = MessageSender.ASSISTANT,
+                        content = buildAiUnavailableFallbackReply(cleanMessage),
+                        timestamp = "Now",
+                    )
             }
 
             isSendingAiConversationMessage = false
@@ -671,6 +727,15 @@ class FarmTwinAppState(
         }
     }
 
+    fun updateFarmSetupPlantingDate(value: String) {
+        farmSetupPlantingDate = value
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = value.trim(),
+            ),
+        )
+    }
+
     fun searchFarmSetupAddress() {
         val query = farmSetupAddress.trim()
         if (query.isBlank()) return
@@ -684,6 +749,8 @@ class FarmTwinAppState(
     }
 
     fun continueToBoundaryDrawing() {
+        refreshInheritedPlantingDateForNewSetup()
+
         val latestQuery = farmSetupAddress.trim()
         if (latestQuery.isNotEmpty()) {
             val locationChanged = latestQuery != farmSetupMapQuery
@@ -704,6 +771,23 @@ class FarmTwinAppState(
             farmSetupSearchTrigger = 0
         }
         isFarmMapFrozen = true
+    }
+
+    private fun refreshInheritedPlantingDateForNewSetup() {
+        val currentSetupDate = farmSetupPlantingDate.trim()
+        val inheritedSnapshotDate = snapshot.farm.plantingDate.trim()
+        val isInheritedUntouched = currentSetupDate.isBlank() || currentSetupDate == inheritedSnapshotDate
+        if (!isInheritedUntouched) return
+
+        val today = currentIsoDate()
+        if (today == currentSetupDate) return
+
+        farmSetupPlantingDate = today
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = today,
+            ),
+        )
     }
 
     fun updateLotSections(sections: List<LotSectionDraft>) {
@@ -727,14 +811,21 @@ class FarmTwinAppState(
 
     fun prepareNewFarmDraft() {
         val defaultBoundary = defaultFarmBoundary()
+        val todayPlantingDate = currentIsoDate()
         farmBoundaryPoints = defaultBoundary
         farmSetupFarmName = ""
         farmSetupAddress = ""
         farmSetupMapQuery = farmSetupAddress
+        farmSetupPlantingDate = todayPlantingDate
         farmSetupSearchTrigger = 0
         farmSetupUseCurrentLocationTrigger = 0
         isFarmMapFrozen = false
         lotTotalAreaInput = snapshot.farm.fieldSize
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = todayPlantingDate,
+            ),
+        )
         lotSections = listOf(
             LotSectionDraft(
                 id = "lot-1",
@@ -766,6 +857,7 @@ class FarmTwinAppState(
             farmSetupFarmName = previous.farmName
             farmSetupAddress = previous.address
             farmSetupMapQuery = previous.mapQuery
+            farmSetupPlantingDate = previous.plantingDate
             lotTotalAreaInput = previous.totalAreaInput
             selectedMode = previous.mode
             if (previous.boundaryPoints.size >= 3) {
@@ -798,6 +890,7 @@ class FarmTwinAppState(
         farmSetupFarmName = target.farmName
         farmSetupAddress = target.address
         farmSetupMapQuery = target.mapQuery
+        farmSetupPlantingDate = target.plantingDate
         lotTotalAreaInput = target.totalAreaInput
         selectedMode = target.mode
 
@@ -816,6 +909,7 @@ class FarmTwinAppState(
                 location = target.address.ifBlank { snapshot.farm.location },
                 fieldSize = target.totalAreaInput.ifBlank { snapshot.farm.fieldSize },
                 mode = target.mode,
+                plantingDate = target.plantingDate.ifBlank { snapshot.farm.plantingDate },
             ),
         )
 
@@ -832,6 +926,8 @@ class FarmTwinAppState(
         timelineUploadByDay = emptyMap()
         timelineDynamicStatusByDay = emptyMap()
         timelineActionDecisionByDay = emptyMap()
+        timelineSuggestedActionByDay = emptyMap()
+        timelineRecoveryForecastByDay = emptyMap()
         persistTimelineCacheToLocal()
 
         val userId = authenticatedUser?.userId
@@ -1112,28 +1208,44 @@ class FarmTwinAppState(
 
             if (userId.isNullOrBlank()) {
                 isFarmConfigSyncing = false
-                onComplete(true)
+                withContext(Dispatchers.Main) {
+                    onComplete(true)
+                }
                 return@launch
             }
 
             val draft = buildFarmConfigDraft(userId)
             val success = runCatching {
                 farmConfigRepository.upsertFarmConfig(draft)
-                val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
-                if (latest != null) {
-                    applyRemoteFarmConfig(latest)
+                runCatching {
+                    val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
+                    if (latest != null) {
+                        applyRemoteFarmConfig(latest)
+                    }
                 }
             }.fold(
                 onSuccess = { true },
-                onFailure = {
-                    farmConfigSyncError = it.message ?: "Unable to sync farm setup to cloud."
-                    lotRecommendationError = farmConfigSyncError
-                    false
+                onFailure = { error ->
+                    if (isTransientFarmConfigNetworkError(error)) {
+                        farmConfigSyncError = "Connection unstable. Farm created locally and cloud sync will retry in background."
+                        lotRecommendationError = null
+                        scope.launch {
+                            delay(2_500)
+                            persistFarmConfigSilently()
+                        }
+                        true
+                    } else {
+                        farmConfigSyncError = error.message ?: "Unable to sync farm setup to cloud."
+                        lotRecommendationError = farmConfigSyncError
+                        false
+                    }
                 },
             )
 
             isFarmConfigSyncing = false
-            onComplete(success)
+            withContext(Dispatchers.Main) {
+                onComplete(success)
+            }
         }
     }
 
@@ -1193,13 +1305,10 @@ class FarmTwinAppState(
         val seed = (lot.cropPlan.hashCode() + lot.id.hashCode()).let { kotlin.math.abs(it) }
         
         val exactDays = calculateMockDaysPassed(lot.plantingDate)
-        val mockDay = if (selectedMode == AppMode.PLANNING) {
-            0
-        } else if (lot.plantingDate?.isNotBlank() == true) {
+        val mockDay = if (lot.plantingDate?.isNotBlank() == true) {
             exactDays.coerceAtLeast(0)
         } else {
-            val dayOffset = (seed % 20) - 5
-            (base.currentDay + dayOffset).coerceAtLeast(1)
+            timelineUnlockedMaxDayNumber().coerceAtLeast(1)
         }
         
         val scoreOffset = (seed % 15) - 7
@@ -1253,6 +1362,13 @@ class FarmTwinAppState(
                 updatedAtEpochMs = currentEpochMs(),
             )
         )
+        timelineSuggestedActionByDay = timelineSuggestedActionByDay + (
+            dayNumber to recommendedActionTextForDay(dayNumber)
+        )
+        computeRecoveryForecast(dayNumber)?.let { forecast ->
+            timelineRecoveryForecastByDay = timelineRecoveryForecastByDay + (dayNumber to forecast)
+        }
+        persistTimelineCacheToCloudIfAuthenticated()
 
         val forecast = recoveryForecastForDay(dayNumber)
         val summary = buildString {
@@ -1290,7 +1406,58 @@ class FarmTwinAppState(
                         cropName = snapshot.farm.cropName,
                     )
                 }
+
+                if (actionState == ActionState.DONE) {
+                    runCatching {
+                        fieldInsightsRepository.trackActionFollowUp(
+                            userId = userId,
+                            dayNumber = dayNumber,
+                            cropName = snapshot.farm.cropName,
+                            issueType = defaultActionIssueType(actionType),
+                            actionTaken = actionType.name.lowercase().replace('_', ' '),
+                            note = summary,
+                        )
+                    }.onSuccess { followUp ->
+                        // Store follow-up with action decision for persistent timeline display
+                        timelineActionDecisionByDay = timelineActionDecisionByDay + (
+                            dayNumber to (timelineActionDecisionByDay[dayNumber] ?: TimelineActionDecision(
+                                actionType = actionType,
+                                state = actionState,
+                                updatedAtEpochMs = currentEpochMs(),
+                            )).copy(followUp = followUp)
+                        )
+                        persistTimelineCacheToCloudIfAuthenticated()
+                        val banner = buildString {
+                            if (followUp.followUpQuestion.isNotBlank()) {
+                                append("Follow-up: ")
+                                append(followUp.followUpQuestion)
+                            }
+                            if (followUp.nextBestAction.isNotBlank()) {
+                                if (isNotBlank()) append("  ")
+                                append("Next: ")
+                                append(followUp.nextBestAction)
+                            }
+                        }.ifBlank {
+                            "Follow-up generated. Re-check within 24 hours and upload the next photo."
+                        }
+                        // Keep persistent card only; avoid duplicate transient banner.
+                    }.onFailure {
+                        // Keep Timeline clean; persistent follow-up card is primary surface.
+                    }
+                }
             }
+        }
+    }
+
+    private fun defaultActionIssueType(actionType: ActionType): String {
+        return when (actionType) {
+            ActionType.WATERED -> "water stress"
+            ActionType.IMPROVED_DRAINAGE -> "drainage issue"
+            ActionType.ADJUSTED_FERTILIZER -> "nutrient imbalance"
+            ActionType.APPLIED_PESTICIDE_FUNGICIDE -> "pest or disease pressure"
+            ActionType.PRUNED_AFFECTED_LEAVES -> "leaf damage"
+            ActionType.MONITORED_ONLY -> "monitoring only"
+            ActionType.REPLANTED -> "severe plant loss"
         }
     }
 
@@ -1300,6 +1467,13 @@ class FarmTwinAppState(
 
     fun consumeTimelineActionBanner() {
         timelineActionBannerMessage = null
+    }
+
+    fun clearTimelineActionFollowUp(dayNumber: Int) {
+        val current = timelineActionDecisionByDay[dayNumber] ?: return
+        if (current.followUp == null) return
+        timelineActionDecisionByDay = timelineActionDecisionByDay + (dayNumber to current.copy(followUp = null))
+        persistTimelineCacheToCloudIfAuthenticated()
     }
 
     private fun appendActionRecord(
@@ -1323,25 +1497,38 @@ class FarmTwinAppState(
 
     private fun calculateMockDaysPassed(plantingDate: String?): Int {
         if (plantingDate.isNullOrBlank()) return 0
-        val parts = plantingDate.split("-")
-        if (parts.size != 3) return 0
-        val year = parts[0].toIntOrNull() ?: return 0
-        val month = parts[1].toIntOrNull() ?: return 0
-        val day = parts[2].toIntOrNull() ?: return 0
-        
-        val currentYear = 2026
-        val currentMonth = 4
-        val currentDay = 14
-        
-        val daysInMonths = intArrayOf(0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-        var plantedDayOfYear = day
-        for (i in 1 until month.coerceIn(1, 12)) plantedDayOfYear += daysInMonths[i]
-        
-        var todayDayOfYear = currentDay
-        for (i in 1 until currentMonth) todayDayOfYear += daysInMonths[i]
-        
-        val yearDiff = currentYear - year
-        return (yearDiff * 365) + todayDayOfYear - plantedDayOfYear
+        val plantedEpochDay = isoDateToEpochDay(plantingDate) ?: return 0
+        val todayEpochDay = isoDateToEpochDay(currentIsoDate()) ?: return 0
+        return (todayEpochDay - plantedEpochDay).toInt()
+    }
+
+    private fun isoDateToEpochDay(value: String): Long? {
+        val parts = value.split("-")
+        if (parts.size != 3) return null
+        val year = parts[0].toIntOrNull() ?: return null
+        val month = parts[1].toIntOrNull() ?: return null
+        val day = parts[2].toIntOrNull() ?: return null
+        if (month !in 1..12 || day !in 1..31) return null
+
+        var y = year.toLong()
+        val m = month.toLong()
+        val d = day.toLong()
+        y -= if (m <= 2L) 1L else 0L
+        val era = if (y >= 0L) y / 400L else (y - 399L) / 400L
+        val yoe = y - era * 400L
+        val mp = m + if (m > 2L) -3L else 9L
+        val doy = (153L * mp + 2L) / 5L + d - 1L
+        val doe = yoe * 365L + yoe / 4L - yoe / 100L + doy
+        return era * 146097L + doe - 719468L
+    }
+
+    private fun timelineDateCappedMaxDay(minTimelineDay: Int, maxTimelineDay: Int): Int {
+        val plantingDate = snapshot.farm.plantingDate.trim().ifBlank { farmSetupPlantingDate.trim() }
+        if (plantingDate.isBlank()) return minTimelineDay
+
+        val elapsedDays = calculateMockDaysPassed(plantingDate).coerceAtLeast(0)
+        val cappedByCalendar = minTimelineDay + elapsedDays
+        return cappedByCalendar.coerceIn(minTimelineDay, maxTimelineDay)
     }
 
     private fun nextAiConversationMessageId(): String {
@@ -1364,19 +1551,44 @@ class FarmTwinAppState(
         val totalArea = lotTotalAreaInput.trim().ifBlank { snapshot.farm.fieldSize.trim() }
         val boundary = if (farmBoundaryPoints.size >= 3) farmBoundaryPoints else lotSections.firstOrNull()?.points.orEmpty()
         val lotsCopy = lotSections.map { lot -> lot.copy(points = lot.points.toList()) }
+        val farmId = farmIdentity(farmName = farmName, address = address, mapQuery = mapQuery, lots = lotsCopy)
 
         if (farmName.isBlank() || lotsCopy.isEmpty()) return null
 
         return StoredFarm(
-            id = farmIdentity(farmName = farmName, address = address, mapQuery = mapQuery, lots = lotsCopy),
+            id = farmId,
             farmName = farmName,
             address = address,
             mapQuery = mapQuery,
             totalAreaInput = totalArea,
             mode = selectedMode,
+            plantingDate = farmSetupPlantingDate.trim().ifBlank { snapshot.farm.plantingDate.trim() },
+            createdAtEpochMs = resolveFarmCreatedAtEpochMs(farmId),
             boundaryPoints = boundary,
             lots = lotsCopy,
         )
+    }
+
+    private fun effectiveTimelineFarmId(): String {
+        currentFarmAsStored()?.id?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+
+        val farmName = farmSetupFarmName.trim().ifBlank { snapshot.farm.farmName.trim() }
+        val mapQuery = farmSetupMapQuery.trim()
+        val address = farmSetupAddress.trim().ifBlank {
+            mapQuery.ifBlank { snapshot.farm.location.trim() }
+        }
+        val crop = snapshot.farm.cropName.trim().lowercase()
+
+        if (farmName.isBlank() && address.isBlank()) {
+            return if (crop.isNotBlank()) "timeline::$crop" else "timeline::default"
+        }
+
+        return "timeline::${farmName.lowercase()}::${address.lowercase()}::${crop.ifBlank { "crop" }}"
+    }
+
+    private fun resolveFarmCreatedAtEpochMs(farmId: String): Long {
+        val existing = storedFarms.firstOrNull { it.id == farmId }?.createdAtEpochMs ?: 0L
+        return if (existing > 0L) existing else currentWallClockEpochMs()
     }
 
     private fun storeFarmIfUnique(farm: StoredFarm, exceptId: String? = null) {
@@ -1504,6 +1716,9 @@ class FarmTwinAppState(
             val visual = timelineStageVisualByDay[dayNumber] ?: return@mapNotNull null
             TimelineStageVisualCacheEntry(
                 dayNumber = dayNumber,
+                expectedStage = visual.expectedStage,
+                cropName = visual.cropName,
+                farmId = visual.farmId.ifBlank { effectiveTimelineFarmId() },
                 title = visual.title,
                 description = visual.description,
                 imageDataUrl = visual.imageDataUrl,
@@ -1527,6 +1742,52 @@ class FarmTwinAppState(
             )
         }
 
+        val actionDecisionCache = timelineActionDecisionByDay.mapNotNull { (dayNumber, decision) ->
+            val followUp = decision.followUp ?: return@mapNotNull null
+            TimelineActionDecisionCacheEntry(
+                dayNumber = dayNumber,
+                actionType = decision.actionType,
+                state = decision.state,
+                updatedAtEpochMs = decision.updatedAtEpochMs,
+                nextBestAction = followUp.nextBestAction,
+                followUpQuestion = followUp.followUpQuestion,
+                confidence = followUp.confidence,
+                riskLevel = followUp.riskLevel,
+                provider = followUp.provider,
+            )
+        }
+
+        val timelineInsightCache = (timelineSuggestedActionByDay.keys + timelineRecoveryForecastByDay.keys)
+            .sortedDescending()
+            .mapNotNull { dayNumber ->
+            val recommendation = timelineSuggestedActionByDay[dayNumber].orEmpty()
+            val forecast = timelineRecoveryForecastByDay[dayNumber]
+            if (recommendation.isBlank() && forecast == null) return@mapNotNull null
+
+            val effectiveForecast = forecast ?: TimelineRecoveryForecast(
+                sourceDayNumber = dayNumber,
+                trend = RecoveryTrend.UNKNOWN,
+                etaDaysMin = 1,
+                etaDaysMax = 1,
+                confidencePercent = 0,
+                confidenceTier = ForecastConfidenceTier.LOW,
+                isUrgent = false,
+            )
+            TimelineInsightCacheEntry(
+                dayNumber = dayNumber,
+                recommendedActionText = recommendation,
+                timelineStatus = timelineDynamicStatusByDay[dayNumber],
+                sourceDayNumber = effectiveForecast.sourceDayNumber,
+                trend = effectiveForecast.trend,
+                etaDaysMin = effectiveForecast.etaDaysMin,
+                etaDaysMax = effectiveForecast.etaDaysMax,
+                confidencePercent = effectiveForecast.confidencePercent,
+                confidenceTier = effectiveForecast.confidenceTier,
+                isUrgent = effectiveForecast.isUrgent,
+                updatedAtEpochMs = currentEpochMs(),
+            )
+        }
+
         val farmsForSync = buildList {
             if (activeFarm != null) {
                 add(activeFarm)
@@ -1542,6 +1803,8 @@ class FarmTwinAppState(
                     mapQuery = farm.mapQuery,
                     totalAreaInput = farm.totalAreaInput,
                     mode = farm.mode,
+                    plantingDate = farm.plantingDate,
+                    createdAtEpochMs = farm.createdAtEpochMs,
                     boundaryPoints = farm.boundaryPoints,
                     lots = farm.lots,
                 )
@@ -1556,11 +1819,14 @@ class FarmTwinAppState(
             mapQuery = activeFarm?.mapQuery ?: farmSetupMapQuery.trim(),
             totalAreaInput = activeFarm?.totalAreaInput ?: lotTotalAreaInput.trim(),
             mode = activeFarm?.mode ?: selectedMode,
+            plantingDate = activeFarm?.plantingDate ?: farmSetupPlantingDate.trim(),
             boundaryPoints = activeFarm?.boundaryPoints ?: farmBoundaryPoints,
             lots = activeFarm?.lots ?: lotSections,
             timelinePhotoCache = photoCache,
             timelineStageVisualCache = stageCache,
             timelineAssessmentCache = assessmentCache,
+            timelineActionDecisionCache = actionDecisionCache,
+            timelineInsightCache = timelineInsightCache,
         )
     }
 
@@ -1579,6 +1845,8 @@ class FarmTwinAppState(
                     mapQuery = farm.mapQuery,
                     totalAreaInput = farm.totalAreaInput,
                     mode = farm.mode,
+                    plantingDate = farm.plantingDate,
+                    createdAtEpochMs = farm.createdAtEpochMs,
                     boundaryPoints = farm.boundaryPoints,
                     lots = farm.lots,
                 )
@@ -1601,6 +1869,12 @@ class FarmTwinAppState(
             farmSetupMapQuery = resolvedActive.mapQuery
         } else if (remote.mapQuery.isNotBlank()) {
             farmSetupMapQuery = remote.mapQuery
+        }
+
+        if (!resolvedActive?.plantingDate.isNullOrBlank()) {
+            farmSetupPlantingDate = resolvedActive.plantingDate
+        } else if (remote.plantingDate.isNotBlank()) {
+            farmSetupPlantingDate = remote.plantingDate
         }
 
         if (!resolvedActive?.totalAreaInput.isNullOrBlank()) {
@@ -1629,25 +1903,31 @@ class FarmTwinAppState(
                 location = (resolvedActive?.address ?: remote.address).ifBlank { snapshot.farm.location },
                 fieldSize = (resolvedActive?.totalAreaInput ?: remote.totalAreaInput).ifBlank { snapshot.farm.fieldSize },
                 mode = resolvedActive?.mode ?: remote.mode,
+                plantingDate = (resolvedActive?.plantingDate ?: remote.plantingDate).ifBlank { snapshot.farm.plantingDate },
             ),
         )
 
         if (remote.timelinePhotoCache.isNotEmpty()) {
-            timelineUploadByDay = remote.timelinePhotoCache.associate { entry ->
+            val remoteUploads = remote.timelinePhotoCache.associate { entry ->
                 entry.dayNumber to TimelineUploadCache(
                     photoBase64 = entry.photoBase64,
                     photoMimeType = entry.photoMimeType,
                     updatedAtEpochMs = entry.updatedAtEpochMs,
                 )
             }
+            timelineUploadByDay = mergeUploadsByRecency(
+                local = timelineUploadByDay,
+                remote = remoteUploads,
+            )
         }
 
         if (remote.timelineStageVisualCache.isNotEmpty()) {
             val remoteStages = remote.timelineStageVisualCache.associate { entry ->
                 entry.dayNumber to TimelineStageVisual(
                     dayNumber = entry.dayNumber,
-                    expectedStage = "",
-                    cropName = snapshot.farm.cropName,
+                    expectedStage = entry.expectedStage,
+                    cropName = entry.cropName,
+                    farmId = entry.farmId.ifBlank { resolvedActive?.id.orEmpty() },
                     title = entry.title,
                     description = entry.description,
                     imageDataUrl = entry.imageDataUrl,
@@ -1655,7 +1935,7 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
-            timelineStageVisualByDay = remoteStages.toMutableMap()
+            timelineStageVisualByDay = remoteStages + timelineStageVisualByDay
         }
 
         if (remote.timelineAssessmentCache.isNotEmpty()) {
@@ -1672,7 +1952,51 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }
-            timelinePhotoAssessmentByDay = remoteAssessments.toMutableMap()
+            timelinePhotoAssessmentByDay = remoteAssessments + timelinePhotoAssessmentByDay
+        }
+
+        if (remote.timelineActionDecisionCache.isNotEmpty()) {
+            val remoteDecisions = remote.timelineActionDecisionCache.associate { entry ->
+                entry.dayNumber to TimelineActionDecision(
+                    actionType = entry.actionType,
+                    state = entry.state,
+                    updatedAtEpochMs = entry.updatedAtEpochMs,
+                    followUp = ActionTrackerFollowUp(
+                        nextBestAction = entry.nextBestAction,
+                        followUpQuestion = entry.followUpQuestion,
+                        confidence = entry.confidence,
+                        riskLevel = entry.riskLevel,
+                        provider = entry.provider,
+                    ),
+                )
+            }
+            timelineActionDecisionByDay = mergeActionDecisionsByRecency(
+                local = timelineActionDecisionByDay,
+                remote = remoteDecisions,
+            )
+        }
+
+        if (remote.timelineInsightCache.isNotEmpty()) {
+            val remoteSuggested = remote.timelineInsightCache.associate { entry ->
+                entry.dayNumber to entry.recommendedActionText
+            }
+            val remoteForecasts = remote.timelineInsightCache.associate { entry ->
+                entry.dayNumber to TimelineRecoveryForecast(
+                    sourceDayNumber = entry.sourceDayNumber,
+                    trend = entry.trend,
+                    etaDaysMin = entry.etaDaysMin,
+                    etaDaysMax = entry.etaDaysMax,
+                    confidencePercent = entry.confidencePercent,
+                    confidenceTier = entry.confidenceTier,
+                    isUrgent = entry.isUrgent,
+                )
+            }
+            val remoteStatuses = remote.timelineInsightCache
+                .mapNotNull { entry -> entry.timelineStatus?.let { entry.dayNumber to it } }
+                .toMap()
+            timelineSuggestedActionByDay = remoteSuggested + timelineSuggestedActionByDay
+            timelineRecoveryForecastByDay = remoteForecasts + timelineRecoveryForecastByDay
+            timelineDynamicStatusByDay = remoteStatuses + timelineDynamicStatusByDay
         }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber
@@ -1680,6 +2004,7 @@ class FarmTwinAppState(
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
         timelineStageVisualError = timelineStageVisualErrorByDay[selectedDayNumber]
         timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[selectedDayNumber]
+        refreshSnapshotCurrentDayFromTimeline()
         persistTimelineCacheToLocal()
 
         val activeId = farmIdentity(
@@ -1758,6 +2083,7 @@ class FarmTwinAppState(
                 dayNumber = dayNumber,
                 expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() },
                 title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 imageDataUrl = imageDataUrl,
@@ -1785,6 +2111,63 @@ class FarmTwinAppState(
             )
         }.orEmpty().toMap()
 
+        val decisions = root["timelineActionDecisionCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val actionTypeRaw = obj["actionType"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val stateRaw = obj["state"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val actionType = runCatching { ActionType.valueOf(actionTypeRaw) }.getOrNull() ?: return@mapNotNull null
+            val state = runCatching { ActionState.valueOf(stateRaw) }.getOrNull() ?: return@mapNotNull null
+            val followUpObj = obj["followUp"]?.jsonObject
+            val followUp = followUpObj?.let {
+                ActionTrackerFollowUp(
+                    nextBestAction = it["nextBestAction"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    followUpQuestion = it["followUpQuestion"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    confidence = it["confidence"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+                    riskLevel = it["riskLevel"]?.jsonPrimitive?.contentOrNull ?: "unknown",
+                    provider = it["provider"]?.jsonPrimitive?.contentOrNull ?: "agent-action-tracker-v1",
+                )
+            }
+            dayNumber to TimelineActionDecision(
+                actionType = actionType,
+                state = state,
+                updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.longOrNull ?: 0L,
+                followUp = followUp,
+            )
+        }.orEmpty().toMap()
+
+        val insights = root["timelineInsightCache"]?.jsonArray?.mapNotNull { node ->
+            val obj = node.jsonObject
+            val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val recommendedAction = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty()
+
+            val trend = obj["trend"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { RecoveryTrend.valueOf(it) }.getOrNull() }
+            val confidenceTier = obj["confidenceTier"]?.jsonPrimitive?.contentOrNull
+                ?.let { runCatching { ForecastConfidenceTier.valueOf(it) }.getOrNull() }
+            val forecast = if (trend != null && confidenceTier != null) {
+                TimelineRecoveryForecast(
+                    sourceDayNumber = obj["sourceDayNumber"]?.jsonPrimitive?.intOrNull ?: dayNumber,
+                    trend = trend,
+                    etaDaysMin = obj["etaDaysMin"]?.jsonPrimitive?.intOrNull ?: 1,
+                    etaDaysMax = obj["etaDaysMax"]?.jsonPrimitive?.intOrNull ?: 1,
+                    confidencePercent = obj["confidencePercent"]?.jsonPrimitive?.intOrNull ?: 0,
+                    confidenceTier = confidenceTier,
+                    isUrgent = obj["isUrgent"]?.jsonPrimitive?.booleanOrNull ?: false,
+                )
+            } else {
+                null
+            }
+
+            if (recommendedAction.isBlank() && forecast == null) {
+                null
+            } else {
+                val status = obj["timelineStatus"]?.jsonPrimitive?.contentOrNull
+                    ?.let { runCatching { TimelineStatus.valueOf(it) }.getOrNull() }
+                dayNumber to Triple(recommendedAction, forecast, status)
+            }
+        }.orEmpty().toMap()
+
         if (photos.isNotEmpty()) {
             timelineUploadByDay = photos
         }
@@ -1794,10 +2177,54 @@ class FarmTwinAppState(
         if (assessments.isNotEmpty()) {
             timelinePhotoAssessmentByDay = assessments
         }
+        if (decisions.isNotEmpty()) {
+            timelineActionDecisionByDay = decisions
+        }
+        if (insights.isNotEmpty()) {
+            val suggestedActions = insights
+                .mapValuesNotNull { (_, value) -> value.first.takeIf { it.isNotBlank() } }
+            val forecasts = insights
+                .mapValuesNotNull { (_, value) -> value.second }
+            val statuses = insights
+                .mapValuesNotNull { (_, value) -> value.third }
+
+            if (suggestedActions.isNotEmpty()) {
+                timelineSuggestedActionByDay = suggestedActions
+            }
+            if (forecasts.isNotEmpty()) {
+                timelineRecoveryForecastByDay = forecasts
+            }
+            if (statuses.isNotEmpty()) {
+                timelineDynamicStatusByDay = statuses
+            }
+        }
 
         val selectedDayNumber = selectedTimelineDay.dayNumber
         timelineStageVisual = timelineStageVisualByDay[selectedDayNumber]
         timelinePhotoAssessment = timelinePhotoAssessmentByDay[selectedDayNumber]
+        refreshSnapshotCurrentDayFromTimeline()
+    }
+
+    private fun isTimelineStageVisualCompatible(
+        visual: TimelineStageVisual?,
+        dayNumber: Int,
+        expectedStage: String,
+        cropName: String,
+        farmId: String,
+    ): Boolean {
+        if (visual == null || visual.dayNumber != dayNumber) return false
+
+        val cachedExpectedStage = visual.expectedStage.trim()
+        val cachedCropName = visual.cropName.trim()
+        val cachedFarmId = visual.farmId.trim()
+
+        if (cachedExpectedStage.isBlank() || cachedCropName.isBlank() || cachedFarmId.isBlank()) {
+            return false
+        }
+
+        return cachedExpectedStage.equals(expectedStage.trim(), ignoreCase = true) &&
+            cachedCropName.equals(cropName.trim(), ignoreCase = true) &&
+            cachedFarmId.equals(farmId.trim(), ignoreCase = true)
     }
 
     private fun persistTimelineCacheToLocal() {
@@ -1833,6 +2260,7 @@ class FarmTwinAppState(
                         put("dayNumber", dayNumber)
                         put("expectedStage", visual.expectedStage)
                         put("cropName", visual.cropName)
+                        put("farmId", visual.farmId.ifBlank { effectiveTimelineFarmId() })
                         put("title", visual.title)
                         put("description", visual.description)
                         put("imageDataUrl", visual.imageDataUrl)
@@ -1858,6 +2286,55 @@ class FarmTwinAppState(
                         })
                     }
             })
+            put("timelineActionDecisionCache", buildJsonArray {
+                timelineActionDecisionByDay.entries
+                    .sortedByDescending { it.key }
+                    .take(21)
+                    .forEach { (dayNumber, decision) ->
+                        add(buildJsonObject {
+                            put("dayNumber", dayNumber)
+                            put("actionType", decision.actionType.name)
+                            put("state", decision.state.name)
+                            put("updatedAtEpochMs", decision.updatedAtEpochMs)
+                            decision.followUp?.let { followUp ->
+                                put("followUp", buildJsonObject {
+                                    put("nextBestAction", followUp.nextBestAction)
+                                    put("followUpQuestion", followUp.followUpQuestion)
+                                    put("confidence", followUp.confidence)
+                                    put("riskLevel", followUp.riskLevel)
+                                    put("provider", followUp.provider)
+                                })
+                            }
+                        })
+                    }
+            })
+            put("timelineInsightCache", buildJsonArray {
+                (timelineSuggestedActionByDay.keys + timelineRecoveryForecastByDay.keys)
+                    .sortedDescending()
+                    .take(21)
+                    .forEach { dayNumber ->
+                        val recommendation = timelineSuggestedActionByDay[dayNumber].orEmpty()
+                        val forecast = timelineRecoveryForecastByDay[dayNumber]
+                        if (recommendation.isBlank() && forecast == null) return@forEach
+
+                        add(buildJsonObject {
+                            put("dayNumber", dayNumber)
+                            if (recommendation.isNotBlank()) {
+                                put("recommendedActionText", recommendation)
+                            }
+                            timelineDynamicStatusByDay[dayNumber]?.let { put("timelineStatus", it.name) }
+                            if (forecast != null) {
+                                put("sourceDayNumber", forecast.sourceDayNumber)
+                                put("trend", forecast.trend.name)
+                                put("etaDaysMin", forecast.etaDaysMin)
+                                put("etaDaysMax", forecast.etaDaysMax)
+                                put("confidencePercent", forecast.confidencePercent)
+                                put("confidenceTier", forecast.confidenceTier.name)
+                                put("isUrgent", forecast.isUrgent)
+                            }
+                        })
+                    }
+            })
         }
 
         timelineCacheStore.writeCacheJson(payload.toString())
@@ -1872,9 +2349,119 @@ class FarmTwinAppState(
         }
     }
 
+    private fun isTransientFarmConfigNetworkError(error: Throwable): Boolean {
+        val message = error.message.orEmpty().lowercase()
+        return message.contains("socket timeout") ||
+            message.contains("timed out") ||
+            message.contains("network connection was lost") ||
+            message.contains("nsurlerrordomain code=-1005") ||
+            message.contains("connection reset") ||
+            message.contains("connection abort") ||
+            message.contains("temporary failure")
+    }
+
     private fun currentEpochMs(): Long {
         cacheUpdateSequence += 1L
         return cacheUpdateSequence
+    }
+
+    private fun currentIsoDate(): String {
+        val nowEpochMillis = currentWallClockEpochMs()
+        val offsetMillis = localUtcOffsetMinutes(nowEpochMillis).toLong() * 60_000L
+        return epochMillisToIsoDateUtc(nowEpochMillis + offsetMillis)
+    }
+
+    private fun currentWallClockEpochMs(): Long = wallClockEpochMillis()
+
+    private fun epochMillisToIsoDateUtc(epochMillis: Long): String {
+        val epochDays = epochMillis / 86_400_000L
+        var z = epochDays + 719468L
+        val era = if (z >= 0L) z / 146097L else (z - 146096L) / 146097L
+        val doe = z - era * 146097L
+        val yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L
+        var y = yoe + era * 400L
+        val doy = doe - (365L * yoe + yoe / 4L - yoe / 100L)
+        val mp = (5L * doy + 2L) / 153L
+        val d = doy - (153L * mp + 2L) / 5L + 1L
+        val m = mp + if (mp < 10L) 3L else -9L
+        if (m <= 2L) y += 1L
+
+        val year = y.toString().padStart(4, '0')
+        val month = m.toString().padStart(2, '0')
+        val day = d.toString().padStart(2, '0')
+        return "$year-$month-$day"
+    }
+
+    private fun refreshSnapshotCurrentDayFromTimeline() {
+        val derivedDay = timelineUnlockedMaxDayNumber().coerceAtLeast(1)
+        if (snapshot.cropSummary.currentDay != derivedDay) {
+            snapshot = snapshot.copy(
+                cropSummary = snapshot.cropSummary.copy(currentDay = derivedDay)
+            )
+        }
+    }
+
+    private fun mergeUploadsByRecency(
+        local: Map<Int, TimelineUploadCache>,
+        remote: Map<Int, TimelineUploadCache>,
+    ): Map<Int, TimelineUploadCache> {
+        if (local.isEmpty()) return remote
+        if (remote.isEmpty()) return local
+        val merged = remote.toMutableMap()
+        local.forEach { (day, localValue) ->
+            val remoteValue = merged[day]
+            if (remoteValue == null || localValue.updatedAtEpochMs >= remoteValue.updatedAtEpochMs) {
+                merged[day] = localValue
+            }
+        }
+        return merged
+    }
+
+    private fun mergeActionDecisionsByRecency(
+        local: Map<Int, TimelineActionDecision>,
+        remote: Map<Int, TimelineActionDecision>,
+    ): Map<Int, TimelineActionDecision> {
+        if (local.isEmpty()) return remote
+        if (remote.isEmpty()) return local
+        val merged = remote.toMutableMap()
+        local.forEach { (day, localValue) ->
+            val remoteValue = merged[day]
+            if (remoteValue == null || localValue.updatedAtEpochMs >= remoteValue.updatedAtEpochMs) {
+                merged[day] = localValue
+            }
+        }
+        return merged
+    }
+
+    private fun buildAiUnavailableFallbackReply(latestMessage: String): String {
+        val normalized = latestMessage.lowercase()
+        val hint = when {
+            "pest" in normalized || "insect" in normalized || "worm" in normalized ->
+                "Inspect 10 random plants now, isolate hotspots, and prepare targeted control instead of blanket spraying."
+            "water" in normalized || "irrig" in normalized || "dry" in normalized ->
+                "Check root-zone moisture first. Water only if topsoil is dry at 5-8 cm depth to avoid overwatering stress."
+            "disease" in normalized || "fung" in normalized || "blight" in normalized ->
+                "Remove heavily affected leaves, improve airflow, and avoid late-evening overhead watering today."
+            else ->
+                "Follow the latest timeline recommendation, then upload a new crop photo after 24 hours for re-evaluation."
+        }
+
+        return buildString {
+            append("I could not reach Gemini right now, so here is safe fallback guidance.\n")
+            append("1) ")
+            append(hint)
+            append("\n2) Document what you observe (leaf color, spots, wilting, soil moisture).")
+            append("\n3) Re-open AI Chat shortly, or use Knowledge Base for source-backed references.")
+        }
+    }
+
+    private inline fun <K, V, R : Any> Map<K, V>.mapValuesNotNull(transform: (Map.Entry<K, V>) -> R?): Map<K, R> {
+        val result = LinkedHashMap<K, R>()
+        for (entry in entries) {
+            val mapped = transform(entry) ?: continue
+            result[entry.key] = mapped
+        }
+        return result
     }
 
     private fun clearLotRecommendationState() {
@@ -1891,8 +2478,14 @@ class FarmTwinAppState(
     }
 
     fun recommendedActionTextForDay(dayNumber: Int): String {
-        return timelinePhotoAssessmentByDay[dayNumber]?.recommendation
+        val recommendation = timelineSuggestedActionByDay[dayNumber]
+            ?: timelinePhotoAssessmentByDay[dayNumber]?.recommendation
             ?: snapshot.cropSummary.latestRecommendation
+
+        if (recommendation.contains("mock", ignoreCase = true) || recommendation.contains("fallback", ignoreCase = true)) {
+            return "Run photo comparison to generate the latest AI recommendation."
+        }
+        return recommendation
     }
 
     fun defaultActionTypeForDay(dayNumber: Int): ActionType {
@@ -1916,26 +2509,55 @@ class FarmTwinAppState(
         return timelineActionDecisionByDay[dayNumber]
     }
 
+    private fun followUpTargetDayForActionDay(actionDayNumber: Int): Int {
+        val maxTimelineDay = snapshot.timeline.maxOfOrNull { it.dayNumber } ?: (actionDayNumber + 1)
+        return (actionDayNumber + 1).coerceAtMost(maxTimelineDay)
+    }
+
+    fun followUpForTimelineDay(dayNumber: Int): ActionTrackerFollowUp? {
+        if (dayNumber <= 1) return null
+        return timelineActionDecisionByDay[dayNumber - 1]?.followUp
+    }
+
+    fun followUpSourceActionDayForTimelineDay(dayNumber: Int): Int? {
+        if (dayNumber <= 1) return null
+        return timelineActionDecisionByDay[dayNumber - 1]
+            ?.followUp
+            ?.let { dayNumber - 1 }
+    }
+
+    fun clearTimelineFollowUpForTimelineDay(dayNumber: Int) {
+        val sourceDay = followUpSourceActionDayForTimelineDay(dayNumber) ?: return
+        clearTimelineActionFollowUp(sourceDay)
+    }
+
+    fun latestPendingTimelineFollowUp(): PendingTimelineFollowUp? {
+        val latest = timelineActionDecisionByDay.entries
+            .mapNotNull { (actionDayNumber, decision) ->
+                decision.followUp?.let { followUp ->
+                    PendingTimelineFollowUp(
+                        actionDayNumber = actionDayNumber,
+                        targetDayNumber = followUpTargetDayForActionDay(actionDayNumber),
+                        followUp = followUp,
+                    )
+                }
+            }
+            .maxByOrNull { it.targetDayNumber }
+
+        return latest
+    }
+
     fun hasAssessmentForDay(dayNumber: Int): Boolean {
         return timelinePhotoAssessmentByDay[dayNumber] != null
     }
 
     fun timelineUnlockedMaxDayNumber(): Int {
-        val minTimelineDay = snapshot.timeline.minOfOrNull { it.dayNumber } ?: 0
+        val minTimelineDay = snapshot.timeline.minOfOrNull { it.dayNumber } ?: 1
         val maxTimelineDay = snapshot.timeline.maxOfOrNull { it.dayNumber } ?: minTimelineDay
-        val latestCheckedInDay = listOfNotNull(
-            timelineUploadByDay.keys.maxOrNull(),
-            timelinePhotoAssessmentByDay.keys.maxOrNull(),
-            timelineActionDecisionByDay.keys.maxOrNull(),
-        ).maxOrNull()
-
-        val unlocked = if (latestCheckedInDay == null) {
-            minTimelineDay
-        } else {
-            (latestCheckedInDay + 1).coerceAtMost(maxTimelineDay)
-        }
-
-        return unlocked.coerceAtLeast(minTimelineDay)
+        return timelineDateCappedMaxDay(
+            minTimelineDay = minTimelineDay,
+            maxTimelineDay = maxTimelineDay,
+        )
     }
 
     fun clearTimelineUploadedPhoto(dayNumber: Int) {
@@ -1943,6 +2565,8 @@ class FarmTwinAppState(
         timelinePhotoAssessmentByDay = timelinePhotoAssessmentByDay - dayNumber
         timelinePhotoAssessmentErrorByDay = timelinePhotoAssessmentErrorByDay - dayNumber
         timelineDynamicStatusByDay = timelineDynamicStatusByDay - dayNumber
+        timelineSuggestedActionByDay = timelineSuggestedActionByDay - dayNumber
+        timelineRecoveryForecastByDay = timelineRecoveryForecastByDay - dayNumber
 
         if (selectedTimelineDay.dayNumber == dayNumber) {
             timelinePhotoAssessment = null
@@ -1953,6 +2577,11 @@ class FarmTwinAppState(
     }
 
     fun recoveryForecastForDay(dayNumber: Int): TimelineRecoveryForecast? {
+        timelineRecoveryForecastByDay[dayNumber]?.let { return it }
+        return computeRecoveryForecast(dayNumber)
+    }
+
+    private fun computeRecoveryForecast(dayNumber: Int): TimelineRecoveryForecast? {
         val assessedDays = timelinePhotoAssessmentByDay.keys
             .filter { it <= dayNumber }
             .sorted()

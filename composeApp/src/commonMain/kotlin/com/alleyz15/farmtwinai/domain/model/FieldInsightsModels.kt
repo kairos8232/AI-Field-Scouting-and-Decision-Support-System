@@ -28,6 +28,7 @@ data class TimelineStageVisual(
     val dayNumber: Int,
     val expectedStage: String,
     val cropName: String,
+    val farmId: String,
     val title: String,
     val description: String,
     val imageDataUrl: String,
@@ -73,5 +74,13 @@ data class CurrentWeatherNow(
     val temperatureC: Double,
     val condition: String,
     val icon: String,
+    val provider: String,
+)
+
+data class ActionTrackerFollowUp(
+    val nextBestAction: String,
+    val followUpQuestion: String,
+    val confidence: Double,
+    val riskLevel: String,
     val provider: String,
 )
