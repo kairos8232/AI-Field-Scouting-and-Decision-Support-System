@@ -369,11 +369,18 @@ fun TimelineScreen(
                             ) {
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     val imageDataUrl = stageVisual?.imageDataUrl
-                                    if (!imageDataUrl.isNullOrBlank()) {
+                                    val isLegacySvgFallback = imageDataUrl?.startsWith("data:image/svg+xml", ignoreCase = true) == true
+                                    if (!imageDataUrl.isNullOrBlank() && !isLegacySvgFallback) {
                                         PlatformDataUrlImage(dataUrl = imageDataUrl, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)))
                                     } else {
                                         if (isLoadingStageVisual) {
                                             CircularProgressIndicator(color = Mint200, modifier = Modifier.size(24.dp))
+                                        } else if (isLegacySvgFallback) {
+                                            Text(
+                                                "Legacy fallback image. Regenerate for photoreal AI image.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                                            )
                                         } else {
                                             Text("No AI image", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f))
                                         }

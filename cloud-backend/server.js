@@ -312,7 +312,11 @@ app.get("/api/farm-config", async (req, res) => {
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache)),
+      userId,
+      activeFarmId: activeFarm?.id || activeFarmId,
+    });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
     const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
     const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
@@ -381,7 +385,11 @@ app.get("/api/farm-config/latest", async (req, res) => {
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache)),
+      userId,
+      activeFarmId: activeFarm?.id || activeFarmId,
+    });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
     const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
     const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
@@ -1229,12 +1237,28 @@ async function materializeTimelineStageVisualCache({ entries, userId, activeFarm
   const materialized = [];
   for (const entry of entries) {
     const imageDataUrl = String(entry?.imageDataUrl || "").trim();
-    if (!imageDataUrl.startsWith("data:")) {
-      materialized.push(entry);
+    const imageStoragePath = String(entry?.imageStoragePath || "").trim();
+    if (imageStoragePath) {
+      const signedUrl = await signStorageObjectPath(bucket, imageStoragePath);
+      materialized.push({
+        ...entry,
+        farmId: String(entry?.farmId || activeFarmId || "").trim(),
+        imageStoragePath,
+        imageDataUrl: signedUrl || imageDataUrl,
+      });
       continue;
     }
 
-    const uploaded = await uploadStageVisualDataUrl({
+    if (!imageDataUrl.startsWith("data:")) {
+      materialized.push({
+        ...entry,
+        farmId: String(entry?.farmId || activeFarmId || "").trim(),
+        imageStoragePath: imageDataUrl,
+      });
+      continue;
+    }
+
+    const uploadedPath = await uploadStageVisualDataUrl({
       bucket,
       dataUrl: imageDataUrl,
       userId,
@@ -1243,10 +1267,16 @@ async function materializeTimelineStageVisualCache({ entries, userId, activeFarm
       updatedAtEpochMs: entry.updatedAtEpochMs,
     });
 
+    if (!uploadedPath) {
+      continue;
+    }
+
+    const signedUrl = await signStorageObjectPath(bucket, uploadedPath);
     materialized.push({
       ...entry,
       farmId: String(entry?.farmId || activeFarmId || "").trim(),
-      imageDataUrl: uploaded || imageDataUrl,
+      imageStoragePath: uploadedPath,
+      imageDataUrl: signedUrl,
     });
   }
 
@@ -1276,7 +1306,21 @@ async function uploadStageVisualDataUrl({ bucket, dataUrl, userId, activeFarmId,
         cacheControl: "public, max-age=31536000",
       },
     });
+    return objectPath;
+  } catch (_error) {
+    return "";
+  }
+}
 
+async function signStorageObjectPath(bucket, objectPath) {
+  const path = String(objectPath || "").trim();
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+
+  try {
+    const file = bucket.file(path);
     const [signedUrl] = await file.getSignedUrl({
       action: "read",
       expires: "2100-01-01",
@@ -1767,6 +1811,7 @@ function normalizeTimelinePhotoCache(input) {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !photoBase64) return null;
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         photoBase64,
         photoMimeType,
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
@@ -1783,16 +1828,17 @@ function normalizeTimelineStageVisualCache(input) {
     .map((raw) => {
       const dayNumber = Number(raw?.dayNumber);
       const imageDataUrl = String(raw?.imageDataUrl || "").trim();
-      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageDataUrl) return null;
-      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      const imageStoragePath = String(raw?.imageStoragePath || imageDataUrl || "").trim();
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageStoragePath) return null;
       return {
         dayNumber: Math.trunc(dayNumber),
         farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl,
+        imageStoragePath,
         provider: String(raw?.provider || "").trim(),
-        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+        updatedAtEpochMs: Number.isFinite(Number(raw?.updatedAtEpochMs)) ? Math.trunc(Number(raw?.updatedAtEpochMs)) : Date.now(),
       };
     })
     .filter(Boolean)
@@ -1808,9 +1854,8 @@ function compactTimelineStageVisualCache(input) {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
 
       const imageDataUrl = String(raw?.imageDataUrl || "").trim();
-      const compactImageDataUrl = imageDataUrl.startsWith("data:") || (imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048)
-        ? imageDataUrl
-        : imageDataUrl;
+      const imageStoragePath = String(raw?.imageStoragePath || imageDataUrl || "").trim();
+      if (!imageStoragePath || imageStoragePath.startsWith("data:")) return null;
 
       const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
 
@@ -1819,7 +1864,7 @@ function compactTimelineStageVisualCache(input) {
         farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
-        imageDataUrl: compactImageDataUrl,
+        imageStoragePath,
         provider: String(raw?.provider || "").trim(),
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
       };
@@ -1843,6 +1888,7 @@ function normalizeTimelineAssessmentCache(input) {
         dayNumber: Math.trunc(dayNumber),
         expectedStage: String(raw?.expectedStage || "").trim(),
         cropName: String(raw?.cropName || "").trim(),
+        farmId: String(raw?.farmId || "").trim(),
         similarityScore: Number.isFinite(similarityScore) ? similarityScore : 0,
         isSimilar: Boolean(raw?.isSimilar),
         observedStage: String(raw?.observedStage || "").trim(),
@@ -1873,6 +1919,7 @@ function normalizeTimelineActionDecisionCache(input) {
 
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         actionType,
         state,
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
@@ -1906,6 +1953,7 @@ function normalizeTimelineInsightCache(input) {
 
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         recommendedActionText: String(raw?.recommendedActionText || "").trim(),
         timelineStatus: allowedStatuses.has(timelineStatusRaw) ? timelineStatusRaw : null,
         sourceDayNumber: Number.isFinite(sourceDayNumber) ? Math.trunc(sourceDayNumber) : Math.trunc(dayNumber),
@@ -2381,7 +2429,7 @@ function safeParseJsonObject(text) {
 
 async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName }) {
   const prompt = [
-    "Generate a photorealistic close-up crop growth photo for stage monitoring.",
+    "Generate a highly photorealistic close-up crop growth photo for stage monitoring.",
     `Crop: ${cropName}`,
     `Expected stage: ${expectedStage}`,
     `Day number: ${dayNumber}`,
@@ -2394,7 +2442,7 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
     "No people, no machinery, no watermarks.",
   ].join("\n");
 
-  const title = `${cropName} - ${expectedStage}`;
+  const title = `AI-generated ${cropName} - ${expectedStage}`;
   const description = `AI expected morphology for Day ${dayNumber}. Compare leaf/stem/reproductive structures with your real plant photo.`;
 
   if (VERTEX_IMAGE_ENABLED && isVertexConfigured()) {
@@ -2416,31 +2464,11 @@ async function generateTimelineStageVisual({ dayNumber, expectedStage, cropName 
           error instanceof Error ? error.message : String(error)
         }`
       );
-      const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
-      return {
-        dayNumber,
-        expectedStage,
-        cropName,
-        title,
-        description,
-        imageDataUrl: svgToDataUrl(svg),
-        prompt,
-        provider: "vertex-imagen-fallback-svg",
-      };
+      throw new Error("Photorealistic AI image generation is temporarily unavailable. Please regenerate in a moment.");
     }
   }
 
-  const svg = fallbackStageSvg({ cropName, expectedStage, dayNumber });
-  return {
-    dayNumber,
-    expectedStage,
-    cropName,
-    title,
-    description,
-    imageDataUrl: svgToDataUrl(svg),
-    prompt,
-    provider: "timeline-fallback-svg",
-  };
+  throw new Error("Photorealistic AI image generation is not configured on the server.");
 }
 
 function svgToDataUrl(svgText) {
@@ -3393,14 +3421,42 @@ function fallbackStageSvg({ cropName, expectedStage, dayNumber }) {
   const crop = String(cropName || "Crop").replace(/[<>&]/g, "");
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="420" viewBox="0 0 640 420">
-  <rect width="640" height="420" fill="#f4f8f2" rx="20"/>
-  <rect x="0" y="300" width="640" height="120" fill="#d9ead3"/>
-  <path d="M320 300 C300 255, 300 210, 320 165 C340 210, 340 255, 320 300" fill="#4f9f59"/>
-  <path d="M320 235 C255 220, 230 180, 220 140 C275 150, 305 175, 320 205" fill="#72bf78"/>
-  <path d="M320 225 C385 210, 410 170, 420 130 C365 140, 335 165, 320 195" fill="#72bf78"/>
-  <circle cx="320" cy="145" r="16" fill="#ffd166"/>
-  <text x="28" y="44" font-family="Arial, sans-serif" font-size="30" fill="#1d3b24" font-weight="700">${crop} - Day ${dayNumber}</text>
-  <text x="28" y="80" font-family="Arial, sans-serif" font-size="24" fill="#345f3e">Expected stage: ${stage}</text>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fef4d8"/>
+      <stop offset="55%" stop-color="#d7efe0"/>
+      <stop offset="100%" stop-color="#b8d9bd"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="30%" r="40%">
+      <stop offset="0%" stop-color="#fff7cf" stop-opacity="1"/>
+      <stop offset="55%" stop-color="#ffd86b" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#ffd86b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d7c79a"/>
+      <stop offset="100%" stop-color="#b79d6f"/>
+    </linearGradient>
+    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+  <rect width="640" height="420" fill="url(#sky)" rx="20"/>
+  <ellipse cx="150" cy="90" rx="180" ry="120" fill="url(#sun)" filter="url(#blur)"/>
+  <path d="M0 280 C110 230, 210 250, 320 224 C420 200, 505 168, 640 192 L640 420 L0 420 Z" fill="url(#soil)" opacity="0.92"/>
+  <path d="M35 318 C115 280, 190 290, 260 265 C330 240, 400 195, 565 170" fill="none" stroke="#7bb26c" stroke-width="10" stroke-linecap="round" opacity="0.88"/>
+  <path d="M50 350 C130 320, 200 325, 270 304 C350 280, 430 245, 595 220" fill="none" stroke="#8bc87d" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
+  <g transform="translate(260 150)">
+    <ellipse cx="52" cy="128" rx="118" ry="26" fill="#92b36e" opacity="0.28" filter="url(#blur)"/>
+    <path d="M55 224 C50 190, 50 162, 56 127 C62 160, 64 190, 55 224" fill="#5f9850"/>
+    <path d="M55 150 C5 148, -8 123, 4 92 C26 98, 47 115, 58 135" fill="#73c06d"/>
+    <path d="M56 147 C104 142, 126 115, 138 86 C112 92, 84 109, 60 132" fill="#69b85f"/>
+    <path d="M54 168 C29 156, 17 137, 14 112 C34 117, 50 128, 58 145" fill="#4f9a46" opacity="0.95"/>
+    <circle cx="57" cy="80" r="7" fill="#ffd765"/>
+    <ellipse cx="56" cy="224" rx="34" ry="12" fill="#3c6b35" opacity="0.25" filter="url(#blur)"/>
+  </g>
+  <rect x="24" y="28" width="250" height="54" rx="16" fill="#ffffff" fill-opacity="0.66"/>
+  <text x="42" y="53" font-family="Arial, sans-serif" font-size="22" fill="#1d3b24" font-weight="700">AI-generated ${crop} - Day ${dayNumber}</text>
+  <text x="42" y="74" font-family="Arial, sans-serif" font-size="16" fill="#33583a">Expected stage: ${stage}</text>
 </svg>
 `.trim();
 }

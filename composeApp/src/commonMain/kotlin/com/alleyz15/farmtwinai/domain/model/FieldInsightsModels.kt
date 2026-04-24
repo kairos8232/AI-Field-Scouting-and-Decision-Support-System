@@ -32,6 +32,7 @@ data class TimelineStageVisual(
     val title: String,
     val description: String,
     val imageDataUrl: String,
+    val imageStoragePath: String = "",
     val prompt: String,
     val provider: String,
 )
