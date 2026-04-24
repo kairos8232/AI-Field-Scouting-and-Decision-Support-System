@@ -12,6 +12,8 @@ import com.alleyz15.farmtwinai.domain.model.RecoveryTrend
 import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -20,6 +22,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -35,6 +38,13 @@ class HttpFarmConfigRepository(
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: String = resolvedFieldInsightsBaseUrl(),
 ) : FarmConfigRepository {
+
+    companion object {
+        private const val FARM_CONFIG_REQUEST_TIMEOUT_MS = 120_000L
+        private const val FARM_CONFIG_SOCKET_TIMEOUT_MS = 120_000L
+        private const val FARM_CONFIG_MAX_ATTEMPTS = 3
+        private const val FARM_CONFIG_RETRY_DELAY_MS = 1_000L
+    }
 
     override suspend fun upsertFarmConfig(draft: FarmConfigDraft) {
         val payload = buildJsonObject {
@@ -176,9 +186,15 @@ class HttpFarmConfigRepository(
             })
         }
 
-        val response = client.post("${baseUrl.trimEnd('/')}/farm-config") {
-            contentType(ContentType.Application.Json)
-            setBody(payload.toString())
+        val response = withTransientNetworkRetry {
+            client.post("${baseUrl.trimEnd('/')}/farm-config") {
+                contentType(ContentType.Application.Json)
+                setBody(payload.toString())
+                timeout {
+                    requestTimeoutMillis = FARM_CONFIG_REQUEST_TIMEOUT_MS
+                    socketTimeoutMillis = FARM_CONFIG_SOCKET_TIMEOUT_MS
+                }
+            }
         }
 
         if (!response.status.isSuccess()) {
@@ -193,8 +209,14 @@ class HttpFarmConfigRepository(
     }
 
     override suspend fun fetchLatestFarmConfig(userId: String): FarmConfigRemote? {
-        val response = client.get("${baseUrl.trimEnd('/')}/farm-config/latest") {
-            parameter("userId", userId)
+        val response = withTransientNetworkRetry {
+            client.get("${baseUrl.trimEnd('/')}/farm-config/latest") {
+                parameter("userId", userId)
+                timeout {
+                    requestTimeoutMillis = FARM_CONFIG_REQUEST_TIMEOUT_MS
+                    socketTimeoutMillis = FARM_CONFIG_SOCKET_TIMEOUT_MS
+                }
+            }
         }
 
         if (!response.status.isSuccess()) {
@@ -457,5 +479,38 @@ class HttpFarmConfigRepository(
         }
 
         return "Unable to $operation: HTTP $code at $endpoint."
+    }
+
+    private suspend fun <T> withTransientNetworkRetry(block: suspend () -> T): T {
+        var attempt = 0
+        var lastError: Throwable? = null
+
+        while (attempt < FARM_CONFIG_MAX_ATTEMPTS) {
+            try {
+                return block()
+            } catch (error: Throwable) {
+                lastError = error
+                attempt += 1
+
+                if (!isTransientNetworkError(error) || attempt >= FARM_CONFIG_MAX_ATTEMPTS) {
+                    throw error
+                }
+
+                delay(FARM_CONFIG_RETRY_DELAY_MS * attempt)
+            }
+        }
+
+        throw lastError ?: IllegalStateException("Farm config request failed after retries.")
+    }
+
+    private fun isTransientNetworkError(error: Throwable): Boolean {
+        val message = error.message.orEmpty().lowercase()
+        return message.contains("socket timeout") ||
+            message.contains("timed out") ||
+            message.contains("network connection was lost") ||
+            message.contains("nsurlerrordomain code=-1005") ||
+            message.contains("connection reset") ||
+            message.contains("connection abort") ||
+            message.contains("temporary failure")
     }
 }

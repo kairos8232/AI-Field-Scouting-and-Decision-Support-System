@@ -44,7 +44,9 @@ import kotlin.math.abs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
@@ -722,6 +724,8 @@ class FarmTwinAppState(
     }
 
     fun continueToBoundaryDrawing() {
+        refreshInheritedPlantingDateForNewSetup()
+
         val latestQuery = farmSetupAddress.trim()
         if (latestQuery.isNotEmpty()) {
             val locationChanged = latestQuery != farmSetupMapQuery
@@ -742,6 +746,23 @@ class FarmTwinAppState(
             farmSetupSearchTrigger = 0
         }
         isFarmMapFrozen = true
+    }
+
+    private fun refreshInheritedPlantingDateForNewSetup() {
+        val currentSetupDate = farmSetupPlantingDate.trim()
+        val inheritedSnapshotDate = snapshot.farm.plantingDate.trim()
+        val isInheritedUntouched = currentSetupDate.isBlank() || currentSetupDate == inheritedSnapshotDate
+        if (!isInheritedUntouched) return
+
+        val today = currentIsoDate()
+        if (today == currentSetupDate) return
+
+        farmSetupPlantingDate = today
+        snapshot = snapshot.copy(
+            farm = snapshot.farm.copy(
+                plantingDate = today,
+            ),
+        )
     }
 
     fun updateLotSections(sections: List<LotSectionDraft>) {
@@ -1162,28 +1183,44 @@ class FarmTwinAppState(
 
             if (userId.isNullOrBlank()) {
                 isFarmConfigSyncing = false
-                onComplete(true)
+                withContext(Dispatchers.Main) {
+                    onComplete(true)
+                }
                 return@launch
             }
 
             val draft = buildFarmConfigDraft(userId)
             val success = runCatching {
                 farmConfigRepository.upsertFarmConfig(draft)
-                val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
-                if (latest != null) {
-                    applyRemoteFarmConfig(latest)
+                runCatching {
+                    val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
+                    if (latest != null) {
+                        applyRemoteFarmConfig(latest)
+                    }
                 }
             }.fold(
                 onSuccess = { true },
-                onFailure = {
-                    farmConfigSyncError = it.message ?: "Unable to sync farm setup to cloud."
-                    lotRecommendationError = farmConfigSyncError
-                    false
+                onFailure = { error ->
+                    if (isTransientFarmConfigNetworkError(error)) {
+                        farmConfigSyncError = "Connection unstable. Farm created locally and cloud sync will retry in background."
+                        lotRecommendationError = null
+                        scope.launch {
+                            delay(2_500)
+                            persistFarmConfigSilently()
+                        }
+                        true
+                    } else {
+                        farmConfigSyncError = error.message ?: "Unable to sync farm setup to cloud."
+                        lotRecommendationError = farmConfigSyncError
+                        false
+                    }
                 },
             )
 
             isFarmConfigSyncing = false
-            onComplete(success)
+            withContext(Dispatchers.Main) {
+                onComplete(success)
+            }
         }
     }
 
@@ -2240,6 +2277,17 @@ class FarmTwinAppState(
                 farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))
             }
         }
+    }
+
+    private fun isTransientFarmConfigNetworkError(error: Throwable): Boolean {
+        val message = error.message.orEmpty().lowercase()
+        return message.contains("socket timeout") ||
+            message.contains("timed out") ||
+            message.contains("network connection was lost") ||
+            message.contains("nsurlerrordomain code=-1005") ||
+            message.contains("connection reset") ||
+            message.contains("connection abort") ||
+            message.contains("temporary failure")
     }
 
     private fun currentEpochMs(): Long {
