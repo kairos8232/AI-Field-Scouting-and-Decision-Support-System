@@ -6,6 +6,7 @@ internal fun resolvedFieldInsightsBaseUrl(): String {
     val raw = platformFieldInsightsBaseUrl()
         .trim()
         .trim('"')
+        .trim('\'')
         .replace("\\n", "")
         .replace("\\r", "")
         .trimEnd('/')
@@ -13,10 +14,12 @@ internal fun resolvedFieldInsightsBaseUrl(): String {
         throw IllegalStateException("FIELD_INSIGHTS_BASE_URL is not configured. Set it in environment/secrets.")
     }
 
+    val migrated = migrateLegacyRunHost(raw)
+
     val withScheme = when {
-        raw.startsWith("http://") || raw.startsWith("https://") -> raw
-        raw.startsWith("localhost") || raw.startsWith("127.0.0.1") -> "http://$raw"
-        else -> raw
+        migrated.startsWith("http://") || migrated.startsWith("https://") -> migrated
+        migrated.startsWith("localhost") || migrated.startsWith("127.0.0.1") -> "http://$migrated"
+        else -> migrated
     }
 
     val normalizedLocal = when (withScheme) {
@@ -25,6 +28,16 @@ internal fun resolvedFieldInsightsBaseUrl(): String {
     }
 
     return if (normalizedLocal.endsWith("/api")) normalizedLocal else "$normalizedLocal/api"
+}
+
+private fun migrateLegacyRunHost(url: String): String {
+    val legacyBase = "https://farmtwin-field-insights-578643838222.asia-southeast1.run.app"
+    val canonicalBase = "https://farmtwin-field-insights-w35mh5k5qa-as.a.run.app"
+    return when {
+        url == legacyBase -> canonicalBase
+        url.startsWith("$legacyBase/") -> canonicalBase + url.removePrefix(legacyBase)
+        else -> url
+    }
 }
 
 private fun normalizeLocalhostVariant(url: String): String {

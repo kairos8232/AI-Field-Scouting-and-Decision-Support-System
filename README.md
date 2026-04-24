@@ -1,135 +1,137 @@
-# AI Field Scouting and Decision Support System
+# AI Field Scouting & Decision Support System
 
-Kotlin Multiplatform farm management app (Android + iOS) with a Cloud Run backend for AI-assisted field scouting, daily crop monitoring, and farm decision support.
+A farm management app for Android and iOS with an AI-powered cloud backend. Helps farmers monitor crop growth day-by-day, compare real photos with expected growth stages, and get actionable recommendations.
 
-## What This Project Does
+---
 
-This project helps farmers move from static records to daily action loops:
+## What's In This Repo
 
-- map farm context (address, boundary, lots)
-- monitor growth progress day by day
-- compare real crop photos with expected stage
-- suggest next action and track intervention outcomes
-- persist farm data and timeline caches in the cloud
+| Folder | What It Is |
+|--------|------------|
+| `composeApp/` | Kotlin Multiplatform app — runs on Android and iOS |
+| `cloud-backend/` | Node.js/Express backend — runs on Google Cloud Run |
+| `iosApp/` | iOS-specific build files and assets |
+| `gradle/`, `build.gradle.kts` | Android build configuration |
 
-## Feature Highlights
+---
 
-### Latest Updates (Apr 2026)
+## Quick Start
 
-- Farm creation timestamp is now immutable per farm (`createdAtEpochMs`) and preserved across syncs.
-- Timeline progression is calendar-aware from planting date, so future days cannot be unlocked early by repeated uploads.
-- Timeline day cards show expected calendar date (for example, Day 5 from 2026-04-23 -> 2026-04-27).
-- Dashboard `Current day` now follows actual farm progression and no longer follows whichever timeline day was last clicked.
-- Day calculation now uses local device timezone instead of UTC-only date math to avoid midnight off-by-one behavior.
-- AI consultation fallback now detects Gemini quota exhaustion and shows explicit reset guidance.
+### 1. Backend (Cloud Run)
 
-### Authentication
+```bash
+cd cloud-backend
 
-- Email/password sign-up and sign-in
-- Google sign-in via browser OAuth code flow
-- Backend token exchange and Firebase user provisioning/merge
+# Install dependencies
+npm install
 
-### Farm Setup and Multi-Farm Management
+# Copy and fill in your secrets
+cp ../.env.example .env
+# Edit .env with your API keys
 
-- Step-based setup: address -> boundary -> lot sections
-- Lot-level crop plan, soil, and water metadata
-- Multi-farm switching with cloud sync
-- Per-farm location persistence (address + map query stored independently)
+# Run locally
+npm run dev
+```
 
-### Dashboard
+The backend needs these keys in `.env`:
 
-- Farm lot map preview with lot overlays
-- Lot summary cards (crop, soil, water)
-- Current day and latest health score shortcuts
-- `Current day` opens Timeline at the actual progression day (not last selected timeline page)
-- Weather-now summary by active farm location
+- `GEMINI_API_KEY` — for AI recommendations
+- `FIREBASE_*` — for data storage (optional for local dev)
+- `GOOGLE_MAPS_API_KEY` — for map display in the app
 
-### Timeline and AI Comparison
+### 2. Android App
 
-- AI stage visual generation for selected timeline day
-- Photo upload (camera/gallery)
-- AI similarity scoring and observed stage output
-- Recommendation and rationale for follow-up action
-- Calendar-date-based day unlock from planting date
-- Expected date display per timeline day
+```bash
+# From repo root
+./gradlew installDebug
+```
 
-### Action and Recovery Tracking
+Or open the `composeApp/` folder in Android Studio and run from there.
 
-- Action confirmation and intervention logging
-- Risk-aware suggestions and progressive follow-up
-- Recovery forecast visibility when relevant
+### 3. iOS App
 
-### Cloud and Data Layer
+1. Open `iosApp/iosApp.xcworkspace` in Xcode
+2. Select your team for code signing
+3. Run on simulator or device
 
-- Node.js backend on Cloud Run
-- Firestore persistence for farm config, timeline photo cache, stage visual cache, and assessment cache
-- History/event endpoints for action logs, knowledge lookups, and timeline comparisons
+---
 
-## End-to-End User Flow
+## How It Works
 
-### 1. Authentication Flow
+### Daily Farming Loop
 
-1. User opens Auth screen.
-2. User signs in using Email/Password or Google.
-3. For Google sign-in, app opens Google OAuth in browser.
-4. OAuth callback is handled by backend callback endpoint, then relayed into app deep link.
-5. App sends authorization code to backend `/api/auth/google-signin`.
-6. Backend exchanges code, verifies ID token, creates/merges Firebase user, returns app auth session.
+1. **Open the app** → see your farm dashboard
+2. **Pick a day on the timeline** → see what the crop should look like (AI-generated picture)
+3. **Take or upload a photo** of your actual crop
+4. **Get AI comparison** → tells you if the crop is on track or needs attention
+5. **Log your action** → app tracks what you did and follows up later
 
-### 2. First-Time Farm Setup Flow
+### Farm Setup
 
-1. User enters farm address or uses current location.
-2. User confirms boundary area on map.
-3. User divides farm into lots and assigns lot details.
-4. User completes recommendation/persistence step.
-5. App syncs active farm and stored farms to cloud.
+1. Enter your farm address
+2. Draw the farm boundary on the map
+3. Divide into lots (sections)
+4. Assign a crop to each lot with planting date
+5. Done — you're ready for daily monitoring
 
-### 3. Daily Monitoring Flow
+---
 
-1. User opens Dashboard and picks active farm.
-2. Dashboard shows current progression day derived from planting date and local timezone.
-3. User opens Timeline for the current progression day.
-4. Timeline only allows days that are already reached by calendar date.
-5. App loads expected stage visual and expected calendar date for selected day.
-6. User uploads a real crop photo and runs comparison.
-7. AI returns similarity, observed stage, and recommendation.
-8. User logs action decision and continues to next day loop.
+## Tech Stack
 
-## Data and Sync Model
+**Mobile App**
+- Kotlin Multiplatform (shared code for Android + iOS)
+- Jetpack Compose (UI)
+- Firebase Auth (sign in)
+- Google Maps (farm map)
 
-Farm config sync stores:
+**Backend**
+- Node.js + Express
+- Firebase Firestore (data storage)
+- Google Gemini (AI comparison & recommendations)
+- Google Earth Engine (environmental data)
+- Vertex AI Search (farmer knowledge base)
 
-- active farm ID
-- farms array (each farm has independent address/map query/boundary/lots)
-- active farm legacy fields for backward compatibility
-- timeline caches (photo uploads, stage visuals, assessments)
-- per-farm immutable creation timestamp (`createdAtEpochMs`)
+**Infrastructure**
+- Google Cloud Run (backend hosting)
 
-This design keeps active farm UX simple while preserving multi-farm history and compatibility with older payloads.
+---
 
-## Technical Architecture
+## Key Files
 
-### Mobile App
+| File | Purpose |
+|------|---------|
+| `cloud-backend/server.js` | All backend API endpoints |
+| `composeApp/src/commonMain/kotlin/...` | Shared app logic and UI |
+| `composeApp/src/androidMain/kotlin/...` | Android-specific code |
+| `composeApp/src/iosMain/kotlin/...` | iOS-specific code |
 
-- Kotlin Multiplatform shared domain/state/UI logic in `composeApp`
-- Platform implementations for maps, image picking, auth/session bridges, and storage
+---
 
-### Backend
+## Common Tasks
 
-- Express service in `cloud-backend`
-- Firebase Admin for auth and Firestore
-- Google OAuth and AI integrations
+**Redeploy backend to Cloud Run:**
+```bash
+cd cloud-backend
+gcloud run deploy farmtwin-field-insights \
+  --source . \
+  --region asia-southeast1 \
+  --platform managed \
+  --allow-unauthenticated
+```
 
-### Platforms
+**Update app config:**
+Edit `.env` in the repo root — it feeds both local dev and Cloud Run deploys via `cloud-backend/scripts/generate-cloudrun-env.sh`.
 
-- Android: Compose + WebView-based map integration
-- iOS: Compose Multiplatform host with native platform bridges
+**Run tests:**
+```bash
+./gradlew test        # unit tests
+./gradlew check       # full verification
+```
 
-## Current Product Intent
+---
 
-The product is optimized for practical field usage:
+## Need Help?
 
-- fast setup and clear map workflows
-- concise, actionable AI output
-- explicit controls over hidden complexity
-- incremental decision support instead of one-time reports
+- App auth flow → see "End-to-End User Flow" in the old README above
+- Backend API details → see `cloud-backend/README.md`
+- If something breaks → check `.env` first, then Cloud Run logs
