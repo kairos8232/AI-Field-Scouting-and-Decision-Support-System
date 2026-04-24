@@ -128,6 +128,7 @@ class HttpFarmConfigRepository(
                             put("title", entry.title)
                             put("description", entry.description)
                             put("imageDataUrl", entry.imageDataUrl)
+                            put("imageStoragePath", entry.imageStoragePath)
                             put("provider", entry.provider)
                             put("updatedAtEpochMs", entry.updatedAtEpochMs)
                         }
@@ -344,7 +345,8 @@ class HttpFarmConfigRepository(
             val obj = rawEntry.jsonObject
             val dayNumber = obj["dayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: return@mapNotNull null
             val imageDataUrl = obj["imageDataUrl"]?.jsonPrimitive?.contentOrNull.orEmpty()
-            if (imageDataUrl.isBlank()) return@mapNotNull null
+            val imageStoragePath = obj["imageStoragePath"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (imageDataUrl.isBlank() && imageStoragePath.isBlank()) return@mapNotNull null
             TimelineStageVisualCacheEntry(
                 dayNumber = dayNumber,
                 expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -353,6 +355,7 @@ class HttpFarmConfigRepository(
                 title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 imageDataUrl = imageDataUrl,
+                imageStoragePath = imageStoragePath,
                 provider = obj["provider"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
             )

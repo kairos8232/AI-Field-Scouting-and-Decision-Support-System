@@ -27,6 +27,7 @@ data class TimelineStageVisualCacheEntry(
     val imageDataUrl: String,
     val provider: String,
     val updatedAtEpochMs: Long,
+    val imageStoragePath: String = "",
 )
 
 data class TimelinePhotoAssessmentCacheEntry(

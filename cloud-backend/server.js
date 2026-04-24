@@ -312,7 +312,11 @@ app.get("/api/farm-config", async (req, res) => {
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache)),
+      userId,
+      activeFarmId: activeFarm?.id || activeFarmId,
+    });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
     const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
     const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
@@ -381,7 +385,11 @@ app.get("/api/farm-config/latest", async (req, res) => {
     const activeFarmId = String(data.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === activeFarmId) || farms[0] || null;
     const timelinePhotoCache = normalizeTimelinePhotoCache(parseFirestoreArrayField(data.timelinePhotoCacheJson, data.timelinePhotoCache));
-    const timelineStageVisualCache = normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache));
+    const timelineStageVisualCache = await materializeTimelineStageVisualCache({
+      entries: normalizeTimelineStageVisualCache(parseFirestoreArrayField(data.timelineStageVisualCacheJson, data.timelineStageVisualCache)),
+      userId,
+      activeFarmId: activeFarm?.id || activeFarmId,
+    });
     const timelineAssessmentCache = normalizeTimelineAssessmentCache(parseFirestoreArrayField(data.timelineAssessmentCacheJson, data.timelineAssessmentCache));
     const timelineActionDecisionCache = normalizeTimelineActionDecisionCache(parseFirestoreArrayField(data.timelineActionDecisionCacheJson, data.timelineActionDecisionCache));
     const timelineInsightCache = normalizeTimelineInsightCache(parseFirestoreArrayField(data.timelineInsightCacheJson, data.timelineInsightCache));
@@ -1229,12 +1237,28 @@ async function materializeTimelineStageVisualCache({ entries, userId, activeFarm
   const materialized = [];
   for (const entry of entries) {
     const imageDataUrl = String(entry?.imageDataUrl || "").trim();
-    if (!imageDataUrl.startsWith("data:")) {
-      materialized.push(entry);
+    const imageStoragePath = String(entry?.imageStoragePath || "").trim();
+    if (imageStoragePath) {
+      const signedUrl = await signStorageObjectPath(bucket, imageStoragePath);
+      materialized.push({
+        ...entry,
+        farmId: String(entry?.farmId || activeFarmId || "").trim(),
+        imageStoragePath,
+        imageDataUrl: signedUrl || imageDataUrl,
+      });
       continue;
     }
 
-    const uploaded = await uploadStageVisualDataUrl({
+    if (!imageDataUrl.startsWith("data:")) {
+      materialized.push({
+        ...entry,
+        farmId: String(entry?.farmId || activeFarmId || "").trim(),
+        imageStoragePath: imageDataUrl,
+      });
+      continue;
+    }
+
+    const uploadedPath = await uploadStageVisualDataUrl({
       bucket,
       dataUrl: imageDataUrl,
       userId,
@@ -1243,10 +1267,16 @@ async function materializeTimelineStageVisualCache({ entries, userId, activeFarm
       updatedAtEpochMs: entry.updatedAtEpochMs,
     });
 
+    if (!uploadedPath) {
+      continue;
+    }
+
+    const signedUrl = await signStorageObjectPath(bucket, uploadedPath);
     materialized.push({
       ...entry,
       farmId: String(entry?.farmId || activeFarmId || "").trim(),
-      imageDataUrl: uploaded || imageDataUrl,
+      imageStoragePath: uploadedPath,
+      imageDataUrl: signedUrl,
     });
   }
 
@@ -1276,7 +1306,21 @@ async function uploadStageVisualDataUrl({ bucket, dataUrl, userId, activeFarmId,
         cacheControl: "public, max-age=31536000",
       },
     });
+    return objectPath;
+  } catch (_error) {
+    return "";
+  }
+}
 
+async function signStorageObjectPath(bucket, objectPath) {
+  const path = String(objectPath || "").trim();
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+
+  try {
+    const file = bucket.file(path);
     const [signedUrl] = await file.getSignedUrl({
       action: "read",
       expires: "2100-01-01",
@@ -1784,16 +1828,17 @@ function normalizeTimelineStageVisualCache(input) {
     .map((raw) => {
       const dayNumber = Number(raw?.dayNumber);
       const imageDataUrl = String(raw?.imageDataUrl || "").trim();
-      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageDataUrl) return null;
-      const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
+      const imageStoragePath = String(raw?.imageStoragePath || imageDataUrl || "").trim();
+      if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !imageStoragePath) return null;
       return {
         dayNumber: Math.trunc(dayNumber),
         farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl,
+        imageStoragePath,
         provider: String(raw?.provider || "").trim(),
-        updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
+        updatedAtEpochMs: Number.isFinite(Number(raw?.updatedAtEpochMs)) ? Math.trunc(Number(raw?.updatedAtEpochMs)) : Date.now(),
       };
     })
     .filter(Boolean)
@@ -1809,9 +1854,8 @@ function compactTimelineStageVisualCache(input) {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
 
       const imageDataUrl = String(raw?.imageDataUrl || "").trim();
-      const compactImageDataUrl = imageDataUrl.startsWith("data:") || (imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048)
-        ? imageDataUrl
-        : imageDataUrl;
+      const imageStoragePath = String(raw?.imageStoragePath || imageDataUrl || "").trim();
+      if (!imageStoragePath || imageStoragePath.startsWith("data:")) return null;
 
       const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
 
@@ -1820,7 +1864,7 @@ function compactTimelineStageVisualCache(input) {
         farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
-        imageDataUrl: compactImageDataUrl,
+        imageStoragePath,
         provider: String(raw?.provider || "").trim(),
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
       };
