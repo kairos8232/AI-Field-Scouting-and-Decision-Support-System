@@ -121,6 +121,9 @@ class HttpFarmConfigRepository(
                     add(
                         buildJsonObject {
                             put("dayNumber", entry.dayNumber)
+                            put("expectedStage", entry.expectedStage)
+                            put("cropName", entry.cropName)
+                            put("farmId", entry.farmId)
                             put("title", entry.title)
                             put("description", entry.description)
                             put("imageDataUrl", entry.imageDataUrl)
@@ -339,6 +342,9 @@ class HttpFarmConfigRepository(
             if (imageDataUrl.isBlank()) return@mapNotNull null
             TimelineStageVisualCacheEntry(
                 dayNumber = dayNumber,
+                expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 imageDataUrl = imageDataUrl,

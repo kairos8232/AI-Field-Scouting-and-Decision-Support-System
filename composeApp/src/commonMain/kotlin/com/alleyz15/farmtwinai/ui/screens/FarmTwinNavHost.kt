@@ -291,6 +291,7 @@ fun FarmTwinNavHost(
             errorMessage = appState.aiConversationError,
             onBack = { navigator.pop() },
             onSend = appState::sendAiConversationMessage,
+            onNewChat = appState::clearAiConversation,
             onOpenHistory = { navigator.navigate(AppDestination.History) },
             onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
             authenticatedUser = appState.authenticatedUser,

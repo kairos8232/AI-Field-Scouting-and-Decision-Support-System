@@ -422,7 +422,15 @@ class FarmTwinAppState(
         snapshot.timeline.firstOrNull { it.dayNumber == dayNumber }?.let {
             selectedTimelineDay = it
             isLoadingTimelineStageVisual = dayNumber in timelineLoadingStageVisualDays
-            timelineStageVisual = timelineStageVisualByDay[dayNumber]
+            timelineStageVisual = timelineStageVisualByDay[dayNumber].takeIf { visual ->
+                isTimelineStageVisualCompatible(
+                    visual = visual,
+                    dayNumber = dayNumber,
+                    expectedStage = it.expectedStage,
+                    cropName = snapshot.farm.cropName,
+                    farmId = effectiveTimelineFarmId(),
+                )
+            }
             timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
             timelinePhotoAssessment = timelinePhotoAssessmentByDay[dayNumber]
             timelinePhotoAssessmentError = timelinePhotoAssessmentErrorByDay[dayNumber]
@@ -430,7 +438,15 @@ class FarmTwinAppState(
     }
 
     fun loadTimelineStageVisual(dayNumber: Int, expectedStage: String) {
-        timelineStageVisualByDay[dayNumber]?.let {
+        timelineStageVisualByDay[dayNumber]?.takeIf { visual ->
+            isTimelineStageVisualCompatible(
+                visual = visual,
+                dayNumber = dayNumber,
+                expectedStage = expectedStage,
+                cropName = snapshot.farm.cropName,
+                farmId = effectiveTimelineFarmId(),
+            )
+        }?.let {
             timelineStageVisual = it
             timelineStageVisualError = timelineStageVisualErrorByDay[dayNumber]
             return
@@ -454,11 +470,13 @@ class FarmTwinAppState(
                         cropName = snapshot.farm.cropName,
                     )
                 }
-            }.onSuccess { visual ->
-                    timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to visual)
+                }.onSuccess { visual ->
+                    val farmId = effectiveTimelineFarmId()
+                    val taggedVisual = visual.copy(farmId = farmId)
+                    timelineStageVisualByDay = timelineStageVisualByDay + (dayNumber to taggedVisual)
                     lastUpdatedTimelineStageVisualDay = dayNumber
                     timelineStageVisualErrorByDay = timelineStageVisualErrorByDay - dayNumber
-                timelineStageVisual = visual
+                timelineStageVisual = taggedVisual
                     persistTimelineCacheToCloudIfAuthenticated()
             }.onFailure { error ->
                     val message = error.message ?: "Unable to generate expected plant image."
@@ -562,6 +580,13 @@ class FarmTwinAppState(
         if (firstPrompt.isNotEmpty()) {
             sendAiConversationMessage(firstPrompt)
         }
+    }
+
+    fun clearAiConversation() {
+        aiConversationMessages = emptyList()
+        aiConversationError = null
+        aiConversationProvider = null
+        isSendingAiConversationMessage = false
     }
 
     fun sendAiConversationMessage(rawMessage: String) {
@@ -1544,6 +1569,23 @@ class FarmTwinAppState(
         )
     }
 
+    private fun effectiveTimelineFarmId(): String {
+        currentFarmAsStored()?.id?.trim()?.takeIf { it.isNotBlank() }?.let { return it }
+
+        val farmName = farmSetupFarmName.trim().ifBlank { snapshot.farm.farmName.trim() }
+        val mapQuery = farmSetupMapQuery.trim()
+        val address = farmSetupAddress.trim().ifBlank {
+            mapQuery.ifBlank { snapshot.farm.location.trim() }
+        }
+        val crop = snapshot.farm.cropName.trim().lowercase()
+
+        if (farmName.isBlank() && address.isBlank()) {
+            return if (crop.isNotBlank()) "timeline::$crop" else "timeline::default"
+        }
+
+        return "timeline::${farmName.lowercase()}::${address.lowercase()}::${crop.ifBlank { "crop" }}"
+    }
+
     private fun resolveFarmCreatedAtEpochMs(farmId: String): Long {
         val existing = storedFarms.firstOrNull { it.id == farmId }?.createdAtEpochMs ?: 0L
         return if (existing > 0L) existing else currentWallClockEpochMs()
@@ -1674,6 +1716,9 @@ class FarmTwinAppState(
             val visual = timelineStageVisualByDay[dayNumber] ?: return@mapNotNull null
             TimelineStageVisualCacheEntry(
                 dayNumber = dayNumber,
+                expectedStage = visual.expectedStage,
+                cropName = visual.cropName,
+                farmId = visual.farmId.ifBlank { effectiveTimelineFarmId() },
                 title = visual.title,
                 description = visual.description,
                 imageDataUrl = visual.imageDataUrl,
@@ -1880,8 +1925,9 @@ class FarmTwinAppState(
             val remoteStages = remote.timelineStageVisualCache.associate { entry ->
                 entry.dayNumber to TimelineStageVisual(
                     dayNumber = entry.dayNumber,
-                    expectedStage = "",
-                    cropName = snapshot.farm.cropName,
+                    expectedStage = entry.expectedStage,
+                    cropName = entry.cropName,
+                    farmId = entry.farmId.ifBlank { resolvedActive?.id.orEmpty() },
                     title = entry.title,
                     description = entry.description,
                     imageDataUrl = entry.imageDataUrl,
@@ -2037,6 +2083,7 @@ class FarmTwinAppState(
                 dayNumber = dayNumber,
                 expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() },
                 title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 description = obj["description"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 imageDataUrl = imageDataUrl,
@@ -2158,6 +2205,28 @@ class FarmTwinAppState(
         refreshSnapshotCurrentDayFromTimeline()
     }
 
+    private fun isTimelineStageVisualCompatible(
+        visual: TimelineStageVisual?,
+        dayNumber: Int,
+        expectedStage: String,
+        cropName: String,
+        farmId: String,
+    ): Boolean {
+        if (visual == null || visual.dayNumber != dayNumber) return false
+
+        val cachedExpectedStage = visual.expectedStage.trim()
+        val cachedCropName = visual.cropName.trim()
+        val cachedFarmId = visual.farmId.trim()
+
+        if (cachedExpectedStage.isBlank() || cachedCropName.isBlank() || cachedFarmId.isBlank()) {
+            return false
+        }
+
+        return cachedExpectedStage.equals(expectedStage.trim(), ignoreCase = true) &&
+            cachedCropName.equals(cropName.trim(), ignoreCase = true) &&
+            cachedFarmId.equals(farmId.trim(), ignoreCase = true)
+    }
+
     private fun persistTimelineCacheToLocal() {
         val prioritizedPhotoDays = buildList {
             add(selectedTimelineDay.dayNumber)
@@ -2191,6 +2260,7 @@ class FarmTwinAppState(
                         put("dayNumber", dayNumber)
                         put("expectedStage", visual.expectedStage)
                         put("cropName", visual.cropName)
+                        put("farmId", visual.farmId.ifBlank { effectiveTimelineFarmId() })
                         put("title", visual.title)
                         put("description", visual.description)
                         put("imageDataUrl", visual.imageDataUrl)

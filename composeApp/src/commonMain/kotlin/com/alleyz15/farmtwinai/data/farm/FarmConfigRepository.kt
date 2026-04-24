@@ -18,6 +18,9 @@ data class TimelinePhotoCacheEntry(
 
 data class TimelineStageVisualCacheEntry(
     val dayNumber: Int,
+    val expectedStage: String,
+    val cropName: String,
+    val farmId: String,
     val title: String,
     val description: String,
     val imageDataUrl: String,

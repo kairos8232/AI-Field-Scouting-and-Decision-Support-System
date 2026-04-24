@@ -1238,13 +1238,14 @@ async function materializeTimelineStageVisualCache({ entries, userId, activeFarm
       bucket,
       dataUrl: imageDataUrl,
       userId,
-      activeFarmId,
+      activeFarmId: entry?.farmId || activeFarmId,
       dayNumber: entry.dayNumber,
       updatedAtEpochMs: entry.updatedAtEpochMs,
     });
 
     materialized.push({
       ...entry,
+      farmId: String(entry?.farmId || activeFarmId || "").trim(),
       imageDataUrl: uploaded || imageDataUrl,
     });
   }
@@ -1786,6 +1787,7 @@ function normalizeTimelineStageVisualCache(input) {
       const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl,
@@ -1806,14 +1808,15 @@ function compactTimelineStageVisualCache(input) {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0) return null;
 
       const imageDataUrl = String(raw?.imageDataUrl || "").trim();
-      const compactImageDataUrl = imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048
+      const compactImageDataUrl = imageDataUrl.startsWith("data:") || (imageDataUrl.startsWith("http") && imageDataUrl.length <= 2048)
         ? imageDataUrl
-        : "";
+        : imageDataUrl;
 
       const updatedAtEpochMs = Number(raw?.updatedAtEpochMs);
 
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         title: String(raw?.title || "").trim(),
         description: String(raw?.description || "").trim(),
         imageDataUrl: compactImageDataUrl,
