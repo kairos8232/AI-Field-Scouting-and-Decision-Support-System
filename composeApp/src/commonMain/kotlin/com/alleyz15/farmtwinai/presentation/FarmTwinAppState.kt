@@ -776,11 +776,11 @@ class FarmTwinAppState(
     private fun refreshInheritedPlantingDateForNewSetup() {
         val currentSetupDate = farmSetupPlantingDate.trim()
         val inheritedSnapshotDate = snapshot.farm.plantingDate.trim()
-        val isInheritedUntouched = currentSetupDate.isBlank() || currentSetupDate == inheritedSnapshotDate
-        if (!isInheritedUntouched) return
+        val shouldDefaultToToday = currentSetupDate.isBlank() && inheritedSnapshotDate.isBlank()
+        if (!shouldDefaultToToday) return
 
         val today = currentIsoDate()
-        if (today == currentSetupDate) return
+        if (today == currentSetupDate || today == inheritedSnapshotDate) return
 
         farmSetupPlantingDate = today
         snapshot = snapshot.copy(
@@ -934,7 +934,13 @@ class FarmTwinAppState(
         if (!userId.isNullOrBlank()) {
             scope.launch {
                 runCatching {
-                    farmConfigRepository.upsertFarmConfig(buildFarmConfigDraft(userId))
+                    val latest = farmConfigRepository.fetchLatestFarmConfig(userId)
+                        ?: return@runCatching
+                    val promoted = promoteFarmSelection(latest, target, userId)
+                    farmConfigRepository.upsertFarmConfig(promoted)
+                }.onSuccess {
+                    // Re-apply the cloud copy so the selected farm stays active after sync.
+                    loadFarmConfigFromCloud(force = true)
                 }
             }
         }
@@ -1306,7 +1312,7 @@ class FarmTwinAppState(
         
         val exactDays = calculateMockDaysPassed(lot.plantingDate)
         val mockDay = if (lot.plantingDate?.isNotBlank() == true) {
-            exactDays.coerceAtLeast(0)
+            exactDays.coerceAtLeast(0) + 1
         } else {
             timelineUnlockedMaxDayNumber().coerceAtLeast(1)
         }
@@ -1503,7 +1509,15 @@ class FarmTwinAppState(
     }
 
     private fun isoDateToEpochDay(value: String): Long? {
-        val parts = value.split("-")
+        val normalized = value.trim().let { raw ->
+            when {
+                raw.length >= 10 && raw[4] == '-' && raw[7] == '-' -> raw.substring(0, 10)
+                raw.length >= 10 && raw[4] == '/' && raw[7] == '/' -> raw.substring(0, 10).replace('/', '-')
+                else -> raw
+            }
+        }
+
+        val parts = normalized.split("-")
         if (parts.size != 3) return null
         val year = parts[0].toIntOrNull() ?: return null
         val month = parts[1].toIntOrNull() ?: return null
@@ -1523,12 +1537,33 @@ class FarmTwinAppState(
     }
 
     private fun timelineDateCappedMaxDay(minTimelineDay: Int, maxTimelineDay: Int): Int {
-        val plantingDate = snapshot.farm.plantingDate.trim().ifBlank { farmSetupPlantingDate.trim() }
+        val plantingDate = resolvedTimelinePlantingDateForProgress()
         if (plantingDate.isBlank()) return minTimelineDay
 
         val elapsedDays = calculateMockDaysPassed(plantingDate).coerceAtLeast(0)
         val cappedByCalendar = minTimelineDay + elapsedDays
         return cappedByCalendar.coerceIn(minTimelineDay, maxTimelineDay)
+    }
+
+    private fun resolvedTimelinePlantingDateForProgress(): String {
+        val candidates = buildList {
+            val snapshotDate = snapshot.farm.plantingDate.trim()
+            if (snapshotDate.isNotBlank()) add(snapshotDate)
+
+            val setupDate = farmSetupPlantingDate.trim()
+            if (setupDate.isNotBlank()) add(setupDate)
+
+            lotSections.forEach { lot ->
+                val lotDate = lot.plantingDate.orEmpty().trim()
+                if (lotDate.isNotBlank()) add(lotDate)
+            }
+        }
+
+        val earliest = candidates
+            .mapNotNull { date -> isoDateToEpochDay(date)?.let { epochDay -> date to epochDay } }
+            .minByOrNull { it.second }
+
+        return earliest?.first.orEmpty()
     }
 
     private fun nextAiConversationMessageId(): String {
@@ -1694,7 +1729,7 @@ class FarmTwinAppState(
             add(selectedTimelineDay.dayNumber)
             timelinePhotoAssessmentByDay.keys.sortedDescending().forEach { add(it) }
             timelineUploadByDay.keys.sortedDescending().forEach { add(it) }
-        }.distinct().take(7)
+        }.distinct().take(90)
 
         val photoCache = prioritizedPhotoDays.mapNotNull { dayNumber ->
             val upload = timelineUploadByDay[dayNumber] ?: return@mapNotNull null
@@ -1835,11 +1870,59 @@ class FarmTwinAppState(
         )
     }
 
+    private fun promoteFarmSelection(
+        remote: FarmConfigRemote,
+        target: StoredFarm,
+        userId: String,
+    ): FarmConfigDraft {
+        val targetFarmEntry = FarmConfigFarmEntry(
+            id = target.id,
+            farmName = target.farmName,
+            address = target.address,
+            mapQuery = target.mapQuery,
+            totalAreaInput = target.totalAreaInput,
+            mode = target.mode,
+            plantingDate = target.plantingDate,
+            createdAtEpochMs = target.createdAtEpochMs,
+            boundaryPoints = target.boundaryPoints,
+            lots = target.lots,
+        )
+
+        val farmsForSync = listOf(targetFarmEntry) + remote.farms
+            .filterNot { it.id == target.id }
+            .distinctBy { it.id }
+
+        return FarmConfigDraft(
+            userId = userId,
+            activeFarmId = target.id,
+            farms = farmsForSync,
+            farmName = target.farmName,
+            address = target.address,
+            mapQuery = target.mapQuery,
+            totalAreaInput = target.totalAreaInput,
+            mode = target.mode,
+            plantingDate = target.plantingDate,
+            boundaryPoints = target.boundaryPoints,
+            lots = target.lots,
+            timelinePhotoCache = remote.timelinePhotoCache,
+            timelineStageVisualCache = remote.timelineStageVisualCache,
+            timelineAssessmentCache = remote.timelineAssessmentCache,
+            timelineActionDecisionCache = remote.timelineActionDecisionCache,
+            timelineInsightCache = remote.timelineInsightCache,
+        )
+    }
+
     private fun applyRemoteFarmConfig(remote: FarmConfigRemote) {
         val previousFarm = currentFarmAsStored()
         val remoteActiveId = remote.activeFarmId.ifBlank { remote.farms.firstOrNull()?.id.orEmpty() }
         val resolvedActive = remote.farms.firstOrNull { it.id == remoteActiveId } ?: remote.farms.firstOrNull()
         val resolvedRemoteFarmId = resolvedActive?.id?.trim().orEmpty().ifBlank { remote.activeFarmId.trim() }
+        val resolvedPlantingDate = (resolvedActive?.plantingDate ?: remote.plantingDate)
+            .trim()
+            .ifBlank {
+                val createdAt = resolvedActive?.createdAtEpochMs ?: 0L
+                if (createdAt > 0L) localIsoDateFromEpochMillis(createdAt) else ""
+            }
         val inactiveRemoteFarms = remote.farms.filterNot { it.id == resolvedActive?.id }
 
         if (inactiveRemoteFarms.isNotEmpty()) {
@@ -1877,10 +1960,8 @@ class FarmTwinAppState(
             farmSetupMapQuery = remote.mapQuery
         }
 
-        if (!resolvedActive?.plantingDate.isNullOrBlank()) {
-            farmSetupPlantingDate = resolvedActive.plantingDate
-        } else if (remote.plantingDate.isNotBlank()) {
-            farmSetupPlantingDate = remote.plantingDate
+        if (resolvedPlantingDate.isNotBlank()) {
+            farmSetupPlantingDate = resolvedPlantingDate
         }
 
         if (!resolvedActive?.totalAreaInput.isNullOrBlank()) {
@@ -1909,12 +1990,12 @@ class FarmTwinAppState(
                 location = (resolvedActive?.address ?: remote.address).ifBlank { snapshot.farm.location },
                 fieldSize = (resolvedActive?.totalAreaInput ?: remote.totalAreaInput).ifBlank { snapshot.farm.fieldSize },
                 mode = resolvedActive?.mode ?: remote.mode,
-                plantingDate = (resolvedActive?.plantingDate ?: remote.plantingDate).ifBlank { snapshot.farm.plantingDate },
+                plantingDate = resolvedPlantingDate.ifBlank { snapshot.farm.plantingDate },
             ),
         )
 
         if (remote.timelinePhotoCache.isNotEmpty()) {
-            val remoteUploads = remote.timelinePhotoCache.mapNotNull { entry ->
+            val remoteUploadsScoped = remote.timelinePhotoCache.mapNotNull { entry ->
                 val activeFarmId = resolvedRemoteFarmId
                 val entryFarmId = entry.farmId.trim()
                 if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
@@ -1926,6 +2007,17 @@ class FarmTwinAppState(
                     updatedAtEpochMs = entry.updatedAtEpochMs,
                 )
             }.toMap()
+            val remoteUploads = if (remoteUploadsScoped.isNotEmpty() || resolvedRemoteFarmId.isBlank()) {
+                remoteUploadsScoped
+            } else {
+                remote.timelinePhotoCache.mapNotNull { entry ->
+                    entry.dayNumber to TimelineUploadCache(
+                        photoBase64 = entry.photoBase64,
+                        photoMimeType = entry.photoMimeType,
+                        updatedAtEpochMs = entry.updatedAtEpochMs,
+                    )
+                }.toMap()
+            }
             timelineUploadByDay = mergeUploadsByRecency(
                 local = timelineUploadByDay,
                 remote = remoteUploads,
@@ -1951,7 +2043,7 @@ class FarmTwinAppState(
         }
 
         if (remote.timelineAssessmentCache.isNotEmpty()) {
-            val remoteAssessments = remote.timelineAssessmentCache.mapNotNull { entry ->
+            val remoteAssessmentsScoped = remote.timelineAssessmentCache.mapNotNull { entry ->
                 val entryFarmId = entry.farmId.trim()
                 val activeFarmId = resolvedRemoteFarmId
                 if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
@@ -1969,11 +2061,28 @@ class FarmTwinAppState(
                     provider = entry.provider,
                 )
             }.toMap()
+            val remoteAssessments = if (remoteAssessmentsScoped.isNotEmpty() || resolvedRemoteFarmId.isBlank()) {
+                remoteAssessmentsScoped
+            } else {
+                remote.timelineAssessmentCache.mapNotNull { entry ->
+                    entry.dayNumber to TimelinePhotoAssessment(
+                        dayNumber = entry.dayNumber,
+                        expectedStage = entry.expectedStage,
+                        cropName = entry.cropName,
+                        similarityScore = entry.similarityScore,
+                        isSimilar = entry.isSimilar,
+                        observedStage = entry.observedStage,
+                        recommendation = entry.recommendation,
+                        rationale = entry.rationale,
+                        provider = entry.provider,
+                    )
+                }.toMap()
+            }
             timelinePhotoAssessmentByDay = remoteAssessments + timelinePhotoAssessmentByDay
         }
 
         if (remote.timelineActionDecisionCache.isNotEmpty()) {
-            val remoteDecisions = remote.timelineActionDecisionCache.mapNotNull { entry ->
+            val remoteDecisionsScoped = remote.timelineActionDecisionCache.mapNotNull { entry ->
                 val entryFarmId = entry.farmId.trim()
                 val activeFarmId = resolvedRemoteFarmId
                 if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
@@ -1992,6 +2101,24 @@ class FarmTwinAppState(
                     ),
                 )
             }.toMap()
+            val remoteDecisions = if (remoteDecisionsScoped.isNotEmpty() || resolvedRemoteFarmId.isBlank()) {
+                remoteDecisionsScoped
+            } else {
+                remote.timelineActionDecisionCache.mapNotNull { entry ->
+                    entry.dayNumber to TimelineActionDecision(
+                        actionType = entry.actionType,
+                        state = entry.state,
+                        updatedAtEpochMs = entry.updatedAtEpochMs,
+                        followUp = ActionTrackerFollowUp(
+                            nextBestAction = entry.nextBestAction,
+                            followUpQuestion = entry.followUpQuestion,
+                            confidence = entry.confidence,
+                            riskLevel = entry.riskLevel,
+                            provider = entry.provider,
+                        ),
+                    )
+                }.toMap()
+            }
             timelineActionDecisionByDay = mergeActionDecisionsByRecency(
                 local = timelineActionDecisionByDay,
                 remote = remoteDecisions,
@@ -1999,10 +2126,15 @@ class FarmTwinAppState(
         }
 
         if (remote.timelineInsightCache.isNotEmpty()) {
-            val relevantInsights = remote.timelineInsightCache.filter { entry ->
+            val relevantInsightsScoped = remote.timelineInsightCache.filter { entry ->
                 val entryFarmId = entry.farmId.trim()
                 val activeFarmId = resolvedRemoteFarmId
                 entryFarmId.isBlank() || entryFarmId.equals(activeFarmId, ignoreCase = true)
+            }
+            val relevantInsights = if (relevantInsightsScoped.isNotEmpty() || resolvedRemoteFarmId.isBlank()) {
+                relevantInsightsScoped
+            } else {
+                remote.timelineInsightCache
             }
             val remoteSuggested = relevantInsights.associate { entry ->
                 entry.dayNumber to entry.recommendedActionText
@@ -2268,7 +2400,7 @@ class FarmTwinAppState(
             add(selectedTimelineDay.dayNumber)
             timelinePhotoAssessmentByDay.keys.sortedDescending().forEach { add(it) }
             timelineUploadByDay.keys.sortedDescending().forEach { add(it) }
-        }.distinct().take(7)
+        }.distinct().take(90)
 
         val prioritizedVisualDays = buildList {
             lastUpdatedTimelineStageVisualDay?.let { add(it) }
@@ -2406,6 +2538,11 @@ class FarmTwinAppState(
         val nowEpochMillis = currentWallClockEpochMs()
         val offsetMillis = localUtcOffsetMinutes(nowEpochMillis).toLong() * 60_000L
         return epochMillisToIsoDateUtc(nowEpochMillis + offsetMillis)
+    }
+
+    private fun localIsoDateFromEpochMillis(epochMillis: Long): String {
+        val offsetMillis = localUtcOffsetMinutes(epochMillis).toLong() * 60_000L
+        return epochMillisToIsoDateUtc(epochMillis + offsetMillis)
     }
 
     private fun currentWallClockEpochMs(): Long = wallClockEpochMillis()
