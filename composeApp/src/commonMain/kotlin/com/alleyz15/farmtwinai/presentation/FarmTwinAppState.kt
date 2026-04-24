@@ -1700,6 +1700,7 @@ class FarmTwinAppState(
             val upload = timelineUploadByDay[dayNumber] ?: return@mapNotNull null
             TimelinePhotoCacheEntry(
                 dayNumber = dayNumber,
+                farmId = effectiveTimelineFarmId(),
                 photoBase64 = upload.photoBase64,
                 photoMimeType = upload.photoMimeType,
                 updatedAtEpochMs = upload.updatedAtEpochMs,
@@ -1732,6 +1733,7 @@ class FarmTwinAppState(
                 dayNumber = dayNumber,
                 expectedStage = assessment.expectedStage,
                 cropName = assessment.cropName,
+                farmId = effectiveTimelineFarmId(),
                 similarityScore = assessment.similarityScore,
                 isSimilar = assessment.isSimilar,
                 observedStage = assessment.observedStage,
@@ -1746,6 +1748,7 @@ class FarmTwinAppState(
             val followUp = decision.followUp ?: return@mapNotNull null
             TimelineActionDecisionCacheEntry(
                 dayNumber = dayNumber,
+                farmId = effectiveTimelineFarmId(),
                 actionType = decision.actionType,
                 state = decision.state,
                 updatedAtEpochMs = decision.updatedAtEpochMs,
@@ -1775,6 +1778,7 @@ class FarmTwinAppState(
             )
             TimelineInsightCacheEntry(
                 dayNumber = dayNumber,
+                farmId = effectiveTimelineFarmId(),
                 recommendedActionText = recommendation,
                 timelineStatus = timelineDynamicStatusByDay[dayNumber],
                 sourceDayNumber = effectiveForecast.sourceDayNumber,
@@ -1908,13 +1912,18 @@ class FarmTwinAppState(
         )
 
         if (remote.timelinePhotoCache.isNotEmpty()) {
-            val remoteUploads = remote.timelinePhotoCache.associate { entry ->
+            val remoteUploads = remote.timelinePhotoCache.mapNotNull { entry ->
+                val activeFarmId = effectiveTimelineFarmId()
+                val entryFarmId = entry.farmId.trim()
+                if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
+                    return@mapNotNull null
+                }
                 entry.dayNumber to TimelineUploadCache(
                     photoBase64 = entry.photoBase64,
                     photoMimeType = entry.photoMimeType,
                     updatedAtEpochMs = entry.updatedAtEpochMs,
                 )
-            }
+            }.toMap()
             timelineUploadByDay = mergeUploadsByRecency(
                 local = timelineUploadByDay,
                 remote = remoteUploads,
@@ -1939,7 +1948,12 @@ class FarmTwinAppState(
         }
 
         if (remote.timelineAssessmentCache.isNotEmpty()) {
-            val remoteAssessments = remote.timelineAssessmentCache.associate { entry ->
+            val remoteAssessments = remote.timelineAssessmentCache.mapNotNull { entry ->
+                val entryFarmId = entry.farmId.trim()
+                val activeFarmId = effectiveTimelineFarmId()
+                if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
+                    return@mapNotNull null
+                }
                 entry.dayNumber to TimelinePhotoAssessment(
                     dayNumber = entry.dayNumber,
                     expectedStage = entry.expectedStage,
@@ -1951,12 +1965,17 @@ class FarmTwinAppState(
                     rationale = entry.rationale,
                     provider = entry.provider,
                 )
-            }
+            }.toMap()
             timelinePhotoAssessmentByDay = remoteAssessments + timelinePhotoAssessmentByDay
         }
 
         if (remote.timelineActionDecisionCache.isNotEmpty()) {
-            val remoteDecisions = remote.timelineActionDecisionCache.associate { entry ->
+            val remoteDecisions = remote.timelineActionDecisionCache.mapNotNull { entry ->
+                val entryFarmId = entry.farmId.trim()
+                val activeFarmId = effectiveTimelineFarmId()
+                if (entryFarmId.isNotBlank() && !entryFarmId.equals(activeFarmId, ignoreCase = true)) {
+                    return@mapNotNull null
+                }
                 entry.dayNumber to TimelineActionDecision(
                     actionType = entry.actionType,
                     state = entry.state,
@@ -1969,7 +1988,7 @@ class FarmTwinAppState(
                         provider = entry.provider,
                     ),
                 )
-            }
+            }.toMap()
             timelineActionDecisionByDay = mergeActionDecisionsByRecency(
                 local = timelineActionDecisionByDay,
                 remote = remoteDecisions,
@@ -1977,10 +1996,15 @@ class FarmTwinAppState(
         }
 
         if (remote.timelineInsightCache.isNotEmpty()) {
-            val remoteSuggested = remote.timelineInsightCache.associate { entry ->
+            val relevantInsights = remote.timelineInsightCache.filter { entry ->
+                val entryFarmId = entry.farmId.trim()
+                val activeFarmId = effectiveTimelineFarmId()
+                entryFarmId.isBlank() || entryFarmId.equals(activeFarmId, ignoreCase = true)
+            }
+            val remoteSuggested = relevantInsights.associate { entry ->
                 entry.dayNumber to entry.recommendedActionText
             }
-            val remoteForecasts = remote.timelineInsightCache.associate { entry ->
+            val remoteForecasts = relevantInsights.associate { entry ->
                 entry.dayNumber to TimelineRecoveryForecast(
                     sourceDayNumber = entry.sourceDayNumber,
                     trend = entry.trend,
@@ -1991,7 +2015,7 @@ class FarmTwinAppState(
                     isUrgent = entry.isUrgent,
                 )
             }
-            val remoteStatuses = remote.timelineInsightCache
+            val remoteStatuses = relevantInsights
                 .mapNotNull { entry -> entry.timelineStatus?.let { entry.dayNumber to it } }
                 .toMap()
             timelineSuggestedActionByDay = remoteSuggested + timelineSuggestedActionByDay
@@ -2067,6 +2091,8 @@ class FarmTwinAppState(
             val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
             val photoBase64 = obj["photoBase64"]?.jsonPrimitive?.contentOrNull.orEmpty()
             if (photoBase64.isBlank()) return@mapNotNull null
+            val farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() }
+            if (!farmId.equals(effectiveTimelineFarmId(), ignoreCase = true)) return@mapNotNull null
             dayNumber to TimelineUploadCache(
                 photoBase64 = photoBase64,
                 photoMimeType = obj["photoMimeType"]?.jsonPrimitive?.contentOrNull ?: "image/jpeg",
@@ -2098,6 +2124,8 @@ class FarmTwinAppState(
             val recommendation = obj["recommendation"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val rationale = obj["rationale"]?.jsonPrimitive?.contentOrNull.orEmpty()
             if (recommendation.isBlank() && rationale.isBlank()) return@mapNotNull null
+            val farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() }
+            if (!farmId.equals(effectiveTimelineFarmId(), ignoreCase = true)) return@mapNotNull null
             dayNumber to TimelinePhotoAssessment(
                 dayNumber = dayNumber,
                 expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -2114,6 +2142,8 @@ class FarmTwinAppState(
         val decisions = root["timelineActionDecisionCache"]?.jsonArray?.mapNotNull { node ->
             val obj = node.jsonObject
             val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() }
+            if (!farmId.equals(effectiveTimelineFarmId(), ignoreCase = true)) return@mapNotNull null
             val actionTypeRaw = obj["actionType"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val stateRaw = obj["state"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val actionType = runCatching { ActionType.valueOf(actionTypeRaw) }.getOrNull() ?: return@mapNotNull null
@@ -2139,6 +2169,8 @@ class FarmTwinAppState(
         val insights = root["timelineInsightCache"]?.jsonArray?.mapNotNull { node ->
             val obj = node.jsonObject
             val dayNumber = obj["dayNumber"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { effectiveTimelineFarmId() }
+            if (!farmId.equals(effectiveTimelineFarmId(), ignoreCase = true)) return@mapNotNull null
             val recommendedAction = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty()
 
             val trend = obj["trend"]?.jsonPrimitive?.contentOrNull

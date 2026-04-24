@@ -109,6 +109,7 @@ class HttpFarmConfigRepository(
                     add(
                         buildJsonObject {
                             put("dayNumber", entry.dayNumber)
+                            put("farmId", entry.farmId)
                             put("photoBase64", entry.photoBase64)
                             put("photoMimeType", entry.photoMimeType)
                             put("updatedAtEpochMs", entry.updatedAtEpochMs)
@@ -140,6 +141,7 @@ class HttpFarmConfigRepository(
                             put("dayNumber", entry.dayNumber)
                             put("expectedStage", entry.expectedStage)
                             put("cropName", entry.cropName)
+                            put("farmId", entry.farmId)
                             put("similarityScore", entry.similarityScore)
                             put("isSimilar", entry.isSimilar)
                             put("observedStage", entry.observedStage)
@@ -156,6 +158,7 @@ class HttpFarmConfigRepository(
                     add(
                         buildJsonObject {
                             put("dayNumber", entry.dayNumber)
+                            put("farmId", entry.farmId)
                             put("actionType", entry.actionType.name)
                             put("state", entry.state.name)
                             put("updatedAtEpochMs", entry.updatedAtEpochMs)
@@ -173,6 +176,7 @@ class HttpFarmConfigRepository(
                     add(
                         buildJsonObject {
                             put("dayNumber", entry.dayNumber)
+                            put("farmId", entry.farmId)
                             put("recommendedActionText", entry.recommendedActionText)
                             entry.timelineStatus?.let { put("timelineStatus", it.name) }
                             put("sourceDayNumber", entry.sourceDayNumber)
@@ -329,6 +333,7 @@ class HttpFarmConfigRepository(
             if (base64.isBlank()) return@mapNotNull null
             TimelinePhotoCacheEntry(
                 dayNumber = dayNumber,
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 photoBase64 = base64,
                 photoMimeType = obj["photoMimeType"]?.jsonPrimitive?.contentOrNull.orEmpty().ifBlank { "image/jpeg" },
                 updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
@@ -360,6 +365,7 @@ class HttpFarmConfigRepository(
                 dayNumber = dayNumber,
                 expectedStage = obj["expectedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 cropName = obj["cropName"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 similarityScore = obj["similarityScore"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0,
                 isSimilar = obj["isSimilar"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
                 observedStage = obj["observedStage"]?.jsonPrimitive?.contentOrNull.orEmpty(),
@@ -381,6 +387,7 @@ class HttpFarmConfigRepository(
                 ?: return@mapNotNull null
             TimelineActionDecisionCacheEntry(
                 dayNumber = dayNumber,
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 actionType = actionType,
                 state = state,
                 updatedAtEpochMs = obj["updatedAtEpochMs"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: 0L,
@@ -405,6 +412,7 @@ class HttpFarmConfigRepository(
                 ?.let { runCatching { TimelineStatus.valueOf(it) }.getOrNull() }
             TimelineInsightCacheEntry(
                 dayNumber = dayNumber,
+                farmId = obj["farmId"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 recommendedActionText = obj["recommendedActionText"]?.jsonPrimitive?.contentOrNull.orEmpty(),
                 timelineStatus = timelineStatus,
                 sourceDayNumber = obj["sourceDayNumber"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: dayNumber,

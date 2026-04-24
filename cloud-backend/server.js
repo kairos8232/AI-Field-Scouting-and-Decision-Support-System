@@ -1767,6 +1767,7 @@ function normalizeTimelinePhotoCache(input) {
       if (!Number.isFinite(dayNumber) || dayNumber <= 0 || !photoBase64) return null;
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         photoBase64,
         photoMimeType,
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
@@ -1843,6 +1844,7 @@ function normalizeTimelineAssessmentCache(input) {
         dayNumber: Math.trunc(dayNumber),
         expectedStage: String(raw?.expectedStage || "").trim(),
         cropName: String(raw?.cropName || "").trim(),
+        farmId: String(raw?.farmId || "").trim(),
         similarityScore: Number.isFinite(similarityScore) ? similarityScore : 0,
         isSimilar: Boolean(raw?.isSimilar),
         observedStage: String(raw?.observedStage || "").trim(),
@@ -1873,6 +1875,7 @@ function normalizeTimelineActionDecisionCache(input) {
 
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         actionType,
         state,
         updatedAtEpochMs: Number.isFinite(updatedAtEpochMs) ? Math.trunc(updatedAtEpochMs) : Date.now(),
@@ -1906,6 +1909,7 @@ function normalizeTimelineInsightCache(input) {
 
       return {
         dayNumber: Math.trunc(dayNumber),
+        farmId: String(raw?.farmId || "").trim(),
         recommendedActionText: String(raw?.recommendedActionText || "").trim(),
         timelineStatus: allowedStatuses.has(timelineStatusRaw) ? timelineStatusRaw : null,
         sourceDayNumber: Number.isFinite(sourceDayNumber) ? Math.trunc(sourceDayNumber) : Math.trunc(dayNumber),

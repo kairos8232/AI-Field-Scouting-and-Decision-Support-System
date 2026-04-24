@@ -11,6 +11,7 @@ import com.alleyz15.farmtwinai.domain.model.TimelineStatus
 
 data class TimelinePhotoCacheEntry(
     val dayNumber: Int,
+    val farmId: String,
     val photoBase64: String,
     val photoMimeType: String,
     val updatedAtEpochMs: Long,
@@ -32,6 +33,7 @@ data class TimelinePhotoAssessmentCacheEntry(
     val dayNumber: Int,
     val expectedStage: String,
     val cropName: String,
+    val farmId: String,
     val similarityScore: Int,
     val isSimilar: Boolean,
     val observedStage: String,
@@ -43,6 +45,7 @@ data class TimelinePhotoAssessmentCacheEntry(
 
 data class TimelineActionDecisionCacheEntry(
     val dayNumber: Int,
+    val farmId: String,
     val actionType: ActionType,
     val state: ActionState,
     val updatedAtEpochMs: Long,
@@ -55,6 +58,7 @@ data class TimelineActionDecisionCacheEntry(
 
 data class TimelineInsightCacheEntry(
     val dayNumber: Int,
+    val farmId: String,
     val recommendedActionText: String,
     val timelineStatus: TimelineStatus?,
     val sourceDayNumber: Int,
