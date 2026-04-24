@@ -212,7 +212,7 @@ fun FarmTwinNavHost(
             val pendingTimelineFollowUp = appState.latestPendingTimelineFollowUp()
 
             LaunchedEffect(appState.authenticatedUser?.userId) {
-                if (appState.isAuthenticated) {
+                if (appState.isAuthenticated && !appState.hasLoadedFarmConfigOnce) {
                     appState.loadFarmConfigFromCloud()
                 }
             }
@@ -291,6 +291,7 @@ fun FarmTwinNavHost(
             errorMessage = appState.aiConversationError,
             onBack = { navigator.pop() },
             onSend = appState::sendAiConversationMessage,
+            onNewChat = appState::clearAiConversation,
             onOpenHistory = { navigator.navigate(AppDestination.History) },
             onOpenKnowledgeBase = { navigator.navigate(AppDestination.KnowledgeBase) },
             authenticatedUser = appState.authenticatedUser,

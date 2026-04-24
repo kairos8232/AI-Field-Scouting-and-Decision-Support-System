@@ -493,7 +493,12 @@ fun LotSectionSetupScreen(
                     boundaryArea > 0.0 &&
                     selectedLotArea != null
                 ) {
-                    totalFarmAreaHaValue * (selectedLotArea / boundaryArea)
+                    val computedAreaHa = totalFarmAreaHaValue * (selectedLotArea / boundaryArea)
+                    if (lots.size > 1 && computedAreaHa >= totalFarmAreaHaValue * 0.98) {
+                        totalFarmAreaHaValue / lots.size.toDouble()
+                    } else {
+                        computedAreaHa
+                    }
                 } else {
                     null
                 }
@@ -774,13 +779,19 @@ private fun generateMockLots(boundary: List<FarmPoint>, mode: String, count: Int
         else -> listOf(boundary)
     }
 
-    return rawLots.mapNotNull { lot ->
+    val clippedLots = rawLots.mapNotNull { lot ->
         val xMin = lot.minOf { it.x }
         val xMax = lot.maxOf { it.x }
         val yMin = lot.minOf { it.y }
         val yMax = lot.maxOf { it.y }
         val clipped = clipPolygonAgainstRectangle(boundary, xMin, yMin, xMax, yMax)
         if (clipped.size >= 3) clipped else null
+    }
+
+    return if (clippedLots.size >= rawLots.size.coerceAtLeast(1).coerceAtMost(boundary.size)) {
+        clippedLots
+    } else {
+        rawLots
     }
 }
 

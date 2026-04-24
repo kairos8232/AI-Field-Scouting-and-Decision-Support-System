@@ -391,7 +391,7 @@ fun TimelineScreen(
                                 text = "Regenerate Image", 
                                 style = MaterialTheme.typography.labelSmall, 
                                 color = Mint200,
-                                modifier = Modifier.clickable { onLoadStageVisual(selectedDay.dayNumber, selectedDay.expectedStage) }
+                                modifier = Modifier.clickable { onRegenerateStageVisual(selectedDay.dayNumber, selectedDay.expectedStage) }
                             )
                         }
 

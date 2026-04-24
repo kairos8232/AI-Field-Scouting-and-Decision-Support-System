@@ -57,6 +57,7 @@ fun AiChatScreen(
     errorMessage: String?,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onNewChat: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenKnowledgeBase: () -> Unit,
     authenticatedUser: AuthUser?,
@@ -120,6 +121,17 @@ fun AiChatScreen(
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onNewChat,
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (darkTheme) 0.3f else 0.8f), CircleShape),
+                        ) {
+                            Icon(
+                                imageVector = NewChatIcon,
+                                contentDescription = "New chat",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                            )
+                        }
                         IconButton(
                             onClick = onOpenKnowledgeBase,
                             modifier = Modifier
@@ -400,6 +412,31 @@ private val KnowledgeIcon: ImageVector
             horizontalLineTo(14f)
             verticalLineTo(17f)
             horizontalLineTo(7f)
+            close()
+        }
+    }.build()
+
+private val NewChatIcon: ImageVector
+    get() = ImageVector.Builder(
+        name = "NewChat",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(11f, 4f)
+            lineTo(13f, 4f)
+            lineTo(13f, 11f)
+            lineTo(20f, 11f)
+            lineTo(20f, 13f)
+            lineTo(13f, 13f)
+            lineTo(13f, 20f)
+            lineTo(11f, 20f)
+            lineTo(11f, 13f)
+            lineTo(4f, 13f)
+            lineTo(4f, 11f)
+            lineTo(11f, 11f)
             close()
         }
     }.build()
