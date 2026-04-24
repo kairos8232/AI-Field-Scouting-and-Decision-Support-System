@@ -227,7 +227,7 @@ app.post("/api/farm-config", async (req, res) => {
     const requestedActiveFarmId = String(req.body?.activeFarmId || "").trim();
     const activeFarm = farms.find((farm) => farm.id === requestedActiveFarmId) || farms[0] || null;
     const activeFarmId = activeFarm?.id || null;
-    const timelinePhotoCache = normalizeTimelinePhotoCache(req.body?.timelinePhotoCache);
+    const timelinePhotoCache = compactTimelinePhotoCache(normalizeTimelinePhotoCache(req.body?.timelinePhotoCache));
     const normalizedTimelineStageVisualCache = normalizeTimelineStageVisualCache(req.body?.timelineStageVisualCache);
     const timelineStageVisualCache = await materializeTimelineStageVisualCache({
       entries: normalizedTimelineStageVisualCache,
@@ -1819,6 +1819,23 @@ function normalizeTimelinePhotoCache(input) {
     })
     .filter(Boolean)
     .slice(0, 90);
+}
+
+function compactTimelinePhotoCache(input) {
+  if (!Array.isArray(input) || input.length === 0) return [];
+
+  const maxBytes = 700000;
+  let usedBytes = 2;
+  const retained = [];
+
+  for (const entry of [...input].sort((a, b) => Number(b?.updatedAtEpochMs || 0) - Number(a?.updatedAtEpochMs || 0))) {
+    const estimatedBytes = String(entry?.photoBase64 || "").length + String(entry?.photoMimeType || "").length + String(entry?.farmId || "").length + 80;
+    if (retained.length > 0 && usedBytes + estimatedBytes > maxBytes) continue;
+    retained.push(entry);
+    usedBytes += estimatedBytes;
+  }
+
+  return retained;
 }
 
 function normalizeTimelineStageVisualCache(input) {

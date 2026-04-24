@@ -1740,7 +1740,8 @@ class FarmTwinAppState(
                 photoMimeType = upload.photoMimeType,
                 updatedAtEpochMs = upload.updatedAtEpochMs,
             )
-        }.take(90)
+        }
+        .let { pruneTimelinePhotoCacheForSync(it) }
 
         val prioritizedDays = buildList {
             lastUpdatedTimelineStageVisualDay?.let { add(it) }
@@ -2543,6 +2544,23 @@ class FarmTwinAppState(
     private fun localIsoDateFromEpochMillis(epochMillis: Long): String {
         val offsetMillis = localUtcOffsetMinutes(epochMillis).toLong() * 60_000L
         return epochMillisToIsoDateUtc(epochMillis + offsetMillis)
+    }
+
+    private fun pruneTimelinePhotoCacheForSync(
+        entries: List<TimelinePhotoCacheEntry>,
+        maxBytes: Int = 700_000,
+    ): List<TimelinePhotoCacheEntry> {
+        var usedBytes = 2
+        val retained = mutableListOf<TimelinePhotoCacheEntry>()
+
+        for (entry in entries.sortedByDescending { it.updatedAtEpochMs }) {
+            val estimatedBytes = entry.photoBase64.length + entry.photoMimeType.length + entry.farmId.length + 80
+            if (retained.isNotEmpty() && usedBytes + estimatedBytes > maxBytes) continue
+            retained += entry
+            usedBytes += estimatedBytes
+        }
+
+        return retained
     }
 
     private fun currentWallClockEpochMs(): Long = wallClockEpochMillis()
