@@ -3431,3 +3431,16 @@ function round(value, precision) {
   const factor = 10 ** precision;
   return Math.round(value * factor) / factor;
 }
+
+// Export functions for Genkit tools to use
+export {
+  assessTimelinePhoto,
+  queryKnowledgeBase,
+  resolveWeatherForAgent,
+  getEarthSummary,
+  getCropRecommendations,
+  readRecentHistoryEvents,
+  synthesizeFieldInsightsActionBrief,
+  synthesizeActionTrackerFollowUp,
+  persistHistoryEvent,
+};
