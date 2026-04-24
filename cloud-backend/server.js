@@ -58,7 +58,7 @@ const GOOGLE_OAUTH_APP_REDIRECT_URI = process.env.GOOGLE_OAUTH_APP_REDIRECT_URI 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "";
 const VERTEX_PROJECT_ID = process.env.VERTEX_PROJECT_ID || FIREBASE_PROJECT_ID || EARTH_ENGINE_PROJECT_ID || "";
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || "us-central1";
-const VERTEX_IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL || "imagen-4.0-fast-generate-001";
+const VERTEX_IMAGE_MODEL = process.env.VERTEX_IMAGE_MODEL || "gemini-2.5-flash-image";
 const VERTEX_IMAGE_MODEL_CANDIDATES = (process.env.VERTEX_IMAGE_MODEL_CANDIDATES || "")
   .split(",")
   .map((item) => item.trim())
@@ -2481,7 +2481,10 @@ async function generateStageImageWithVertex(prompt) {
     ...new Set([
       VERTEX_IMAGE_MODEL,
       ...VERTEX_IMAGE_MODEL_CANDIDATES,
+      "gemini-2.5-flash-image",
       "imagen-3.0-generate-002",
+      "imagen-4.0-generate-001",
+      "imagen-4.0-fast-generate-001",
       "imagegeneration@006",
     ]),
   ];
@@ -2514,13 +2517,19 @@ async function generateStageImageWithVertex(prompt) {
     }
 
     const payload = await response.json();
-    const first = Array.isArray(payload?.predictions) ? payload.predictions[0] : null;
+    const first =
+      (Array.isArray(payload?.predictions) && payload.predictions[0]) ||
+      (Array.isArray(payload?.generatedImages) && payload.generatedImages[0]) ||
+      null;
+    const imagePayload = first?.image || first?.generatedImage || first;
     const bytes =
       first?.bytesBase64Encoded ||
-      first?.image?.bytesBase64Encoded ||
+      imagePayload?.bytesBase64Encoded ||
+      imagePayload?.imageBytes?.bytesBase64Encoded ||
+      imagePayload?.imageBytes ||
       first?.b64Json ||
       "";
-    const mimeType = first?.mimeType || first?.image?.mimeType || "image/png";
+    const mimeType = first?.mimeType || imagePayload?.mimeType || "image/png";
 
     if (!bytes) {
       console.warn(`[vertex-imagen] ${modelName} returned no image bytes`);

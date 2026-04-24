@@ -212,7 +212,7 @@ fun FarmTwinNavHost(
             val pendingTimelineFollowUp = appState.latestPendingTimelineFollowUp()
 
             LaunchedEffect(appState.authenticatedUser?.userId) {
-                if (appState.isAuthenticated) {
+                if (appState.isAuthenticated && !appState.hasLoadedFarmConfigOnce) {
                     appState.loadFarmConfigFromCloud()
                 }
             }
